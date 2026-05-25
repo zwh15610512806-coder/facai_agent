@@ -226,7 +226,7 @@ function parseManifestInbound(
   const botId = String(extractPath(payload, 'bot_id') ?? '');
   // DM is always treated as mention (user is talking directly to bot)
   const isMention = isDirect ||
-    /(@Abu|@abu)/i.test(textStr) ||
+    /(@CaiBao|@facai)/i.test(textStr) ||
     (!!manifest.displayName && new RegExp(`@${manifest.displayName}`, 'i').test(textStr)) ||
     (!!botId && textStr.includes(`@<=#${botId}=>`));
 

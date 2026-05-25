@@ -42,6 +42,12 @@ import { toolSearchTool } from './definitions/toolSearchTool';
 import { computerTool } from './definitions/computerTools';
 export { setComputerUseBatchMode, setSkipAutoScreenshot } from './definitions/computerTools';
 
+// --- Lark tools ---
+import { allLarkTools } from './definitions/larkTools';
+
+// --- Database tools ---
+import { dbQueryTool } from './definitions/dbTools';
+
 export function registerBuiltinTools(): void {
   toolRegistry.register(getSystemInfoTool);
   toolRegistry.register(readFileTool);
@@ -80,4 +86,6 @@ export function registerBuiltinTools(): void {
   toolRegistry.register(skillViewTool);
   toolRegistry.register(skillManageTool);
   toolRegistry.register(toolSearchTool);
+  allLarkTools.forEach(tool => toolRegistry.register(tool));
+  toolRegistry.register(dbQueryTool);
 }

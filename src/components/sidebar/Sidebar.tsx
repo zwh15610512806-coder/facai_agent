@@ -4,7 +4,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useNoticeBadgeStore } from '@/stores/noticeBadgeStore';
 import { useI18n } from '@/i18n';
-import { Plus, Workflow, Wrench, Trash2, Settings, Download, Upload, Pencil, Undo2, HelpCircle, FolderInput, FolderClosed, ChevronRight, Minus, Search, X } from 'lucide-react';
+import { Plus, Workflow, Wrench, Trash2, Settings, Download, Upload, Pencil, Undo2, HelpCircle, FolderInput, FolderClosed, ChevronRight, Minus, Search, X, BookOpen } from 'lucide-react';
 import GuideModal from '@/components/common/GuideModal';
 import ProfileEditModal from '@/components/common/ProfileEditModal';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { getPlatformShortLabel } from '@/core/im/platformLabels';
 import type { ConversationStatus } from '@/types';
 import ProjectsSection from '@/components/sidebar/ProjectsSection';
-import abuAvatar from '@/assets/abu-avatar.png';
+import abuAvatar from '@/assets/facai-logo.png';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import ShareExportDialog from '@/components/share/ShareExportDialog';
@@ -75,6 +75,7 @@ export default function Sidebar() {
   const loadConversation = useChatStore((s) => s.loadConversation);
   const openToolbox = useSettingsStore((s) => s.openToolbox);
   const openAutomation = useSettingsStore((s) => s.openAutomation);
+  const openKnowledge = useSettingsStore((s) => s.openKnowledge);
   const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
   const viewMode = useSettingsStore((s) => s.viewMode);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
@@ -287,6 +288,18 @@ export default function Sidebar() {
           <Workflow className={cn('h-[18px] w-[18px]', viewMode === 'automation' ? 'text-[var(--abu-clay)]' : 'text-[var(--abu-text-tertiary)]')} strokeWidth={1.75} />
           <span>{t.sidebar.automation}</span>
         </button>
+        <button
+          onClick={() => openKnowledge()}
+          className={cn(
+            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[14px] rounded-lg',
+            viewMode === 'knowledge'
+              ? 'bg-[var(--abu-bg-active)] text-[var(--abu-text-primary)]'
+              : 'text-[var(--abu-text-secondary)] hover:bg-[var(--abu-bg-hover)]'
+          )}
+        >
+          <BookOpen className={cn('h-[18px] w-[18px]', viewMode === 'knowledge' ? 'text-[var(--abu-clay)]' : 'text-[var(--abu-text-tertiary)]')} strokeWidth={1.75} />
+          <span>{t.knowledge.title}</span>
+        </button>
       </nav>
 
       {/* Scrollable middle section: projects + scheduled + triggers + recents */}
@@ -430,10 +443,10 @@ export default function Sidebar() {
           {/* User avatar + nickname (clickable to edit) */}
           <button
             onClick={() => setProfileOpen(true)}
-            className="w-8 h-8 rounded-full overflow-hidden shrink-0 hover:ring-2 hover:ring-[var(--abu-clay-40)] transition-shadow"
+            className="w-8 h-8 rounded-xl overflow-hidden shrink-0 hover:ring-2 hover:ring-[var(--abu-clay-40)] transition-shadow"
             title={t.sidebar.editProfile}
           >
-            <img src={userAvatar || abuAvatar} alt="Avatar" className="w-full h-full object-cover" />
+            <img src={userAvatar || abuAvatar} alt="Avatar" className="w-full h-full object-contain" />
           </button>
           <button
             onClick={() => setProfileOpen(true)}

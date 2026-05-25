@@ -19,7 +19,7 @@ import { extractWorkflowSteps, extractFileOutputs, extractFilePathsFromText } fr
 import { parseSearchResults, stripSourcesBlock, parseSourcesFromText } from '@/utils/searchParser';
 import { snapshotToExecutionSteps } from '@/core/agent/executionSnapshot';
 import { runAgentLoop } from '@/core/agent/agentLoop';
-import abuAvatar from '@/assets/abu-avatar.png';
+import abuAvatar from '@/assets/facai-logo.png';
 
 interface MessageGroupProps {
   messages: Message[];
@@ -427,8 +427,8 @@ export default function MessageGroup({ messages, isLastGroup: isLastGroupProp = 
         <div className="flex gap-3 w-full overflow-hidden group">
           {/* ABU Avatar - only shown once for the group */}
           <div className="shrink-0 mt-0.5">
-            <div className="w-7 h-7 rounded-full overflow-hidden">
-              <img src={abuAvatar} alt="Abu" className="w-full h-full object-cover" />
+            <div className="w-7 h-7 rounded-xl overflow-hidden">
+              <img src={abuAvatar} alt="CaiBao" className="w-full h-full object-contain" />
             </div>
           </div>
 

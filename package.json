@@ -1,9 +1,9 @@
 {
-  "name": "abu",
-  "private": false,
+  "name": "caibao",
+  "private": true,
   "license": "Apache-2.0",
-  "version": "0.19.3",
-  "description": "Abu - AI Desktop Office Assistant",
+  "version": "0.1.0",
+  "description": "CaiBao - Company AI Work Assistant",
   "type": "module",
   "scripts": {
     "dev": "vite",

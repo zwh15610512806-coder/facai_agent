@@ -1571,6 +1571,38 @@ export interface TranslationDict {
     blocked: string;
     userCancelled: string;
   };
+  knowledge: {
+    title: string;
+    description: string;
+    entryCount: string;
+    sources: string;
+    feishuDocs: string;
+    feishuWiki: string;
+    localFiles: string;
+    database: string;
+    addSource: string;
+    addLocalDir: string;
+    addFeishuWiki: string;
+    addFeishuDoc: string;
+    dirPath: string;
+    dirPathPlaceholder: string;
+    spaceId: string;
+    spaceIdPlaceholder: string;
+    docToken: string;
+    docTokenPlaceholder: string;
+    indexNow: string;
+    indexing: string;
+    reindex: string;
+    removeSource: string;
+    clearAll: string;
+    clearAllConfirm: string;
+    lastIndexed: string;
+    noSources: string;
+    statusOk: string;
+    statusError: string;
+    statusIndexing: string;
+    searchPlaceholder: string;
+  };
 
   // Tool error messages (used in core/tools/registry.ts)
   toolErrors: {

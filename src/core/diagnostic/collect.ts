@@ -96,15 +96,15 @@ async function getOSDescription(): Promise<string> {
 function generateReadme(opts: CollectOptions, fileList: string[]): string {
   const ts = new Date().toISOString();
   const lines = [
-    'Abu 诊断包 / Abu Diagnostic Bundle',
+    'CaiBao 诊断包 / CaiBao Diagnostic Bundle',
     '',
     `生成时间 / Generated: ${ts}`,
     `版本 / Version: v${APP_VERSION}`,
     '',
     '─── 目的 / Purpose ───────────────────────────────────',
     '',
-    '此 zip 由 Abu 「设置 → 诊断」生成，用于排查 bug 时附在 issue 里。',
-    'This zip is produced by Abu Settings → Diagnostic, intended to be',
+    '此 zip 由 CaiBao 「设置 → 诊断」生成，用于排查 bug 时附在 issue 里。',
+    'This zip is produced by CaiBao Settings → Diagnostic, intended to be',
     'attached when reporting bugs.',
     '',
     '─── 隐私 / Privacy ───────────────────────────────────',

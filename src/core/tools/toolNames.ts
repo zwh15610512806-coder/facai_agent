@@ -66,6 +66,35 @@ export const TOOL_NAMES = {
 
   // Tool discovery
   TOOL_SEARCH: 'tool_search',
+
+  // Lark / Feishu knowledge & docs
+  LARK_SEARCH_DOCS: 'lark_search_docs',
+  LARK_GET_DOC_CONTENT: 'lark_get_doc_content',
+  LARK_SEARCH_WIKI: 'lark_search_wiki',
+  LARK_LIST_WIKI_NODES: 'lark_list_wiki_nodes',
+  LARK_SEARCH_BASE_RECORDS: 'lark_search_base_records',
+  LARK_SEARCH_SHEETS: 'lark_search_sheets',
+
+  // Lark calendar
+  LARK_GET_CALENDAR_EVENTS: 'lark_get_calendar_events',
+  LARK_GET_FREEBUSY: 'lark_get_freebusy',
+
+  // Lark tasks
+  LARK_GET_MY_TASKS: 'lark_get_my_tasks',
+  LARK_CREATE_TASK: 'lark_create_task',
+  LARK_UPDATE_TASK: 'lark_update_task',
+
+  // Lark meetings & minutes
+  LARK_LIST_MEETINGS: 'lark_list_meetings',
+  LARK_GET_MEETING_MINUTES: 'lark_get_meeting_minutes',
+  LARK_GET_MEETING_TRANSCRIPT: 'lark_get_meeting_transcript',
+
+  // Knowledge base
+  KNOWLEDGE_INDEX_LOCAL: 'knowledge_index_local',
+  KNOWLEDGE_SEARCH: 'knowledge_search',
+
+  // Database
+  DB_QUERY: 'db_query',
 } as const;
 
 export type ToolName = typeof TOOL_NAMES[keyof typeof TOOL_NAMES];

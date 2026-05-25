@@ -11,7 +11,7 @@ import { remove } from '@tauri-apps/plugin-fs';
 import { getParentDir } from '@/utils/pathUtils';
 import type { SubagentDefinition } from '@/types';
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer';
-import abuAvatar from '@/assets/abu-avatar.png';
+import abuAvatar from '@/assets/facai-logo.png';
 
 function isSystemAgent(agent: SubagentDefinition): boolean {
   // System / builtin agents ship with the app (registered in registry.ts) —
@@ -23,15 +23,15 @@ function isSystemAgent(agent: SubagentDefinition): boolean {
 /** Render agent avatar: use real image for abu, emoji for others */
 function AgentAvatar({ agent, size = 'md' }: { agent: SubagentDefinition; size?: 'sm' | 'md' }) {
   const cls = size === 'sm' ? 'h-5 w-5' : 'h-6 w-6';
-  if (agent.name === 'abu') {
-    return <img src={abuAvatar} alt="Abu" className={`${cls} rounded-full object-cover`} />;
+  if (agent.name === 'facai') {
+    return <img src={abuAvatar} alt="CaiBao" className={`${cls} rounded-xl object-contain`} />;
   }
   return <span className={size === 'sm' ? 'text-base' : 'text-xl'}>{agent.avatar || '🤖'}</span>;
 }
 
 /** Display name: locale-aware. Falls back to canonical `name` if no override. */
 function displayName(agent: SubagentDefinition, locale: 'zh-CN' | 'en-US'): string {
-  if (agent.name === 'abu') return 'Abu';
+  if (agent.name === 'facai') return 'CaiBao';
   return agent.displayNames?.[locale] ?? agent.name;
 }
 

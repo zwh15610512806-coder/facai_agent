@@ -16,7 +16,6 @@ export default function AutomationView() {
 
   return (
     <div className="h-full bg-[var(--abu-bg-base)] flex">
-      {/* Left Navigation — sub-nav for automation types */}
       <nav className="w-[224px] shrink-0 border-r border-[var(--abu-border)] flex flex-col pt-4">
         <div className="px-3 space-y-0.5">
           {navItems.map((item) => {
@@ -44,7 +43,6 @@ export default function AutomationView() {
         </div>
       </nav>
 
-      {/* Right Content */}
       <div className="flex-1 overflow-hidden">
         {activeAutomationTab === 'schedule' && <ScheduleView />}
         {activeAutomationTab === 'trigger' && <TriggerView />}

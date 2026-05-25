@@ -273,7 +273,7 @@ export async function executeToolBatch(params: ToolBatchParams): Promise<ToolBat
       let targetAppName: string | null = null;
       try {
         const activeWin = await invoke<{ app_name: string }>('get_active_window');
-        if (activeWin.app_name && activeWin.app_name !== 'Abu' && activeWin.app_name !== 'Abu Dev') {
+        if (activeWin.app_name && activeWin.app_name !== 'CaiBao' && activeWin.app_name !== 'CaiBao Dev') {
           targetAppName = activeWin.app_name;
         }
       } catch { /* ignore */ }

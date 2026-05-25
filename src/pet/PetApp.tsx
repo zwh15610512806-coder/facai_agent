@@ -1,4 +1,4 @@
-import abuAvatar from '@/assets/abu-avatar.png';
+import abuAvatar from '@/assets/facai-logo.png';
 import StatusLight from './StatusLight';
 import { useStatusLight } from './useStatusLight';
 import { usePetDrag } from './usePetDrag';
@@ -35,7 +35,7 @@ export default function PetApp() {
     >
       <img
         src={abuAvatar}
-        alt="Abu"
+        alt="CaiBao"
         draggable={false}
         style={{
           width: '100%',

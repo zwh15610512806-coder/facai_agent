@@ -1,25 +1,10 @@
-import { useState, useCallback } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { RefreshCw, Download, CheckCircle, CircleAlert, RotateCcw, ExternalLink } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import abuAvatar from '@/assets/abu-avatar.png';
+import abuAvatar from '@/assets/facai-logo.png';
 import { APP_VERSION } from '@/utils/version';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { checkForUpdate, downloadAndInstallUpdate, restartApp } from '@/core/updates/checker';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
-
-type CheckResult = 'idle' | 'just-checked' | 'error';
 
 export default function AboutSection() {
-  const updateInfo = useSettingsStore((s) => s.updateInfo);
-  const updateChecking = useSettingsStore((s) => s.updateChecking);
-  const downloadProgress = useSettingsStore((s) => s.updateDownloadProgress);
-  const updateInstalling = useSettingsStore((s) => s.updateInstalling);
   const { t } = useI18n();
-  const [checkResult, setCheckResult] = useState<CheckResult>('idle');
-  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const handleOpenLink = async (url: string) => {
     try {
@@ -29,48 +14,11 @@ export default function AboutSection() {
     }
   };
 
-  const handleCheckUpdate = useCallback(async () => {
-    setCheckResult('idle');
-    try {
-      const result = await checkForUpdate(true);
-      if (!result) {
-        setCheckResult('just-checked');
-        setTimeout(() => setCheckResult('idle'), 3000);
-      }
-    } catch {
-      setCheckResult('error');
-      setTimeout(() => setCheckResult('idle'), 3000);
-    }
-  }, []);
-
-  const handleDownload = useCallback(async () => {
-    setDownloadError(null);
-    try {
-      await downloadAndInstallUpdate();
-    } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
-
-  const handleRestart = useCallback(async () => {
-    try {
-      await restartApp();
-    } catch (err) {
-      console.error('Failed to restart:', err);
-    }
-  }, []);
-
-  const progressPercent = downloadProgress
-    ? downloadProgress.total > 0
-      ? Math.round((downloadProgress.downloaded / downloadProgress.total) * 100)
-      : 0
-    : 0;
-
   return (
     <div className="space-y-6">
       {/* Logo & name */}
       <div className="flex flex-col items-center text-center space-y-3">
-        <img src={abuAvatar} alt="阿布" className="w-20 h-20 rounded-2xl" />
+        <img src={abuAvatar} alt="采宝" className="w-20 h-20 rounded-2xl" />
         <div>
           <h4 className="text-2xl font-bold text-[var(--abu-text-primary)]">{t.common.appName}</h4>
           <p className="text-sm text-[var(--abu-text-tertiary)]">{t.common.appSlogan}</p>
@@ -86,150 +34,6 @@ export default function AboutSection() {
           </span>
         </div>
       </div>
-
-      {/* Update card */}
-      {updateInfo ? (
-        <div className="rounded-xl border border-[var(--abu-clay-ring)] bg-[var(--abu-clay-5)] p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-[var(--abu-clay)]">{t.updates.newVersionAvailable}</span>
-            <span className="text-sm font-mono font-semibold text-[var(--abu-text-primary)]">v{updateInfo.version}</span>
-          </div>
-          {(updateInfo.releaseNotes || updateInfo.releaseUrl) && (
-            <div className="space-y-1.5">
-              <span className="text-xs font-medium text-[var(--abu-text-tertiary)]">{t.updates.releaseNotes}</span>
-              {updateInfo.releaseNotes && updateInfo.releaseNotes.trim().length > 0 ? (
-                <div className="text-sm text-[var(--abu-text-secondary)] space-y-1.5
-                  [&_h3]:text-xs [&_h3]:font-semibold [&_h3]:text-[var(--abu-text-primary)] [&_h3]:mt-2
-                  [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-0.5
-                  [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-0.5
-                  [&_strong]:font-semibold [&_strong]:text-[var(--abu-text-primary)]
-                  [&_p]:leading-relaxed">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      a: ({ href, children }) => (
-                        <a
-                          href={href ?? '#'}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            if (href) void handleOpenLink(href);
-                          }}
-                          className="text-[var(--abu-clay)] hover:underline cursor-pointer"
-                        >
-                          {children}
-                        </a>
-                      ),
-                    }}
-                  >
-                    {updateInfo.releaseNotes}
-                  </ReactMarkdown>
-                </div>
-              ) : null}
-              {updateInfo.releaseUrl && (
-                <button
-                  onClick={() => void handleOpenLink(updateInfo.releaseUrl)}
-                  className="flex items-center gap-1.5 text-xs text-[var(--abu-clay)] hover:underline"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  {t.updates.viewOnGitHub}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Download progress bar */}
-          {downloadProgress && (
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs text-[var(--abu-text-tertiary)]">
-                <span>{t.updates.downloading}</span>
-                <span>{progressPercent}%</span>
-              </div>
-              <div className="w-full h-2 rounded-full bg-[var(--abu-bg-active)] overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-[var(--abu-clay)] transition-all duration-300"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Download error */}
-          {downloadError && (
-            <div className="flex items-center gap-2 text-sm text-red-500">
-              <CircleAlert className="h-4 w-4 shrink-0" />
-              <span className="flex-1">{t.updates.downloadFailed}</span>
-              <button
-                onClick={handleDownload}
-                className="text-xs font-medium text-[var(--abu-clay)] hover:underline"
-              >
-                {t.updates.retry}
-              </button>
-            </div>
-          )}
-
-          {/* Action buttons */}
-          {updateInstalling ? (
-            <button
-              onClick={handleRestart}
-              className="flex items-center gap-2 w-full justify-center py-2 px-4 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors"
-            >
-              <RotateCcw className="h-4 w-4" />
-              {t.updates.restartToInstall}
-            </button>
-          ) : !downloadProgress && !downloadError && (
-            <button
-              onClick={handleDownload}
-              className="flex items-center gap-2 w-full justify-center py-2 px-4 rounded-lg bg-[var(--abu-clay)] text-white text-sm font-medium hover:bg-[var(--abu-clay-hover)] transition-colors"
-            >
-              <Download className="h-4 w-4" />
-              {t.updates.downloadUpdate}
-            </button>
-          )}
-        </div>
-      ) : (
-        <div
-          className={cn(
-            'flex items-center gap-2 py-3 text-sm transition-all duration-300',
-            checkResult === 'just-checked'
-              ? 'text-green-600'
-              : checkResult === 'error'
-                ? 'text-red-500'
-                : 'text-[var(--abu-text-tertiary)]'
-          )}
-        >
-          {checkResult === 'error' ? (
-            <>
-              <CircleAlert className="h-4 w-4" />
-              <span>{t.updates.checkFailed}</span>
-            </>
-          ) : (
-            <>
-              <CheckCircle className={cn('h-4 w-4 text-green-500', checkResult === 'just-checked' && 'scale-110')} />
-              <span>{t.updates.upToDate}</span>
-              {checkResult === 'just-checked' && (
-                <span className="text-xs text-[var(--abu-text-muted)] ml-auto" style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                  {t.updates.justChecked}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Check for updates button */}
-      <button
-        onClick={handleCheckUpdate}
-        disabled={updateChecking || !!downloadProgress}
-        className={cn(
-          'flex items-center gap-2 w-full justify-center py-2.5 px-4 rounded-lg border text-sm font-medium transition-all duration-200',
-          updateChecking || downloadProgress
-            ? 'border-[var(--abu-border)] text-[var(--abu-text-muted)] cursor-not-allowed'
-            : 'border-[var(--abu-border)] text-[var(--abu-text-secondary)] hover:bg-[var(--abu-bg-active)] hover:border-[var(--abu-border-hover)] active:scale-[0.98]'
-        )}
-      >
-        <RefreshCw className={cn('h-4 w-4 transition-transform', updateChecking && 'animate-spin')} />
-        {updateChecking ? t.updates.checking : t.updates.checkForUpdates}
-      </button>
 
       {/* Footer */}
       <div className="text-center space-y-2 pt-4">

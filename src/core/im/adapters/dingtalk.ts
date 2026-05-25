@@ -18,7 +18,7 @@ export class DingtalkAdapter extends BaseAdapter {
   };
 
   formatOutbound(message: AbuMessage): unknown {
-    const title = message.title ?? 'Abu AI';
+    const title = message.title ?? 'CaiBao AI';
     let text = message.title ? `### ${message.title}\n\n` : '';
     text += message.content;
     if (message.footer) text += `\n\n---\n${message.footer}`;

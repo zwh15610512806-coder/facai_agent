@@ -256,7 +256,7 @@ class IMChannelRouter {
       if (lastAIContent) {
         const replyMessage: AbuMessage = {
           content: lastAIContent,
-          footer: `Abu AI · ${new Date().toLocaleString('zh-CN')}`,
+          footer: `CaiBao AI · ${new Date().toLocaleString('zh-CN')}`,
         };
         const result = await sendFinal(replyHandle, replyMessage);
         if (!result.success) {

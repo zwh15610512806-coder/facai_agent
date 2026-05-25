@@ -20,7 +20,7 @@ import { useI18n, format } from '@/i18n';
 import { serializeShareBundle, type ShareBundle } from '@/core/session/shareBundle';
 import type { Message, MessageContent, ToolCall } from '@/types';
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer';
-import abuAvatar from '@/assets/abu-avatar.png';
+import abuAvatar from '@/assets/facai-logo.png';
 
 interface ShareExportDialogProps {
   convId: string;
@@ -65,7 +65,7 @@ export default function ShareExportDialog({ convId, defaultFilename, onClose }: 
     try {
       const filePath = await saveDialog({
         defaultPath: defaultFilename,
-        filters: [{ name: 'Abu Conversation', extensions: ['json'] }],
+        filters: [{ name: 'CaiBao Conversation', extensions: ['json'] }],
       });
       if (filePath) {
         await writeTextFile(filePath, serializeShareBundle(state.bundle));
@@ -268,7 +268,7 @@ function SharePreviewMessage({ message }: { message: Message }) {
   // Assistant / system — left-aligned with Abu avatar.
   return (
     <div className="flex gap-3 w-full">
-      <img src={abuAvatar} alt="" className="h-7 w-7 rounded-full shrink-0 mt-1 object-cover" />
+      <img src={abuAvatar} alt="" className="h-7 w-7 rounded-xl shrink-0 mt-1 object-contain" />
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         {toolCalls.map((tc, i) => (
           <ToolCallPreviewCard key={tc.id ?? `${tc.name}-${i}`} toolCall={tc} />

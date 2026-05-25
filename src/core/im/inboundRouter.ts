@@ -117,7 +117,7 @@ function parseFeishu(payload: Record<string, unknown>): NormalizedIMMessage | nu
   // Check: mentions array has entries, or text contains mention tags, or common bot names.
   const mentions = (event.message as Record<string, unknown>)?.mentions as { name?: string; id?: { open_id?: string } }[] | undefined;
   const hasMentions = mentions != null && mentions.length > 0;
-  const isMention = hasMentions || /(@_user_\d+|@Abu|@abu|@阿布)/.test(text);
+  const isMention = hasMentions || /(@_user_\d+|@CaiBao|@facai|@采宝)/.test(text);
   const isDirect = chatType === 'p2p';
 
   // Clean mention tags from text
@@ -198,7 +198,7 @@ function parseWeCom(payload: Record<string, unknown>): NormalizedIMMessage | nul
   const senderName = String(from?.Name ?? payload.userName ?? senderId);
 
   const chatId = String(payload.ChatId ?? payload.chatid ?? '');
-  const isMention = text.includes('@Abu') || text.includes('@abu');
+  const isMention = text.includes('@CaiBao') || text.includes('@facai') || text.includes('@采宝');
   const isDirect = !chatId || chatId === senderId;
 
   return {

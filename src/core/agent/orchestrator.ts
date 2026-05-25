@@ -14,7 +14,7 @@ import { getSkillsGuidance } from './prompts/skillsGuidance';
 import type { PromptSection } from '../llm/promptSections';
 import { sectionsToString } from '../llm/promptSections';
 
-const DEFAULT_PERSONA = '你叫阿布，是一个专业靠谱的桌面助手。回复友好简洁。';
+const DEFAULT_PERSONA = '你叫采宝，是一个专业靠谱的桌面助手。回复友好简洁。';
 
 // Planning instruction - AI must call report_plan for complex tasks, but simple questions can be answered directly
 const PLANNING_INSTRUCTION = `
@@ -515,6 +515,18 @@ ${indexContent.trim()}
       console.warn('Failed to load memories:', err);
     }
 
+    // Knowledge base guidance — always inject so the agent knows to search
+    // the local knowledge base for company product/recipe/script information.
+    sections.push({ name: 'knowledge-mgmt', text: `\n## 公司知识库
+
+你有一个本地知识库，包含公司的产品信息、视频脚本、配方工艺、产品手册等资料。
+
+**使用规则：**
+- 用户询问产品、价格、配方、工艺、脚本等公司业务相关内容时，**必须先调用 knowledge_search 检索知识库**
+- 即使用户没明确说"查知识库"，只要问题涉及公司业务范畴，就主动搜索
+- 找到相关内容后引用原文回答，不要凭猜测编造
+- 如果知识库没找到，诚实告知，可以建议用户补充资料`, cacheable: true });
+
     // Computer use guidance — only inject when the user has the feature
     // enabled. Saves ~1k tokens for the vast majority of turns where the
     // user isn't doing GUI automation. When the feature *is* enabled, the
@@ -551,7 +563,7 @@ ${isWindows()
 
 ### 操作规范
 - 当用户说"打开XX"、"帮我播放XX"等，要实际操作，不要只回复教程
-- **键盘输入（type/key）前，必须先 click 目标窗口或输入框**，确保焦点正确。阿布窗口隐藏后系统焦点不一定在目标应用上
+- **键盘输入（type/key）前，必须先 click 目标窗口或输入框**，确保焦点正确。采宝窗口隐藏后系统焦点不一定在目标应用上
 - 点击按钮优于键盘输入：如计算器的数字按钮，直接 click 按钮坐标比 type 文字更可靠
 - 没有截屏验证的操作不能说"已完成"
 - 操作没生效时分析原因重试，不假装成功

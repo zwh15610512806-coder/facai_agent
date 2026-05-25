@@ -38,7 +38,7 @@ class OutputSender {
       case 'full': {
         return messages
           .filter((m) => m.role === 'user' || m.role === 'assistant')
-          .map((m) => `**${m.role === 'user' ? '事件' : 'Abu'}**: ${contentToString(m.content)}`)
+          .map((m) => `**${m.role === 'user' ? '事件' : 'CaiBao'}**: ${contentToString(m.content)}`)
           .join('\n\n');
       }
       case 'custom_template': {
@@ -80,7 +80,7 @@ class OutputSender {
       content,
       title: context.triggerName,
       color: 'info',
-      footer: `Abu AI · ${context.timestamp}`,
+      footer: `CaiBao AI · ${context.timestamp}`,
     };
   }
 
@@ -240,10 +240,10 @@ class OutputSender {
     if (!adapter) return { success: false, error: `Unknown platform: ${platform}` };
 
     const testMessage: AbuMessage = {
-      content: 'Abu AI 连接测试成功',
+      content: 'CaiBao AI 连接测试成功',
       title: '测试消息',
       color: 'success',
-      footer: `Abu AI · ${new Date().toLocaleString('zh-CN')}`,
+      footer: `CaiBao AI · ${new Date().toLocaleString('zh-CN')}`,
     };
 
     try {

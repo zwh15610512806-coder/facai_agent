@@ -11,7 +11,7 @@ import { runAgentLoop } from '@/core/agent/agentLoop';
 import { useI18n } from '@/i18n';
 import { getBaseName, loadLocalImage } from '@/utils/pathUtils';
 import { formatRelativeTime } from '@/utils/messageTime';
-import abuAvatar from '@/assets/abu-avatar.png';
+import abuAvatar from '@/assets/facai-logo.png';
 
 // Regex to match [Attachment: `path`] patterns in user messages
 const ATTACHMENT_PATTERN = /\[Attachment:\s*`([^`]+)`\]/g;
@@ -628,8 +628,8 @@ export default function MessageBubble({
     <div className="flex gap-3 w-full overflow-hidden group">
       {/* ABU Avatar - 小布丁人 */}
       <div className="shrink-0 mt-0.5">
-        <div className="w-7 h-7 rounded-full overflow-hidden">
-          <img src={abuAvatar} alt="Abu" className="w-full h-full object-cover" />
+        <div className="w-7 h-7 rounded-xl overflow-hidden">
+          <img src={abuAvatar} alt="CaiBao" className="w-full h-full object-contain" />
         </div>
       </div>
 

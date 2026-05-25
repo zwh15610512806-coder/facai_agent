@@ -24,6 +24,7 @@ export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_NAMES.USE_SKILL,
   TOOL_NAMES.DELEGATE_TO_AGENT,
   TOOL_NAMES.TOOL_SEARCH,
+  TOOL_NAMES.KNOWLEDGE_SEARCH,
 ]);
 
 /** Keyword → tool mapping for demand-based loading */
@@ -81,6 +82,70 @@ const PREFETCH_RULES: ReadonlyArray<{
   {
     keywords: ['截屏', '截图', '屏幕', '打开应用', '点击', '操控电脑', '操作电脑', '鼠标', '键盘', 'screenshot', 'click', 'computer use', '帮我打开', '帮我点'],
     tools: [TOOL_NAMES.COMPUTER],
+  },
+  {
+    keywords: ['飞书文档', '公司文档', '云文档', '知识库', 'wiki', '查文档', '搜索文档', '找文档', '文档里', 'lark'],
+    tools: [
+      TOOL_NAMES.LARK_SEARCH_DOCS,
+      TOOL_NAMES.LARK_GET_DOC_CONTENT,
+      TOOL_NAMES.LARK_SEARCH_WIKI,
+      TOOL_NAMES.LARK_LIST_WIKI_NODES,
+      TOOL_NAMES.LARK_SEARCH_BASE_RECORDS,
+      TOOL_NAMES.KNOWLEDGE_SEARCH,
+    ],
+  },
+  {
+    keywords: ['产品', '价格', '多少钱', '规格', '克重', '包装', '配方', '用量', '比例', '怎么用', '怎么做', '教程', '步骤', '烘焙', '蛋糕', '面包', '奶油', '巧克力', '慕斯', '布蕾', '翻糖', '色素', '拉线膏', '刀叉', '餐盘', '脚本', '视频脚本', '短视频', '抖音', '销售', '客户', '订单', '批发', '采购', '定制', '品牌'],
+    tools: [TOOL_NAMES.KNOWLEDGE_SEARCH],
+  },
+  {
+    keywords: ['会议', '纪要', '妙记', '会议记录', 'meeting', '开会', '讨论了', '周会', '月会'],
+    tools: [
+      TOOL_NAMES.LARK_LIST_MEETINGS,
+      TOOL_NAMES.LARK_GET_MEETING_MINUTES,
+      TOOL_NAMES.LARK_GET_MEETING_TRANSCRIPT,
+    ],
+  },
+  {
+    keywords: ['日程', '日历', '安排', '今天有什么', '忙闲', '空闲时间', 'calender', 'calender'],
+    tools: [
+      TOOL_NAMES.LARK_GET_CALENDAR_EVENTS,
+      TOOL_NAMES.LARK_GET_FREEBUSY,
+    ],
+  },
+  {
+    keywords: ['任务', '待办', 'todo', 'task', '分配', '截止', '完成了吗', '进度'],
+    tools: [
+      TOOL_NAMES.LARK_GET_MY_TASKS,
+      TOOL_NAMES.LARK_CREATE_TASK,
+      TOOL_NAMES.LARK_UPDATE_TASK,
+    ],
+  },
+  {
+    keywords: ['表格', 'sheet', '多维表格', 'base', '数据表', '报表'],
+    tools: [
+      TOOL_NAMES.LARK_SEARCH_SHEETS,
+      TOOL_NAMES.LARK_SEARCH_BASE_RECORDS,
+    ],
+  },
+  {
+    keywords: ['日报', '周报', '总结', '工作汇报', 'review', 'report', '干了什么', '这周'],
+    tools: [
+      TOOL_NAMES.LARK_GET_CALENDAR_EVENTS,
+      TOOL_NAMES.LARK_GET_MY_TASKS,
+      TOOL_NAMES.LARK_LIST_MEETINGS,
+    ],
+  },
+  {
+    keywords: ['索引', '本地文件', 'index', '建索引'],
+    tools: [
+      TOOL_NAMES.KNOWLEDGE_INDEX_LOCAL,
+      TOOL_NAMES.KNOWLEDGE_SEARCH,
+    ],
+  },
+  {
+    keywords: ['数据库', '查询', 'sql', '数据', '统计', '报表', '指标', 'select'],
+    tools: [TOOL_NAMES.DB_QUERY],
   },
 ];
 

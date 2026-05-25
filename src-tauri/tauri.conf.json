@@ -1,7 +1,7 @@
 {
-  "productName": "Abu",
-  "version": "0.19.3",
-  "identifier": "com.abu.app",
+  "productName": "CaiBao",
+  "version": "0.1.0",
+  "identifier": "com.caibao.app",
   "build": {
     "beforeDevCommand": "npm run copy-resources && npm run dev",
     "devUrl": "http://localhost:5173",
@@ -37,21 +37,16 @@
   "plugins": {
     "shell": {
       "open": true
-    },
-    "updater": {
-      "endpoints": [
-        "https://abu-agent.oss-cn-beijing.aliyuncs.com/latest.json"
-      ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhEMDY1MTJCQ0QzN0QwNEMKUldSTTBEZk5LMUVHalQ2V0EwZnpoaFJtQ2hHTmF2VDZiVFRmKzBOWnZHVk1pTFZjcFhFdDNoMVoK"
     }
   },
   "bundle": {
     "active": true,
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "targets": ["dmg", "app", "nsis"],
     "resources": [
       "builtin-skills/",
       "builtin-agents/",
+      "company-config/",
       "python-runtime/",
       "browser-extension/"
     ],

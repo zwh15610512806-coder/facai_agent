@@ -1,12 +1,12 @@
 [package]
-name = "abu"
-version = "0.19.3"
-description = "ABU - AI Desktop Assistant"
+name = "caibao"
+version = "0.1.0"
+description = "CaiBao - Company AI Work Assistant"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "abu_lib"
+name = "caibao_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
@@ -23,7 +23,6 @@ tauri-plugin-os = "2"
 tauri-plugin-http = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-global-shortcut = "2"
-tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

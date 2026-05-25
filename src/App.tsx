@@ -7,6 +7,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import Sidebar from '@/components/sidebar/Sidebar';
 import ChatView from '@/components/chat/ChatView';
 import AutomationView from '@/components/automation/AutomationView';
+import KnowledgeSection from '@/components/settings/sections/KnowledgeSection';
 import SystemSettingsView from '@/components/settings/SystemSettingsModal';
 import ToolboxView from '@/components/settings/ToolboxModal';
 import RightPanel from '@/components/panel/RightPanel';
@@ -57,7 +58,6 @@ import { startBehaviorSensor, stopBehaviorSensor } from '@/core/agent/behaviorSe
 import { useI18n } from '@/i18n';
 import CloseDialog from '@/components/common/CloseDialog';
 import SensitiveAuditDialog from '@/components/settings/SensitiveAuditDialog';
-import { checkForUpdate } from '@/core/updates/checker';
 import { sendConsolePing } from '@/utils/consolePing';
 import { fetchUnseenAnnouncements, markSeen, type AnnouncementItem } from '@/utils/consoleAnnouncement';
 import AnnouncementBanner from '@/components/common/AnnouncementBanner';
@@ -99,6 +99,7 @@ function App() {
   const closeSystemSettings = useSettingsStore((s) => s.closeSystemSettings);
   const closeAutomation = useSettingsStore((s) => s.closeAutomation);
   const closeToolbox = useSettingsStore((s) => s.closeToolbox);
+  const closeKnowledge = useSettingsStore((s) => s.closeKnowledge);
   const activeConv = useActiveConversation();
   const { t } = useI18n();
 
@@ -337,22 +338,21 @@ function App() {
     }
   }, [pendingWsReq, activeConvIdForDrain]);
 
-  // Update checks: delayed startup check (avoid launch contention) +
-  // 6h background poll (reach users who keep app running for days).
-  // checker.ts has a 6h throttle, so overlapping calls won't duplicate requests.
+  // Pre-seed knowledge base with company files on first launch
   useEffect(() => {
-    const run = () =>
-      void checkForUpdate().catch((err) => {
-        console.warn('[App] Update check error:', err);
-      });
-
-    const startupTimer = setTimeout(run, 30_000);
-    const pollTimer = setInterval(run, 6 * 60 * 60 * 1000);
-
-    return () => {
-      clearTimeout(startupTimer);
-      clearInterval(pollTimer);
+    const seed = async () => {
+      try {
+        const { preseedKnowledge } = await import('@/core/knowledge/preseed');
+        const result = await preseedKnowledge();
+        if (result.indexed > 0) {
+          console.log(`[Knowledge] Pre-seeded ${result.indexed} entries from preset files`);
+        }
+      } catch {
+        // Non-critical — preseed only works in Tauri context
+      }
     };
+    const timer = setTimeout(seed, 5000);
+    return () => clearTimeout(timer);
   }, []);
 
   // Cloud announcements: poll on startup (60s delay) + every 6h.
@@ -409,7 +409,7 @@ function App() {
   // Hide native title bar text on macOS (overlay mode — title shown in sidebar instead)
   // On Windows, show app name in native title bar
   useEffect(() => {
-    getCurrentWindow().setTitle(isMacOS() ? '' : 'Abu');
+    getCurrentWindow().setTitle(isMacOS() ? '' : 'CaiBao');
   }, []);
 
   // macOS uses overlay title bar (content behind traffic lights); Windows uses native title bar
@@ -428,11 +428,12 @@ function App() {
 
       {/* Sidebar & panel toggle buttons — positioned in title bar area on macOS, top bar on Windows */}
       <div className={cn('fixed left-0 right-0 z-40 pointer-events-none', mac ? 'top-0 h-11' : 'top-0 h-8')}>
-        {viewMode === 'settings' || viewMode === 'automation' || viewMode === 'toolbox' ? (
+        {viewMode === 'settings' || viewMode === 'automation' || viewMode === 'toolbox' || viewMode === 'knowledge' ? (
           <button
             onClick={
               viewMode === 'settings' ? closeSystemSettings
               : viewMode === 'automation' ? closeAutomation
+              : viewMode === 'knowledge' ? closeKnowledge
               : closeToolbox
             }
             className="absolute flex items-center gap-1.5 btn-ghost px-2 py-1 text-[var(--abu-text-tertiary)] hover:text-[var(--abu-text-primary)] hover:bg-[var(--abu-bg-hover)] rounded-md pointer-events-auto text-sm"
@@ -442,6 +443,7 @@ function App() {
             <span>
               {viewMode === 'settings' ? t.settings.title
                : viewMode === 'automation' ? t.sidebar.automation
+               : viewMode === 'knowledge' ? t.knowledge.title
                : t.sidebar.toolbox}
             </span>
           </button>
@@ -473,7 +475,7 @@ function App() {
         <div
           className="shrink-0 overflow-hidden"
           style={{
-            width: (sidebarCollapsed || viewMode === 'settings' || viewMode === 'automation' || viewMode === 'toolbox') ? 0 : 260,
+            width: (sidebarCollapsed || viewMode === 'settings' || viewMode === 'automation' || viewMode === 'toolbox' || viewMode === 'knowledge') ? 0 : 260,
           }}
         >
           <Sidebar />
@@ -484,6 +486,7 @@ function App() {
           {viewMode === 'automation' && <AutomationView />}
           {viewMode === 'toolbox' && <ToolboxView />}
           {viewMode === 'settings' && <SystemSettingsView />}
+          {viewMode === 'knowledge' && <KnowledgeSection />}
           {(viewMode === 'chat' || !viewMode) && <ChatView />}
         </main>
 

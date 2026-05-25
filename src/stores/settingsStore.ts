@@ -6,7 +6,7 @@ import { deriveUiCaps } from '../core/llm/modelCapabilities';
 import type { PermissionMode } from '../core/permissions/permissionMode';
 import type { WebSearchProviderType } from '../core/search/providers';
 import { setLanguage, initLanguage, type LanguageSetting } from '@/i18n';
-import type { UpdateInfo } from '@/core/updates/checker';
+type UpdateInfo = { version: string; releaseNotes?: string; releaseUrl?: string };
 import {
   SECRET_KEYS,
   getSecret,
@@ -270,7 +270,7 @@ function createDefaultProviders(): ProviderInstance[] {
 // View mode types
 // ============================================================
 
-export type ViewMode = 'chat' | 'automation' | 'toolbox' | 'settings';
+export type ViewMode = 'chat' | 'automation' | 'toolbox' | 'settings' | 'knowledge';
 export type AutomationTab = 'schedule' | 'trigger';
 export type SystemSettingsTab = 'general' | 'ai-services' | 'sandbox' | 'im-channels' | 'personal-memory' | 'soul' | 'diagnostic' | 'usage' | 'about' | 'feedback' | 'sponsor';
 export type ToolboxTab = 'skills' | 'agents' | 'mcp';
@@ -418,6 +418,8 @@ interface SettingsActions {
   openToolbox: (tab?: ToolboxTab) => void;
   closeToolbox: () => void;
   setActiveToolboxTab: (tab: ToolboxTab) => void;
+  openKnowledge: () => void;
+  closeKnowledge: () => void;
   setToolboxSearchQuery: (query: string) => void;
   setInstallingItem: (itemId: string | null) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -877,6 +879,10 @@ export const useSettingsStore = create<SettingsStore>()(
       setActiveToolboxTab: (tab) => set({ activeToolboxTab: tab, toolboxSearchQuery: '' }),
       setToolboxSearchQuery: (query) => set({ toolboxSearchQuery: query }),
       setInstallingItem: (itemId) => set({ installingItem: itemId }),
+      openKnowledge: () =>
+        set({ viewMode: 'knowledge' as ViewMode }),
+      closeKnowledge: () =>
+        set({ viewMode: 'chat' as ViewMode }),
       setViewMode: (viewMode) => set({ viewMode }),
       toggleSkillEnabled: (skillName) => set((s) => ({
         disabledSkills: s.disabledSkills.includes(skillName)

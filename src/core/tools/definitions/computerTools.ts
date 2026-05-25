@@ -282,14 +282,14 @@ export const computerTool: ToolDefinition = {
         // subsequent times it's a no-op). The dialog has an "Open System Settings" button.
         const granted = await invoke<boolean>('request_screen_recording');
         if (!granted) {
-          return 'Error: 没有录屏权限。请在弹出的系统对话框中点击「打开系统设置」，授权 Abu 后重启。\n\nNo Screen Recording permission. Please click "Open System Settings" in the dialog, grant Abu access, then restart Abu.';
+          return 'Error: 没有录屏权限。请在弹出的系统对话框中点击「打开系统设置」，授权 CaiBao 后重启。\n\nNo Screen Recording permission. Please click "Open System Settings" in the dialog, grant CaiBao access, then restart CaiBao.';
         }
       }
 
       if (action !== 'screenshot' && !perms.accessibility) {
         // No system dialog for Accessibility — need to open Settings directly
         await openMacOSSettings('Accessibility');
-        return 'Error: 没有辅助功能权限。已自动打开系统设置，请在「辅助功能」中授权 Abu，然后重启 Abu。\n\nNo Accessibility permission. System Settings has been opened — please grant Abu access in Accessibility, then restart Abu.';
+        return 'Error: 没有辅助功能权限。已自动打开系统设置，请在「辅助功能」中授权 CaiBao，然后重启 CaiBao。\n\nNo Accessibility permission. System Settings has been opened — please grant CaiBao access in Accessibility, then restart CaiBao.';
       }
     } catch {
       // Non-macOS or FFI unavailable — proceed

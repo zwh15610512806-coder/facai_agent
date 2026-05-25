@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useI18n } from '@/i18n';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { Camera } from 'lucide-react';
-import abuAvatar from '@/assets/abu-avatar.png';
+import abuAvatar from '@/assets/facai-logo.png';
 
 interface ProfileEditModalProps {
   open: boolean;
@@ -82,8 +82,8 @@ export default function ProfileEditModal({ open, onClose }: ProfileEditModalProp
             onClick={() => fileInputRef.current?.click()}
             className="relative group"
           >
-            <div className="w-16 h-16 rounded-full overflow-hidden">
-              <img src={displayAvatar} alt="Avatar" className="w-full h-full object-cover" />
+            <div className="w-16 h-16 rounded-xl overflow-hidden">
+              <img src={displayAvatar} alt="Avatar" className="w-full h-full object-contain" />
             </div>
             <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
               <Camera className="h-5 w-5 text-white" />

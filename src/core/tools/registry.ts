@@ -345,9 +345,9 @@ function isOSPermissionError(result: string): boolean {
 
 function formatOSPermissionGuide(originalError: string): string {
   if (isWindows()) {
-    return `${originalError}\n\n系统未授权阿布访问此位置。请以管理员身份运行 Abu，或检查文件夹权限设置。`;
+    return `${originalError}\n\n系统未授权采宝访问此位置。请以管理员身份运行 CaiBao，或检查文件夹权限设置。`;
   }
-  return `${originalError}\n\nmacOS 系统未授权阿布访问此位置。请前往「系统设置 → 隐私与安全性 → 文件和文件夹」中授权 Abu，然后重启 Abu。`;
+  return `${originalError}\n\nmacOS 系统未授权采宝访问此位置。请前往「系统设置 → 隐私与安全性 → 文件和文件夹」中授权 CaiBao，然后重启 CaiBao。`;
 }
 
 // Re-export types for convenience

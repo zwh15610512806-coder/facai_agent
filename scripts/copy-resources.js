@@ -21,7 +21,7 @@ for (const name of ['builtin-skills', 'builtin-agents']) {
   }
 }
 
-const resources = ['builtin-skills', 'builtin-agents'];
+const resources = ['builtin-skills', 'builtin-agents', 'company-config'];
 
 for (const name of resources) {
   const src = resolve(root, name);
