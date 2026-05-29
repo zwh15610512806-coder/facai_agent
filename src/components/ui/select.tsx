@@ -97,7 +97,7 @@ export function Select({ value, onChange, options, placeholder, variant = 'defau
         type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-2 rounded-lg border border-[var(--abu-border)] text-sm text-left transition-all',
+          'flex min-w-0 items-center gap-2 rounded-lg border border-[var(--abu-border)] text-sm text-left transition-all',
           'focus:outline-none focus:ring-2 focus:ring-[var(--abu-clay-ring)] focus:border-[var(--abu-clay)]',
           'hover:border-[var(--abu-border-hover)]',
           open && 'ring-2 ring-[var(--abu-clay-ring)] border-[var(--abu-clay)]',
@@ -106,7 +106,12 @@ export function Select({ value, onChange, options, placeholder, variant = 'defau
             : 'w-full h-9 px-3 justify-between bg-[var(--abu-bg-muted)]',
         )}
       >
-        <span className={cn(!selectedOption ? 'text-[var(--abu-text-placeholder)]' : 'text-[var(--abu-text-primary)]')}>
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate whitespace-nowrap',
+            !selectedOption ? 'text-[var(--abu-text-placeholder)]' : 'text-[var(--abu-text-primary)]',
+          )}
+        >
           {selectedOption?.label ?? placeholder ?? '...'}
         </span>
         <ChevronDown

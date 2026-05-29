@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, FileText } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, FileText, RectangleHorizontal, RectangleVertical, Sparkles, ImagePlus, Box, AtSign, Check } from 'lucide-react';
 import { ModelSelector, CapabilityBadge } from '@/components/chat/ModelSelector';
 import AgentSelector from '@/components/chat/AgentSelector';
+import SkillSelector from '@/components/chat/SkillSelector';
 import { open } from '@tauri-apps/plugin-dialog';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
@@ -27,6 +28,8 @@ import PromoteToProjectHint from '@/components/chat/PromoteToProjectHint';
 
 interface ChatInputProps {
   variant: 'welcome' | 'chat';
+  presentation?: 'default' | 'creation';
+  creationMode?: 'image' | 'video';
   onSend: (message: string, images?: ImageAttachment[], workspacePath?: string | null) => void;
   disabled?: boolean;
   /** Custom placeholder from scenario guide (welcome variant only) */
@@ -45,6 +48,30 @@ interface FileAttachmentItem {
   id: string;
   path: string;
   name: string;
+}
+
+type ImageAspectRatio = 'smart' | '21:9' | '16:9' | '3:2' | '4:3' | '1:1' | '3:4' | '2:3' | '9:16';
+type ImageModelId = 'seedream-5.0-lite' | 'seedream-4.7' | 'seedream-4.6' | 'seedream-4.5' | 'seedream-4.1';
+type ImageResolution = '2k' | '4k';
+type ImageSettingsPanel = 'model' | 'layout' | 'subject' | null;
+
+const IMAGE_ASPECT_RATIOS: ImageAspectRatio[] = [
+  'smart',
+  '21:9',
+  '16:9',
+  '3:2',
+  '4:3',
+  '1:1',
+  '3:4',
+  '2:3',
+  '9:16',
+];
+
+function getAspectRatioIcon(ratio: ImageAspectRatio) {
+  if (ratio === 'smart') return Sparkles;
+  if (ratio === '1:1') return Square;
+  if (['3:4', '2:3', '9:16'].includes(ratio)) return RectangleVertical;
+  return RectangleHorizontal;
 }
 
 /** Read a local image file path into an ImageAttachment via Tauri fs */
@@ -84,10 +111,16 @@ async function processFilePaths(
   }
 }
 
-export default function ChatInput({ variant, onSend, disabled, scenarioPlaceholder, onInputChange }: ChatInputProps) {
+export default function ChatInput({ variant, presentation = 'default', creationMode, onSend, disabled, scenarioPlaceholder, onInputChange }: ChatInputProps) {
   const isWelcome = variant === 'welcome';
+  const isCreationPresentation = isWelcome && presentation === 'creation';
+  const isImageCreation = isCreationPresentation && creationMode === 'image';
 
   const [text, setText] = useState('');
+  const [imageModel, setImageModel] = useState<ImageModelId>('seedream-4.7');
+  const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio>('1:1');
+  const [imageResolution, setImageResolution] = useState<ImageResolution>('2k');
+  const [imageSettingsPanel, setImageSettingsPanel] = useState<ImageSettingsPanel>(null);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [files, setFiles] = useState<FileAttachmentItem[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<SuggestionItem | null>(null);
@@ -125,6 +158,7 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
   // Store hooks (always called)
   const cancelStreaming = useChatStore((s) => s.cancelStreaming);
   const pendingInput = useChatStore((s) => s.pendingInput);
+  const inputResetVersion = useChatStore((s) => s.inputResetVersion);
   const setPendingInput = useChatStore((s) => s.setPendingInput);
   const activeConv = useActiveConversation();
   const skills = useDiscoveryStore((s) => s.skills);
@@ -147,6 +181,38 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
   const modelCaps = activeModelInfo?.capabilities ?? [];
   const [showModelPicker, setShowModelPicker] = useState(false);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+
+  const imageModelOptions = useMemo(() => ([
+    {
+      id: 'seedream-5.0-lite' as const,
+      label: t.chat.aigcCreation.imageModelSeedream50Lite,
+      description: t.chat.aigcCreation.imageModelSeedream50LiteDesc,
+    },
+    {
+      id: 'seedream-4.7' as const,
+      label: t.chat.aigcCreation.imageModelSeedream47,
+      description: t.chat.aigcCreation.imageModelSeedream47Desc,
+    },
+    {
+      id: 'seedream-4.6' as const,
+      label: t.chat.aigcCreation.imageModelSeedream46,
+      description: t.chat.aigcCreation.imageModelSeedream46Desc,
+    },
+    {
+      id: 'seedream-4.5' as const,
+      label: t.chat.aigcCreation.imageModelSeedream45,
+      description: t.chat.aigcCreation.imageModelSeedream45Desc,
+    },
+    {
+      id: 'seedream-4.1' as const,
+      label: t.chat.aigcCreation.imageModelSeedream41,
+      description: t.chat.aigcCreation.imageModelSeedream41Desc,
+    },
+  ]), [t]);
+  const selectedImageModel = imageModelOptions.find((option) => option.id === imageModel) ?? imageModelOptions[1];
+  const imageResolutionLabel = imageResolution === '4k'
+    ? t.chat.aigcCreation.resolution4k
+    : t.chat.aigcCreation.resolution2k;
 
   // Close model picker on click outside
   useEffect(() => {
@@ -255,6 +321,20 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
 
     prevConvIdRef.current = activeConvId;
   }, [activeConvId]);
+
+  useEffect(() => {
+    setText('');
+    setImages([]);
+    setFiles([]);
+    setImageModel('seedream-4.7');
+    setSelectedSkill(null);
+    setSelectedAgent(null);
+    setImageAspectRatio('1:1');
+    setImageResolution('2k');
+    setImageSettingsPanel(null);
+    setSuggestionsDismissed(false);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+  }, [inputResetVersion]);
 
   // Consume pending input (just set text; auto-selection handled in a later effect)
   useEffect(() => {
@@ -396,7 +476,7 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
   }, [text, suggestionType, suggestions, selectedSkill, selectedAgent]);
 
   // Auto-resize textarea
-  const maxHeight = isWelcome ? 180 : 160;
+  const maxHeight = isCreationPresentation ? 220 : isWelcome ? 180 : 160;
   useEffect(() => {
     const el = textareaRef.current;
     if (el) {
@@ -408,11 +488,25 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
   const applySuggestion = (item: SuggestionItem) => {
     if (suggestionType === 'agent') {
       setSelectedAgent(item);
+      setSelectedSkill(null);
     } else {
       setSelectedSkill(item);
+      setSelectedAgent(null);
     }
     setText('');
     setSuggestionsDismissed(true);
+    textareaRef.current?.focus();
+  };
+
+  const handleSelectSkill = (skill: SuggestionItem | null) => {
+    setSelectedSkill(skill);
+    if (skill) setSelectedAgent(null);
+    textareaRef.current?.focus();
+  };
+
+  const handleSelectAgent = (agent: SuggestionItem | null) => {
+    setSelectedAgent(agent);
+    if (agent) setSelectedSkill(null);
     textareaRef.current?.focus();
   };
 
@@ -430,6 +524,10 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
     setText('');
     setImages([]);
     setFiles([]);
+    setImageModel('seedream-4.7');
+    setImageAspectRatio('1:1');
+    setImageResolution('2k');
+    setImageSettingsPanel(null);
     // Intentionally KEEP selectedSkill / selectedAgent — the chip is sticky
     // across messages in the same conversation, so users don't have to re-
     // pick the expert (or /skill) on every turn. They can clear explicitly
@@ -449,8 +547,16 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
       ? files.map((f) => `[Attachment: \`${f.path}\`]`).join('\n')
       : '';
 
+    const imageGenerationParams = isImageCreation
+      ? t.chat.aigcCreation.imageParamsMessage
+        .replace('{model}', selectedImageModel.label)
+        .replace('{ratio}', imageAspectRatio === 'smart' ? t.chat.aigcCreation.aspectRatioSmart : imageAspectRatio)
+        .replace('{resolution}', imageResolutionLabel)
+        .replace('{count}', '1')
+      : '';
+
     // Compose parts, then join with newline
-    const bodyParts = [fileContext, trimmed].filter(Boolean).join('\n');
+    const bodyParts = [fileContext, trimmed, imageGenerationParams].filter(Boolean).join('\n');
 
     let message: string;
     if (selectedAgent) {
@@ -601,6 +707,7 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
         <div
           className={cn(
             'relative bg-white rounded-2xl border transition-all',
+            isCreationPresentation && 'rounded-[20px]',
             !isWelcome && isDragging
               ? 'border-[var(--abu-clay)] ring-2 ring-[var(--abu-clay-ring)]'
               : 'border-[var(--abu-border-subtle)] focus-within:border-[var(--abu-border-hover)]'
@@ -654,7 +761,9 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
           <div className={cn(
             'flex items-start gap-0',
             isWelcome
-              ? hasAttachments ? 'px-5 pt-1 pb-1' : 'px-5 pt-4 pb-1'
+              ? isCreationPresentation
+                ? hasAttachments ? 'px-6 pt-2 pb-2' : 'px-6 pt-5 pb-2'
+                : hasAttachments ? 'px-5 pt-1 pb-1' : 'px-5 pt-4 pb-1'
               : hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-3.5 pb-1'
           )}>
             {/* Inline command prefix (unified for both variants) */}
@@ -693,20 +802,229 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
               onPaste={handlePaste}
               placeholder={placeholder}
               disabled={disabled}
-              rows={isWelcome ? 2 : 1}
+              rows={isCreationPresentation ? 3 : isWelcome ? 2 : 1}
               className={cn(
                 'flex-1 bg-transparent resize-none outline-none text-[var(--abu-text-primary)] leading-relaxed',
                 isWelcome
-                  ? 'min-h-[52px] max-h-[180px] text-[15px]'
+                  ? isCreationPresentation
+                    ? 'min-h-[78px] max-h-[220px] text-[15.5px]'
+                    : 'min-h-[52px] max-h-[180px] text-[15px]'
                   : 'min-h-[24px] max-h-[160px] py-0.5 text-[14.5px] disabled:opacity-40'
               )}
             />
           </div>
 
+          {isImageCreation && (
+            <div className="relative px-6 pb-4">
+              {imageSettingsPanel && (
+                <div
+                  role="dialog"
+                  aria-label={
+                    imageSettingsPanel === 'model'
+                      ? t.chat.aigcCreation.modelLabel
+                      : imageSettingsPanel === 'layout'
+                        ? t.chat.aigcCreation.aspectRatioLabel
+                        : t.chat.aigcCreation.subjectLabel
+                  }
+                  className="absolute left-6 right-6 bottom-[64px] z-30 max-h-[320px] overflow-y-auto rounded-2xl border border-[var(--abu-border-subtle)] bg-white p-3 shadow-lg"
+                >
+                  {imageSettingsPanel === 'model' && (
+                    <div>
+                      <div className="mb-2 px-1 text-[12px] text-[var(--abu-text-tertiary)]">
+                        {t.chat.aigcCreation.modelLabel}
+                      </div>
+                      <div className="space-y-1">
+                        {imageModelOptions.map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => {
+                              setImageModel(option.id);
+                              setImageSettingsPanel(null);
+                            }}
+                            className={cn(
+                              'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors',
+                              option.id === imageModel ? 'bg-[var(--abu-bg-muted)]' : 'hover:bg-[var(--abu-bg-hover)]'
+                            )}
+                          >
+                            <Box className="h-4 w-4 shrink-0 text-[var(--abu-text-tertiary)]" strokeWidth={1.75} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[14px] font-medium text-[var(--abu-text-primary)]">{option.label}</span>
+                              <span className="block truncate text-[12px] text-[var(--abu-text-tertiary)]">{option.description}</span>
+                            </span>
+                            {option.id === imageModel && <Check className="h-4 w-4 shrink-0 text-[var(--abu-text-primary)]" strokeWidth={1.75} />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {imageSettingsPanel === 'layout' && (
+                    <div className="space-y-4">
+                      <div>
+                        <div className="mb-2 px-1 text-[12px] text-[var(--abu-text-tertiary)]">
+                          {t.chat.aigcCreation.aspectRatioLabel}
+                        </div>
+                        <div className="flex flex-wrap gap-1 rounded-xl bg-[var(--abu-bg-muted)] p-1.5">
+                          {IMAGE_ASPECT_RATIOS.map((ratio) => {
+                            const Icon = getAspectRatioIcon(ratio);
+                            const label = ratio === 'smart' ? t.chat.aigcCreation.aspectRatioSmart : ratio;
+                            const selected = imageAspectRatio === ratio;
+                            return (
+                              <button
+                                key={ratio}
+                                type="button"
+                                aria-pressed={selected}
+                                aria-label={`${t.chat.aigcCreation.aspectRatioLabel} ${label}`}
+                                onClick={() => setImageAspectRatio(ratio)}
+                                className={cn(
+                                  'flex h-11 min-w-[58px] flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-[11px] transition-colors',
+                                  selected
+                                    ? 'bg-white text-[var(--abu-text-primary)] shadow-sm'
+                                    : 'text-[var(--abu-text-secondary)] hover:bg-white/70 hover:text-[var(--abu-text-primary)]'
+                                )}
+                              >
+                                <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                                <span>{label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="mb-2 px-1 text-[12px] text-[var(--abu-text-tertiary)]">
+                          {t.chat.aigcCreation.resolutionLabel}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 rounded-xl bg-[var(--abu-bg-muted)] p-1.5">
+                          {(['2k', '4k'] as ImageResolution[]).map((resolution) => {
+                            const label = resolution === '4k' ? t.chat.aigcCreation.resolution4k : t.chat.aigcCreation.resolution2k;
+                            return (
+                              <button
+                                key={resolution}
+                                type="button"
+                                aria-pressed={imageResolution === resolution}
+                                onClick={() => setImageResolution(resolution)}
+                                className={cn(
+                                  'h-9 rounded-lg px-3 text-[13px] font-medium transition-colors',
+                                  imageResolution === resolution
+                                    ? 'bg-white text-[var(--abu-text-primary)] shadow-sm'
+                                    : 'text-[var(--abu-text-secondary)] hover:bg-white/70 hover:text-[var(--abu-text-primary)]'
+                                )}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {imageSettingsPanel === 'subject' && (
+                    <div className="flex min-h-[120px] flex-col items-center justify-center gap-3 text-center">
+                      <AtSign className="h-8 w-8 text-[var(--abu-text-muted)]" strokeWidth={1.5} />
+                      <div>
+                        <p className="text-[13px] font-medium text-[var(--abu-text-secondary)]">{t.chat.aigcCreation.subjectEmpty}</p>
+                        <p className="mt-1 text-[12px] text-[var(--abu-text-tertiary)]">{t.chat.aigcCreation.subjectHint}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setImageSettingsPanel(null)}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {t.chat.aigcCreation.subjectCreate}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="relative z-10 flex items-center gap-2 overflow-x-auto rounded-2xl bg-[var(--abu-bg-muted)] p-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={handleAttach}
+                  aria-label={t.chat.aigcCreation.referenceImageLabel}
+                  title={t.chat.aigcCreation.referenceImageLabel}
+                  className="h-9 w-9 shrink-0 rounded-xl bg-white text-[var(--abu-clay)] hover:bg-white"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setImageSettingsPanel(imageSettingsPanel === 'model' ? null : 'model')}
+                  aria-expanded={imageSettingsPanel === 'model'}
+                  className="h-9 shrink-0 rounded-xl bg-white px-3 text-[var(--abu-text-primary)] hover:bg-white"
+                >
+                  <Box className="h-4 w-4 text-[var(--abu-text-tertiary)]" />
+                  <span>{selectedImageModel.label}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setImageSettingsPanel(imageSettingsPanel === 'layout' ? null : 'layout')}
+                  aria-expanded={imageSettingsPanel === 'layout'}
+                  className="h-9 shrink-0 rounded-xl bg-white px-3 text-[var(--abu-text-primary)] hover:bg-white"
+                >
+                  <Square className="h-4 w-4 text-[var(--abu-text-tertiary)]" />
+                  <span>{imageAspectRatio === 'smart' ? t.chat.aigcCreation.aspectRatioSmart : imageAspectRatio}</span>
+                  <span className="text-[var(--abu-text-tertiary)]">{imageResolutionLabel}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setImageSettingsPanel(imageSettingsPanel === 'subject' ? null : 'subject')}
+                  aria-label={t.chat.aigcCreation.subjectLabel}
+                  aria-expanded={imageSettingsPanel === 'subject'}
+                  title={t.chat.aigcCreation.subjectLabel}
+                  className="h-9 w-9 shrink-0 rounded-xl bg-white text-[var(--abu-text-secondary)] hover:bg-white"
+                >
+                  <AtSign className="h-4 w-4" />
+                </Button>
+
+                <div className="min-w-4 flex-1" />
+
+                <span className="shrink-0 text-[12px] font-medium text-[var(--abu-text-tertiary)]">
+                  {t.chat.aigcCreation.imageCountLabel}
+                </span>
+
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  onClick={handleSend}
+                  disabled={!hasContent}
+                  aria-label={t.chat.start}
+                  className={cn(
+                    'h-9 w-9 shrink-0 rounded-full',
+                    hasContent
+                      ? 'bg-[var(--abu-text-primary)] text-white hover:bg-[var(--abu-text-primary)]'
+                      : 'bg-[var(--abu-bg-hover)] text-[var(--abu-text-muted)]'
+                  )}
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Bottom Toolbar */}
-          {isWelcome ? (
+          {!isImageCreation && (isWelcome ? (
             /* Welcome variant: Model picker + FolderSelector + [+] + --- + Start button */
-            <div className="flex items-center gap-2 px-5 pb-3.5">
+            <div className={cn(
+              'flex items-center gap-2',
+              isCreationPresentation ? 'px-6 pb-4' : 'px-5 pb-3.5'
+            )}>
               {/* Model picker (same as chat variant) */}
               <div className="relative" ref={modelPickerRef}>
                 <button
@@ -731,8 +1049,13 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
               <AgentSelector
                 agents={agents}
                 selectedName={selectedAgent?.name ?? null}
-                onSelect={setSelectedAgent}
+                onSelect={handleSelectAgent}
                 disabledAgentSet={disabledAgentSet}
+              />
+              <SkillSelector
+                skills={skills}
+                selectedName={selectedSkill?.name ?? null}
+                onSelect={handleSelectSkill}
               />
               <FolderSelector
                 currentPath={localWorkspace}
@@ -795,8 +1118,14 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
                 <AgentSelector
                   agents={agents}
                   selectedName={selectedAgent?.name ?? null}
-                  onSelect={setSelectedAgent}
+                  onSelect={handleSelectAgent}
                   disabledAgentSet={disabledAgentSet}
+                />
+
+                <SkillSelector
+                  skills={skills}
+                  selectedName={selectedSkill?.name ?? null}
+                  onSelect={handleSelectSkill}
                 />
 
                 <Button
@@ -837,7 +1166,7 @@ export default function ChatInput({ variant, onSend, disabled, scenarioPlacehold
                 </Button>
               )}
             </div>
-          )}
+          ))}
         </div>
 
         {/* Promote-to-project hint: shown only on welcome when the bound

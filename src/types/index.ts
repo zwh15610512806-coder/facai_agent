@@ -2,6 +2,20 @@
 // ABU — Core Type Definitions
 // ============================================================
 
+export type {
+  FileSearchConfig,
+  FileSearchFileDetail,
+  FileSearchFileType,
+  FileSearchIndexStatus,
+  FileSearchPreview,
+  FileSearchPreviewKind,
+  FileSearchQuery,
+  FileSearchQueryResponse,
+  FileSearchResult,
+  FileSearchSortBy,
+  FileSearchSourceConfig,
+} from './fileSearch';
+
 // --- Messages & Conversations ---
 
 // ─── Interactive Notice Cards (Module I) ───────────────────────────────

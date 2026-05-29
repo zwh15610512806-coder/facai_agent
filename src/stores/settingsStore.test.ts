@@ -427,3 +427,19 @@ describe('settingsStore whitespace trim', () => {
     });
   });
 });
+
+describe('settingsStore file search view', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({
+      viewMode: 'chat',
+    });
+  });
+
+  it('opens and closes the file search view', () => {
+    useSettingsStore.getState().openFileSearch();
+    expect(useSettingsStore.getState().viewMode).toBe('fileSearch');
+
+    useSettingsStore.getState().closeFileSearch();
+    expect(useSettingsStore.getState().viewMode).toBe('chat');
+  });
+});

@@ -21,6 +21,7 @@ mod secrets;
 mod atomic_write;
 mod notice;
 mod notice_db;
+mod file_search;
 
 /// Maximum number of output lines to collect from a shell command.
 /// Prevents OOM when commands produce unbounded output.
@@ -1252,6 +1253,21 @@ pub fn run() {
                 }
             }
 
+            // Initialize File Search SQLite database
+            let file_search_db_path = app
+                .path()
+                .app_data_dir()
+                .map(|dir| dir.join("file_search.sqlite"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("file_search.sqlite"));
+            match file_search::FileSearchState::open(&file_search_db_path) {
+                Ok(db) => {
+                    app.manage(db);
+                }
+                Err(e) => {
+                    eprintln!("[file_search] Failed to init: {}. File search will be unavailable.", e);
+                }
+            }
+
             // Build tray menu — bilingual labels for cross-locale compatibility
             let show_item = MenuItem::with_id(app, "show", "Show Abu / 显示窗口", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit / 退出", true, None::<&str>)?;
@@ -1343,6 +1359,14 @@ pub fn run() {
             notice_db::notice_inbox_pending,
             notice_db::notice_inbox_mark_delivered,
             notice_db::notice_inbox_cleanup,
+            file_search::file_search_query,
+            file_search::file_search_get_file,
+            file_search::file_search_preview,
+            file_search::file_search_open_file,
+            file_search::file_search_start_index,
+            file_search::file_search_index_status,
+            file_search::file_search_suggest,
+            file_search::file_search_entity_candidates,
             secret_get,
             secret_set,
             secret_delete,

@@ -24,6 +24,7 @@ import SourceInfoBar from './SourceInfoBar';
 import ComputerUseStatusBar from './ComputerUseStatusBar';
 import ConvIdBadge from './ConvIdBadge';
 import UsageChip from './UsageChip';
+import { cn } from '@/lib/utils';
 
 /**
  * Groups messages by loopId for rendering.
@@ -79,6 +80,7 @@ export default function ChatView() {
   // the first impression is the agent's persona; cleared once the first
   // message lands. Works for both builtin experts and user-defined agents.
   const pendingAgentName = useChatStore((s) => s.pendingAgentName);
+  const pendingAgentSurface = useChatStore((s) => s.pendingAgentSurface);
   const pendingAgent = pendingAgentName ? agentRegistry.getAgent(pendingAgentName) ?? null : null;
   // Resolve i18n display fields with graceful fallback to the canonical name/
   // description on the agent. Locale-specific fields are populated by builtin
@@ -189,13 +191,8 @@ export default function ChatView() {
     }
 
     let convId = activeConv?.id;
-    const isNewConversation = !convId;
     if (!convId) {
       convId = createConversation(workspacePath);
-    }
-    // Auto-collapse sidebar when sending first message in a new conversation
-    if (isNewConversation && !useSettingsStore.getState().sidebarCollapsed) {
-      useSettingsStore.getState().toggleSidebar();
     }
     // Re-enable auto-scroll when user sends a message.
     // Don't scroll immediately — let MutationObserver scroll after the new message renders.
@@ -220,6 +217,8 @@ export default function ChatView() {
   // Scenario guide state — lifted here so ChatInput can receive the custom placeholder
   const [scenarioPlaceholder, setScenarioPlaceholder] = useState<string | null>(null);
   const [guideVisible, setGuideVisible] = useState(true);
+  const isCreationSurface = pendingAgentSurface === 'dreamina-image' || pendingAgentSurface === 'dreamina-video';
+  const showScenarioGuide = !isCreationSurface;
 
   const handleSelectPrompt = useCallback((prompt: string) => {
     // Fill the prompt into the input via pendingInput
@@ -272,12 +271,15 @@ export default function ChatView() {
     return (
       <div className="flex flex-col h-full bg-[var(--abu-bg-base)]">
         <div className="flex-1 flex flex-col items-center justify-start overflow-y-auto px-8 pt-[12vh] pb-12">
-          <div className="w-full max-w-2xl">
+          <div className={cn('w-full', isCreationSurface ? 'max-w-3xl' : 'max-w-2xl')}>
             {/* Title */}
-            <div className="text-center mb-8">
-              {pendingAgentDisplay ? (
+            <div
+              data-testid={isCreationSurface ? 'creation-welcome-surface' : undefined}
+              className="text-center mb-8"
+            >
+              {pendingAgentDisplay && !isCreationSurface ? (
                 <>
-                  {/* Agent avatar (emoji in tinted circle) */}
+                  {/* Agent avatar */}
                   <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-[var(--abu-bg-active)] flex items-center justify-center text-5xl select-none">
                     {pendingAgentDisplay.avatar}
                   </div>
@@ -337,6 +339,8 @@ export default function ChatView() {
             <div>
               <ChatInput
                 variant="welcome"
+                presentation={isCreationSurface ? 'creation' : 'default'}
+                creationMode={pendingAgentSurface === 'dreamina-image' ? 'image' : pendingAgentSurface === 'dreamina-video' ? 'video' : undefined}
                 onSend={handleSend}
                 scenarioPlaceholder={scenarioPlaceholder}
                 onInputChange={handleWelcomeInputChange}
@@ -344,11 +348,13 @@ export default function ChatView() {
             </div>
 
             {/* Scenario Guide */}
-            <ScenarioGuide
-              onSelectPrompt={handleSelectPrompt}
-              onScenarioChange={handleScenarioChange}
-              visible={guideVisible}
-            />
+            {showScenarioGuide && (
+              <ScenarioGuide
+                onSelectPrompt={handleSelectPrompt}
+                onScenarioChange={handleScenarioChange}
+                visible={guideVisible}
+              />
+            )}
           </div>
         </div>
       </div>

@@ -19,6 +19,8 @@ export const SECRET_KEYS = {
   provider: (id: string) => `provider:${id}`,
   auxWebSearch: 'aux:webSearch',
   auxImageGen: 'aux:imageGen',
+  fileSearchSourcePassword: (id: string) => `fileSearch:source:${id}:password`,
+  fileSearchAiKey: 'fileSearch:ai:key',
 } as const;
 
 export async function getSecret(key: string): Promise<string | null> {

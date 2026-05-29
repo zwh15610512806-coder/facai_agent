@@ -229,6 +229,11 @@ export interface TranslationDict {
     inputTokens: string;
     outputTokens: string;
     addAttachment: string;
+    // Skill selector in toolbar
+    pickSkill: string;
+    pickSkillEmpty: string;
+    pickSkillClear: string;
+    pickSkillSearch: string;
     // Agent selector in toolbar
     pickAgent: string;
     pickAgentEmpty: string;
@@ -250,6 +255,42 @@ export interface TranslationDict {
     scenarioPrompts: Record<string, string>;
     /** Full prompt sent on click (falls back to scenarioPrompts if absent) */
     scenarioFullPrompts: Record<string, string>;
+    aigcCreation: {
+      imageTitle: string;
+      videoTitle: string;
+      imageDescription: string;
+      videoDescription: string;
+      dreaminaTitle: string;
+      dreaminaDescription: string;
+      imageTag: string;
+      videoTag: string;
+      imagePrompt: string;
+      videoPrompt: string;
+      modelLabel: string;
+      imageModelSeedream50Lite: string;
+      imageModelSeedream50LiteDesc: string;
+      imageModelSeedream47: string;
+      imageModelSeedream47Desc: string;
+      imageModelSeedream46: string;
+      imageModelSeedream46Desc: string;
+      imageModelSeedream45: string;
+      imageModelSeedream45Desc: string;
+      imageModelSeedream41: string;
+      imageModelSeedream41Desc: string;
+      aspectRatioLabel: string;
+      aspectRatioSmart: string;
+      aspectRatioMessage: string;
+      resolutionLabel: string;
+      resolution2k: string;
+      resolution4k: string;
+      referenceImageLabel: string;
+      subjectLabel: string;
+      subjectEmpty: string;
+      subjectHint: string;
+      subjectCreate: string;
+      imageCountLabel: string;
+      imageParamsMessage: string;
+    };
     // Context warning bar
     contextWarning: string;
     contextCritical: string;
@@ -1534,8 +1575,6 @@ export interface TranslationDict {
 
   // About
   about: {
-    feedback: string;
-    feedbackDesc: string;
     sponsor: string;
     sponsorDesc: string;
     deviceId: string;
@@ -1574,6 +1613,11 @@ export interface TranslationDict {
   knowledge: {
     title: string;
     description: string;
+    imaDescription: string;
+    imaExternalHint: string;
+    imaSkillPrompt: string;
+    useImaSkill: string;
+    openIma: string;
     entryCount: string;
     sources: string;
     feishuDocs: string;
@@ -1602,6 +1646,60 @@ export interface TranslationDict {
     statusError: string;
     statusIndexing: string;
     searchPlaceholder: string;
+  };
+
+  fileSearch: {
+    title: string;
+    description: string;
+    searchPlaceholder: string;
+    aiSearch: string;
+    keywordSearch: string;
+    filters: string;
+    allTypes: string;
+    documents: string;
+    images: string;
+    videos: string;
+    audio: string;
+    archives: string;
+    folders: string;
+    other: string;
+    extensionPlaceholder: string;
+    folderPlaceholder: string;
+    sortLatest: string;
+    sortOldest: string;
+    sortName: string;
+    sortSize: string;
+    search: string;
+    reindex: string;
+    indexing: string;
+    indexIdle: string;
+    indexDone: string;
+    indexError: string;
+    noResults: string;
+    preciseNoResults: string;
+    removeConditionHint: string;
+    removeCondition: string;
+    backToResults: string;
+    resultCount: string;
+    open: string;
+    preview: string;
+    path: string;
+    fileSize: string;
+    modifiedAt: string;
+    indexedAt: string;
+    sourceCount: string;
+    selectResult: string;
+    previewUnsupported: string;
+    previewMissing: string;
+    previewUnreachable: string;
+    previewLoadFailed: string;
+    openWithSystem: string;
+    connectNetworkDrive: string;
+    aiFallback: string;
+    typeLabel: string;
+    extensionLabel: string;
+    dateRangeLabel: string;
+    dateRangeValue: string;
   };
 
   // Tool error messages (used in core/tools/registry.ts)

@@ -7,6 +7,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import Sidebar from '@/components/sidebar/Sidebar';
 import ChatView from '@/components/chat/ChatView';
 import AutomationView from '@/components/automation/AutomationView';
+import FileSearchView from '@/components/file-search/FileSearchView';
 import KnowledgeSection from '@/components/settings/sections/KnowledgeSection';
 import SystemSettingsView from '@/components/settings/SystemSettingsModal';
 import ToolboxView from '@/components/settings/ToolboxModal';
@@ -482,11 +483,12 @@ function App() {
         </div>
 
         {/* Main — pt-7 on macOS to clear overlay title bar; no padding on Windows (native title bar) */}
-        <main className={cn('flex-1 min-w-0 bg-[var(--abu-bg-base)]', mac ? 'pt-11' : 'pt-8')}>
+        <main className={cn('flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[var(--abu-bg-base)]', mac ? 'pt-11' : 'pt-8')}>
           {viewMode === 'automation' && <AutomationView />}
           {viewMode === 'toolbox' && <ToolboxView />}
           {viewMode === 'settings' && <SystemSettingsView />}
           {viewMode === 'knowledge' && <KnowledgeSection />}
+          {viewMode === 'fileSearch' && <FileSearchView />}
           {(viewMode === 'chat' || !viewMode) && <ChatView />}
         </main>
 

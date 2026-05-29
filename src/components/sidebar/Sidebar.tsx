@@ -4,12 +4,13 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useNoticeBadgeStore } from '@/stores/noticeBadgeStore';
 import { useI18n } from '@/i18n';
-import { Plus, Workflow, Wrench, Trash2, Settings, Download, Upload, Pencil, Undo2, HelpCircle, FolderInput, FolderClosed, ChevronRight, Minus, Search, X, BookOpen } from 'lucide-react';
+import { Plus, Workflow, Wrench, Trash2, Settings, Download, Upload, Pencil, Undo2, HelpCircle, FolderInput, FolderClosed, ChevronRight, Minus, Search, X, BookOpen, HardDrive, Image as ImageIcon, Video } from 'lucide-react';
 import GuideModal from '@/components/common/GuideModal';
 import ProfileEditModal from '@/components/common/ProfileEditModal';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { DREAMINA_AGENT_NAME } from '@/core/agent/registry';
 import { getPlatformShortLabel } from '@/core/im/platformLabels';
 import type { ConversationStatus } from '@/types';
 import ProjectsSection from '@/components/sidebar/ProjectsSection';
@@ -66,6 +67,9 @@ export default function Sidebar() {
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const startNewConversation = useChatStore((s) => s.startNewConversation);
+  const setPendingInput = useChatStore((s) => s.setPendingInput);
+  const setPendingAgent = useChatStore((s) => s.setPendingAgent);
+  const setPendingAgentSurface = useChatStore((s) => s.setPendingAgentSurface);
   const switchConversation = useChatStore((s) => s.switchConversation);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
   const renameConversation = useChatStore((s) => s.renameConversation);
@@ -76,6 +80,7 @@ export default function Sidebar() {
   const openToolbox = useSettingsStore((s) => s.openToolbox);
   const openAutomation = useSettingsStore((s) => s.openAutomation);
   const openKnowledge = useSettingsStore((s) => s.openKnowledge);
+  const openFileSearch = useSettingsStore((s) => s.openFileSearch);
   const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
   const viewMode = useSettingsStore((s) => s.viewMode);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
@@ -243,6 +248,14 @@ export default function Sidebar() {
     }
   };
 
+  const handleStartDreaminaCreation = (prompt: string, surface: string) => {
+    startNewConversation();
+    setPendingAgent(DREAMINA_AGENT_NAME);
+    setPendingAgentSurface(surface);
+    setPendingInput(`@${DREAMINA_AGENT_NAME} ${prompt}`);
+    setViewMode('chat');
+  };
+
   return (
     <div className="flex flex-col h-full w-[260px] bg-[var(--abu-bg-subtle)] border-r border-[var(--abu-border)]">
       {/* Drag region — covers the title bar area above sidebar content */}
@@ -263,6 +276,20 @@ export default function Sidebar() {
         >
           <Plus className={cn('h-[18px] w-[18px]', activeConversationId === null && viewMode === 'chat' ? 'text-[var(--abu-clay)]' : 'text-[var(--abu-text-tertiary)]')} strokeWidth={2} />
           <span>{t.sidebar.newTask}</span>
+        </button>
+        <button
+          onClick={() => handleStartDreaminaCreation(t.chat.aigcCreation.imagePrompt, 'dreamina-image')}
+          className="btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[14px] rounded-lg text-[var(--abu-text-secondary)] hover:bg-[var(--abu-bg-hover)]"
+        >
+          <ImageIcon className="h-[18px] w-[18px] text-[var(--abu-text-tertiary)]" strokeWidth={1.75} />
+          <span>{t.chat.aigcCreation.imageTitle}</span>
+        </button>
+        <button
+          onClick={() => handleStartDreaminaCreation(t.chat.aigcCreation.videoPrompt, 'dreamina-video')}
+          className="btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[14px] rounded-lg text-[var(--abu-text-secondary)] hover:bg-[var(--abu-bg-hover)]"
+        >
+          <Video className="h-[18px] w-[18px] text-[var(--abu-text-tertiary)]" strokeWidth={1.75} />
+          <span>{t.chat.aigcCreation.videoTitle}</span>
         </button>
         <button
           onClick={() => openToolbox()}
@@ -299,6 +326,18 @@ export default function Sidebar() {
         >
           <BookOpen className={cn('h-[18px] w-[18px]', viewMode === 'knowledge' ? 'text-[var(--abu-clay)]' : 'text-[var(--abu-text-tertiary)]')} strokeWidth={1.75} />
           <span>{t.knowledge.title}</span>
+        </button>
+        <button
+          onClick={() => openFileSearch()}
+          className={cn(
+            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[14px] rounded-lg',
+            viewMode === 'fileSearch'
+              ? 'bg-[var(--abu-bg-active)] text-[var(--abu-text-primary)]'
+              : 'text-[var(--abu-text-secondary)] hover:bg-[var(--abu-bg-hover)]'
+          )}
+        >
+          <HardDrive className={cn('h-[18px] w-[18px]', viewMode === 'fileSearch' ? 'text-[var(--abu-clay)]' : 'text-[var(--abu-text-tertiary)]')} strokeWidth={1.75} />
+          <span>{t.fileSearch.title}</span>
         </button>
       </nav>
 

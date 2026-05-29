@@ -212,6 +212,12 @@ interface ChatState {
   currentUsage: TokenUsage | null;
   // Pending input for prefilling the chat input
   pendingInput: string | null;
+  // Bumped by startNewConversation so the welcome input can reset even when
+  // activeConversationId stays null. Ephemeral, not persisted.
+  inputResetVersion: number;
+  // Entry-specific welcome surface for agents shared by multiple sidebar
+  // entries. Ephemeral, not persisted.
+  pendingAgentSurface: string | null;
   // Pending agent name — set when starting a chat from an agent surface (toolbox
   // detail panel, agent selector, etc.) so the welcome screen can render an
   // agent-themed intro. Cleared on next startNewConversation or when a real
@@ -282,6 +288,7 @@ interface ChatActions {
   removeActiveAgent: (agentName: string) => void;
   setCurrentUsage: (usage: TokenUsage | null) => void;
   setPendingInput: (text: string | null) => void;
+  setPendingAgentSurface: (surface: string | null) => void;
   setPendingAgent: (agentName: string | null) => void;
   setConversationStatus: (convId: string, status: ConversationStatus) => void;
   clearCompletedStatus: (convId: string) => void;
@@ -329,6 +336,8 @@ export const useChatStore = create<ChatStore>()(
       currentUsage: null,
       outputsRev: {} as Record<string, number>,
       pendingInput: null,
+      inputResetVersion: 0,
+      pendingAgentSurface: null,
       pendingAgentName: null,
       thinkingStartTime: null,
       activeAgentNames: [],
@@ -383,6 +392,9 @@ export const useChatStore = create<ChatStore>()(
         set((state) => {
           state.activeConversationId = null;
           state.pendingAgentName = null;
+          state.pendingAgentSurface = null;
+          state.pendingInput = null;
+          state.inputResetVersion += 1;
         });
         // Top-level "新建任务" is semantically "step out of the current
         // project context" — clear the global workspace so the welcome
@@ -577,6 +589,7 @@ export const useChatStore = create<ChatStore>()(
           // Clear expert intro banner once the conversation has any real
           // content — welcome screen is gone, banner has nothing to render on.
           if (state.pendingAgentName) state.pendingAgentName = null;
+          if (state.pendingAgentSurface) state.pendingAgentSurface = null;
           const conv = state.conversations[convId];
           if (conv) {
             conv.messages.push(message);
@@ -1008,6 +1021,12 @@ export const useChatStore = create<ChatStore>()(
       setPendingInput: (text) => {
         set((state) => {
           state.pendingInput = text;
+        });
+      },
+
+      setPendingAgentSurface: (surface) => {
+        set((state) => {
+          state.pendingAgentSurface = surface;
         });
       },
 

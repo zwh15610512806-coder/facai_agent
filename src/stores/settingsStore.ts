@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LLMProvider, ApiFormat, ProviderCapabilities, CustomService } from '../types';
 import type { ProviderInstance, ActiveModel, AuxiliaryServices, ModelInfo } from '../types/provider';
+import type { FileSearchConfig, FileSearchSourceConfig } from '@/types/fileSearch';
 import { deriveUiCaps } from '../core/llm/modelCapabilities';
 import type { PermissionMode } from '../core/permissions/permissionMode';
 import type { WebSearchProviderType } from '../core/search/providers';
@@ -270,10 +271,36 @@ function createDefaultProviders(): ProviderInstance[] {
 // View mode types
 // ============================================================
 
-export type ViewMode = 'chat' | 'automation' | 'toolbox' | 'settings' | 'knowledge';
+export type ViewMode = 'chat' | 'automation' | 'toolbox' | 'settings' | 'knowledge' | 'fileSearch';
 export type AutomationTab = 'schedule' | 'trigger';
-export type SystemSettingsTab = 'general' | 'ai-services' | 'sandbox' | 'im-channels' | 'personal-memory' | 'soul' | 'diagnostic' | 'usage' | 'about' | 'feedback' | 'sponsor';
+export type SystemSettingsTab = 'general' | 'ai-services' | 'sandbox' | 'im-channels' | 'personal-memory' | 'soul' | 'diagnostic' | 'usage' | 'about' | 'sponsor';
 export type ToolboxTab = 'skills' | 'agents' | 'mcp';
+
+const defaultFileSearchConfig: FileSearchConfig = {
+  sources: [
+    {
+      id: 'facai-shared-2026',
+      name: '法采共享盘2026',
+      path: '\\\\192.168.0.118\\法采共享盘2026',
+      enabled: true,
+    },
+    {
+      id: 'facai-materials-2023',
+      name: '法采共享素材库（2023）',
+      path: '\\\\192.168.0.29\\法采共享素材库（2023））',
+      enabled: true,
+      frozen: true,
+    },
+    {
+      id: 'facai-materials-archive',
+      name: '法采素材库（2023前）',
+      path: '\\\\192.168.0.29\\法采素材库（2023前）',
+      enabled: true,
+      frozen: true,
+    },
+  ],
+  pageSize: 50,
+};
 
 // ============================================================
 // State & Actions interfaces
@@ -302,6 +329,7 @@ interface SettingsState {
   toolboxSearchQuery: string;
   installingItem: string | null;
   viewMode: ViewMode;
+  fileSearchConfig: FileSearchConfig;
   disabledSkills: string[];
   disabledAgents: string[];
   sandboxEnabled: boolean;
@@ -420,6 +448,10 @@ interface SettingsActions {
   setActiveToolboxTab: (tab: ToolboxTab) => void;
   openKnowledge: () => void;
   closeKnowledge: () => void;
+  openFileSearch: () => void;
+  closeFileSearch: () => void;
+  setFileSearchConfig: (config: FileSearchConfig) => void;
+  updateFileSearchSource: (id: string, patch: Partial<FileSearchSourceConfig>) => void;
   setToolboxSearchQuery: (query: string) => void;
   setInstallingItem: (itemId: string | null) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -615,6 +647,7 @@ export const useSettingsStore = create<SettingsStore>()(
       toolboxSearchQuery: '',
       installingItem: null,
       viewMode: 'chat' as ViewMode,
+      fileSearchConfig: defaultFileSearchConfig,
       disabledSkills: [
         'alert-sop', 'algorithmic-art', 'brand-guidelines', 'canvas-design',
         'claude-api', 'create-agent', 'doc-coauthoring', 'docx',
@@ -883,6 +916,20 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ viewMode: 'knowledge' as ViewMode }),
       closeKnowledge: () =>
         set({ viewMode: 'chat' as ViewMode }),
+      openFileSearch: () =>
+        set({ viewMode: 'fileSearch' as ViewMode }),
+      closeFileSearch: () =>
+        set({ viewMode: 'chat' as ViewMode }),
+      setFileSearchConfig: (fileSearchConfig) => set({ fileSearchConfig }),
+      updateFileSearchSource: (id, patch) =>
+        set((s) => ({
+          fileSearchConfig: {
+            ...s.fileSearchConfig,
+            sources: s.fileSearchConfig.sources.map((source) =>
+              source.id === id ? { ...source, ...patch } : source
+            ),
+          },
+        })),
       setViewMode: (viewMode) => set({ viewMode }),
       toggleSkillEnabled: (skillName) => set((s) => ({
         disabledSkills: s.disabledSkills.includes(skillName)
@@ -931,8 +978,10 @@ export const useSettingsStore = create<SettingsStore>()(
         // keyring path (no enumeration API) has something to iterate.
         const knownKeys = [
           ...s.providers.map((p) => SECRET_KEYS.provider(p.id)),
+          ...s.fileSearchConfig.sources.map((source) => SECRET_KEYS.fileSearchSourcePassword(source.id)),
           SECRET_KEYS.auxWebSearch,
           SECRET_KEYS.auxImageGen,
+          SECRET_KEYS.fileSearchAiKey,
         ];
         try {
           await clearAllSecrets(knownKeys);
@@ -958,9 +1007,19 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'abu-settings',
-      version: 29,
+      version: 30,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
+
+        if (version < 30) {
+          try {
+            if (!state.fileSearchConfig || typeof state.fileSearchConfig !== 'object') {
+              state.fileSearchConfig = defaultFileSearchConfig;
+            }
+          } catch (err) {
+            console.error('[settingsStore] migration step "V30 file search defaults" failed:', err);
+          }
+        }
 
         // ════════════════════════════════════════════════
         // V29: Rewrite LM Studio baseUrl from localhost to 127.0.0.1.
@@ -1516,6 +1575,7 @@ export const useSettingsStore = create<SettingsStore>()(
         contextWindowSize: state.contextWindowSize,
         sidebarCollapsed: state.sidebarCollapsed,
         rightPanelCollapsed: state.rightPanelCollapsed,
+        fileSearchConfig: state.fileSearchConfig,
         disabledSkills: state.disabledSkills,
         disabledAgents: state.disabledAgents,
         sandboxEnabled: state.sandboxEnabled,

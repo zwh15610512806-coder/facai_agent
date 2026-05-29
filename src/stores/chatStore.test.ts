@@ -44,6 +44,9 @@ describe('chatStore', () => {
       currentTool: null,
       currentUsage: null,
       pendingInput: null,
+      inputResetVersion: 0,
+      pendingAgentSurface: null,
+      pendingAgentName: null,
       thinkingStartTime: null,
     });
   });
@@ -105,6 +108,18 @@ describe('chatStore', () => {
       useChatStore.getState().createConversation();
       useChatStore.getState().startNewConversation();
       expect(useChatStore.getState().activeConversationId).toBeNull();
+    });
+
+    it('clears pending agent prefill when starting a fresh task', () => {
+      useChatStore.getState().setPendingAgent('即梦AIGC创作');
+      useChatStore.getState().setPendingAgentSurface('dreamina-image');
+      useChatStore.getState().setPendingInput('@即梦AIGC创作 帮我生成图片');
+
+      useChatStore.getState().startNewConversation();
+
+      expect(useChatStore.getState().pendingAgentName).toBeNull();
+      expect(useChatStore.getState().pendingAgentSurface).toBeNull();
+      expect(useChatStore.getState().pendingInput).toBeNull();
     });
 
     it('clears the global workspace (top-level "新建任务" = fresh start)', () => {
