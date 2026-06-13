@@ -1,0 +1,239 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>视频脚本库 — 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260612">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+.badge-f{background:var(--facai-soft);color:var(--facai)}.badge-o{background:#dce6f5;color:#334a7a}.badge-t{background:#e0ddf0;color:#404078}
+.mo-wide{max-width:760px}
+.filter-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.filter-row+.filter-row{margin-top:10px}
+.high-filter{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:7px 12px;border:1.5px solid var(--border);border-radius:var(--r-sm);
+  font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--text-2);
+  background:var(--surface);cursor:pointer;user-select:none;
+  transition:all var(--normal) var(--ease);
+}
+.high-filter:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.high-filter.on{border-color:var(--facai);color:var(--facai);background:var(--facai-soft)}
+.high-filter input{width:15px;height:15px;accent-color:var(--facai);margin:0}
+@media (max-width: 768px) {
+  header.page-hd > div { flex-direction: column; align-items: stretch !important; gap: 12px; }
+  header.page-hd > div > div:last-child { display: grid !important; grid-template-columns: 1fr; gap: 8px; }
+  .filter-row { align-items: stretch; gap: 8px; }
+  .filter-row > span { width: 100%; margin-left: 0 !important; }
+  #semSearch { max-width: 100% !important; }
+  #srcTabs, #catTabs, #typeTabs { max-width: 100%; overflow-x: auto; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; }
+  #srcTabs .fpill, #catTabs .fpill, #typeTabs .fpill { flex: 0 0 auto; }
+  #batchBar { flex-direction: column; align-items: stretch !important; gap: 10px; }
+  #batchBar > div { display: grid !important; grid-template-columns: 1fr; }
+  .mo-wide { max-width: calc(100vw - 24px); }
+  #viewModal .mo-body > div[style*="display:flex"] { flex-wrap: wrap; }
+  #modalProductSearch { max-width: 100% !important; }
+  #modalProductList { grid-template-columns: 1fr !important; }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+<div class="nav-inner">
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<div class="nav-links">
+<a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link on">模板库</a><a href="/app/history" class="nav-link">历史</a>
+<a href="/app/search" class="nav-link">检索</a>
+</div></div></nav>
+
+<main class="page-main">
+<header class="page-hd">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div><h1>脚本模板与爆款库</h1><p style="margin-top:2px" id="countHint">加载中&hellip;</p></div>
+<div style="display:flex;gap:8px">
+<button class="btn btn-soft btn-sm" onclick="toggleBatch()" id="batchBtn">批量选择</button>
+<button class="btn btn-pri btn-sm" onclick="openUploadModal('facai')">上传法采</button>
+<button class="btn btn-soft btn-sm" onclick="openUploadModal('other')">上传其他</button>
+</div></div>
+</header>
+
+<div class="card card-sm" style="margin-bottom:18px">
+<div class="filter-row" style="margin-bottom:10px">
+<input id="semSearch" type="text" placeholder="语义搜索脚本：描述你想找的内容&hellip;" class="input" style="max-width:340px;font-size:13px" onkeydown="if(event.key==='Enter')doSemSearch()">
+<button class="fpill" id="semSearchBtn" onclick="clearSemSearch()" style="display:none">清除</button>
+</div>
+<div class="filter-row">
+<span style="font-size:12px;font-weight:600;color:var(--text-3)">来源</span><div style="display:flex;gap:4px" id="srcTabs"></div>
+<span style="font-size:12px;font-weight:600;color:var(--text-3);margin-left:6px">品类</span><div style="display:flex;gap:4px" id="catTabs"></div>
+<span style="font-size:12px;font-weight:600;color:var(--text-3);margin-left:6px">类型</span><div style="display:flex;gap:4px;flex-wrap:wrap" id="typeTabs"></div>
+<button class="fpill" id="sortBtn" onclick="toggleSort()">最新优先</button>
+</div>
+<div class="filter-row">
+<span style="font-size:12px;font-weight:600;color:var(--text-3)">标记</span>
+<label class="high-filter" id="highFilterLabel"><input id="highOnlyFilter" type="checkbox" onchange="toggleHigh()">高成交</label>
+</div></div>
+
+<div id="batchBar" class="card card-sm" style="display:none;align-items:center;justify-content:space-between;margin-bottom:16px">
+<span style="font-size:13px">已选 <b id="batchCount">0</b> 个</span>
+<div style="display:flex;gap:8px"><button class="btn btn-soft btn-sm" onclick="toggleBatch()">取消</button><button class="btn btn-danger btn-sm" onclick="batchDelete()">批量删除</button></div>
+</div>
+
+<div id="scriptList" class="product-grid"><div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)">加载中&hellip;</div></div>
+</main>
+
+<!-- 查看弹窗 -->
+<div id="viewModal" class="mo" style="display:none" onclick="if(event.target===this)closeViewModal()">
+<div class="mo-box mo-wide">
+<div class="mo-hd"><h3 style="margin:0;font-family:var(--font-serif);font-size:1.1rem" id="modalTitle"></h3><button onclick="closeViewModal()" style="background:none;border:none;font-size:22px;color:var(--text-3);cursor:pointer">&times;</button></div>
+<div class="mo-body">
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px" id="modalTags"></div>
+<div class="spv" style="max-height:300px;margin-bottom:14px" id="modalScript"></div>
+<div style="display:flex;gap:8px;margin-bottom:18px">
+<button onclick="copyViewScript()" class="btn btn-soft btn-sm">复制</button>
+<button onclick="toggleViewHigh()" id="btnToggleHigh" class="btn btn-soft btn-sm">标记高成交</button>
+</div>
+<div style="border-top:1px solid var(--border);padding-top:16px">
+<p style="font-size:13px;font-weight:600;margin-bottom:10px">改写为此产品</p>
+<div style="display:flex;gap:8px;margin-bottom:10px"><input id="modalProductSearch" type="text" placeholder="搜产品&hellip;" class="input" style="max-width:200px;font-size:13px" oninput="filterModalProducts()"></div>
+<div id="modalProductList" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:200px;overflow-y:auto;margin-bottom:10px"><div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:10px 0">加载产品&hellip;</div></div>
+<button class="btn btn-pri btn-sm" id="btnModalRewrite" disabled onclick="doRewrite()">改写为此产品</button>
+<div id="modalRewriteResult" class="spv" style="display:none;margin-top:12px"></div>
+</div></div></div></div>
+
+<!-- 上传弹窗 -->
+<div id="uploadModal" class="mo" style="display:none" onclick="if(event.target===this)closeUploadModal()"><div class="mo-box"><div class="mo-hd"><h3 style="margin:0;font-family:var(--font-serif);font-size:1.1rem" id="uploadModalTitle"></h3><button onclick="closeUploadModal()" style="background:none;border:none;font-size:22px;color:var(--text-3);cursor:pointer">&times;</button></div><div class="mo-body" id="uploadFormBody"></div></div></div>
+
+<script>
+var facaiList=[],otherList=[],src='all',cat='',type='',highOnly=false,newestFirst=true;
+var currentScript=null,currentType='',products=[],modalProduct=null;
+var selectedIds=new Set(),batchMode=false;
+var CATS=['烘焙调色','烘焙装饰','烘焙调味','烘焙夹心','烘焙配件'];
+var TYPES=['机制类','痛点类','需求类','认知类','达人分享类','制作方便','成本低','对比类','情绪类','场景类'];
+
+function toast(msg,type){var e=document.createElement('div');e.className='toast toast-'+(type==='success'?'ok':'err');e.textContent=msg;document.body.appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(function(){e.remove()},300)},2000);}
+function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
+function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
+
+(function(){
+var h='<button class="fpill on" onclick="setFilter(\'src\',\'all\')">全部</button><button class="fpill" onclick="setFilter(\'src\',\'facai\')">法采</button><button class="fpill" onclick="setFilter(\'src\',\'other\')">其他</button>';
+document.getElementById('srcTabs').innerHTML=h;
+h='<button class="fpill on" onclick="setFilter(\'cat\',\'\')">全部</button>';
+CATS.forEach(function(c){h+='<button class="fpill" onclick="setFilter(\'cat\',\''+c+'\')">'+c+'</button>';});
+document.getElementById('catTabs').innerHTML=h;
+h='<button class="fpill on" onclick="setFilter(\'type\',\'\')">全部</button>';
+TYPES.forEach(function(t){h+='<button class="fpill" onclick="setFilter(\'type\',\''+t+'\')">'+t+'</button>';});
+document.getElementById('typeTabs').innerHTML=h;
+})();
+
+function setFilter(k,v){
+if(k==='src')src=v;else if(k==='cat')cat=(cat===v?'':v);else if(k==='type')type=(type===v?'':v);
+document.querySelectorAll('#srcTabs .fpill').forEach(function(b){b.classList.toggle('on',(b.textContent==='全部'&&src==='all')||(b.textContent==='法采'&&src==='facai')||(b.textContent==='其他'&&src==='other'));});
+document.querySelectorAll('#catTabs .fpill').forEach(function(b){b.classList.toggle('on',(b.textContent==='全部'&&!cat)||b.textContent===cat);});
+document.querySelectorAll('#typeTabs .fpill').forEach(function(b){b.classList.toggle('on',(b.textContent==='全部'&&!type)||b.textContent===type);});
+syncHighFilter();
+renderAll();
+}
+function syncHighFilter(){var box=document.getElementById('highOnlyFilter');var label=document.getElementById('highFilterLabel');if(box)box.checked=highOnly;if(label)label.classList.toggle('on',highOnly);}
+function buildListUrl(base){return highOnly?base+'?high_only=1':base;}
+function toggleHigh(){highOnly=document.getElementById('highOnlyFilter').checked;syncHighFilter();if(document.getElementById('semSearch').value.trim())doSemSearch();else loadAll();}
+function toggleSort(){newestFirst=!newestFirst;document.getElementById('sortBtn').textContent=newestFirst?'最新优先':'最早优先';renderAll();}
+
+async function loadAll(){
+try{var r=await fetch(buildListUrl('/api/templates/viral/list'));facaiList=await r.json();}catch(e){}
+try{var r2=await fetch(buildListUrl('/api/reference/list'));otherList=await r2.json();}catch(e){}
+document.getElementById('countHint').textContent='法采 '+facaiList.length+' 条 + 其他 '+otherList.length+' 条';
+renderAll();
+}
+
+function renderAll(){
+var all=[];
+if(src==='all'||src==='facai'){facaiList.forEach(function(s){s._source='facai';all.push(s);});}
+if(src==='all'||src==='other'){otherList.forEach(function(s){s._source='other';all.push(s);});}
+if(cat)all=all.filter(function(s){return s.category===cat;});
+if(type)all=all.filter(function(s){return s.video_type===type;});
+if(highOnly)all=all.filter(function(s){return s.is_high_conversion;});
+if(newestFirst)all.sort(function(a,b){return(b.created_at||'').localeCompare(a.created_at||'');});
+else all.sort(function(a,b){return(a.created_at||'').localeCompare(b.created_at||'');});
+var c=document.getElementById('scriptList');
+if(!all.length){c.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)">暂无匹配脚本</div>';return;}
+var html='';
+for(var i=0;i<all.length;i++){
+var s=all[i];var hh=s.is_high_conversion;var fc=s._source==='facai';
+var badge=fc?'<span class="badge badge-f">法采'+(s.category?' &middot; '+s.category:'')+'</span>':'<span class="badge badge-o">其他</span>';
+var vlink=s.video_url?'<div style="font-size:12px;margin-top:4px" class="trunc"><a href="'+s.video_url+'" style="color:var(--text-3)" target="_blank">'+s.video_url.substring(0,50)+'</a></div>':'';
+var time=s.created_at?new Date(s.created_at).toLocaleDateString('zh-CN',{month:'short',day:'numeric'}):'';
+var ck=fc?'fc'+s.id:'ot'+s.id;var checked=selectedIds.has(ck);
+var onclick=batchMode?'':' onclick="viewScript(\''+s._source+'\','+s.id+')"';
+html+='<div class="scard'+(hh?' hi':'')+'"'+onclick+'>';
+if(batchMode)html+='<div style="position:absolute;top:14px;left:14px;z-index:10"><input type="checkbox" style="width:16px;height:16px;accent-color:var(--facai)"'+(checked?' checked':'')+' onclick="event.stopPropagation();toggleSelect(\''+ck+'\')"></div>';
+html+='<div style="display:flex;gap:6px;margin-bottom:8px;align-items:center'+(batchMode?';margin-left:28px':'')+'">'+badge;
+if(s.video_type)html+='<span class="badge badge-t">'+s.video_type+'</span>';
+if(hh)html+='<span class="badge badge-hi">高成交</span>';
+if(time)html+='<span style="margin-left:auto;font-size:12px;color:var(--text-3)">'+time+'</span>';
+html+='</div><h4 style="font-weight:600;font-size:13px;margin-bottom:6px'+(batchMode?';margin-left:28px':'')+'">'+(s.title||'无标题')+'</h4>';
+if(!batchMode)html+=vlink;
+html+='<p style="font-size:12px;color:var(--text-2);line-height:1.5;margin-top:4px" class="lc2'+(batchMode?' ml-6':'')+'">'+(s.script_content||'').substring(0,120)+'</p>';
+if(!batchMode)html+='<div style="display:flex;justify-content:flex-end;margin-top:8px"><button style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:18px;line-height:1;padding:4px" onclick="event.stopPropagation();delOne(\''+s._source+'\','+s.id+')">&#128465;</button></div>';
+html+='</div>';
+}
+c.innerHTML=html;
+}
+
+function toggleBatch(){batchMode=!batchMode;if(!batchMode)selectedIds.clear();var b=document.getElementById('batchBtn');b.textContent=batchMode?'完成':'批量选择';b.className='btn btn-'+(batchMode?'pri':'soft')+' btn-sm';document.getElementById('batchBar').style.display=batchMode?'flex':'none';updateBatchCount();renderAll();}
+function toggleSelect(ck){if(selectedIds.has(ck))selectedIds.delete(ck);else selectedIds.add(ck);updateBatchCount();renderAll();}
+function updateBatchCount(){document.getElementById('batchCount').textContent=selectedIds.size;}
+async function delOne(type,id){if(!confirm('确定删除？'))return;try{await fetch('/api/'+(type==='facai'?'templates/viral/':'reference/')+id,{method:'DELETE'});loadAll();toast('已删除','success');}catch(e){toast('删除失败','error');}}
+async function batchDelete(){if(!selectedIds.size)return toast('请先选择','error');if(!confirm('确定删除 '+selectedIds.size+' 个？'))return;var d=0;var arr=Array.from(selectedIds);for(var i=0;i<arr.length;i++){var ck=arr[i];var tp=ck.startsWith('fc')?'facai':'other';var id=parseInt(ck.substring(2));try{await fetch('/api/'+(tp==='facai'?'templates/viral/':'reference/')+id,{method:'DELETE'});d++;}catch(e){}}selectedIds.clear();batchMode=false;document.getElementById('batchBar').style.display='none';var b=document.getElementById('batchBtn');b.textContent='批量选择';b.className='btn btn-soft btn-sm';toast('已删除 '+d+' 个','success');loadAll();}
+
+function openUploadModal(mode){currentType=mode;
+document.getElementById('uploadModalTitle').textContent=mode==='facai'?'上传法采产品脚本':'上传其他爆款脚本';
+var body=mode==='facai'?'<div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">产品名称</label><div style="position:relative"><input id="uProductSearch" class="input" style="font-size:13px" placeholder="搜索产品&hellip;" autocomplete="off" oninput="filterProductList()" onfocus="showProductList()"><input type="hidden" id="uProductName"><div id="uProductDropdown" class="card card-sm" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;z-index:20;margin-top:4px"></div></div></div><div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">标题</label><input id="uTitle" class="input" style="font-size:13px" placeholder="选填"></div><div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">脚本内容</label><textarea id="uContent" class="so-input" rows="8" placeholder="粘贴脚本（自动格式化）"></textarea></div><div style="display:flex;justify-content:flex-end;gap:8px"><button onclick="closeUploadModal()" class="btn btn-soft btn-sm">取消</button><button onclick="doUpload()" class="btn btn-pri btn-sm">上传</button></div>':'<div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">标题</label><input id="uTitle" class="input" style="font-size:13px" placeholder="选填"></div><div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">视频链接</label><input id="uVideoUrl" class="input" style="font-size:13px" placeholder="选填"></div><div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">脚本内容</label><textarea id="uContent" class="so-input" rows="8" placeholder="粘贴脚本"></textarea></div><div style="display:flex;justify-content:flex-end;gap:8px"><button onclick="closeUploadModal()" class="btn btn-soft btn-sm">取消</button><button onclick="doUpload()" class="btn btn-pri btn-sm">上传</button></div>';
+document.getElementById('uploadFormBody').innerHTML=body;document.getElementById('uploadModal').style.display='';}
+
+async function filterProductList(){var q=(document.getElementById('uProductSearch').value||'').toLowerCase();if(!products.length){try{var r=await fetch('/api/products/');products=await r.json();}catch(e){return;}}var list=products;if(q)list=list.filter(function(p){return p.name.toLowerCase().includes(q)||p.category.includes(q);});var dd=document.getElementById('uProductDropdown');dd.innerHTML=list.slice(0,15).map(function(p){return'<div style="padding:9px 14px;font-size:13px;cursor:pointer" onmouseenter="this.style.background=\'var(--facai-ghost)\'" onmouseleave="this.style.background=\'\'" onclick="selectUploadProduct(\''+p.name.replace(/'/g,'&#39;')+'\')"><span style="font-weight:500">'+p.name+'</span><span style="font-size:12px;color:var(--text-3);margin-left:8px">'+p.category+'</span><span class="text-accent" style="font-weight:700;float:right">&yen;'+p.price+'</span></div>';}).join('')||'<div style="padding:9px 14px;font-size:12px;color:var(--text-3)">无匹配</div>';dd.style.display='';}
+function showProductList(){if(!products.length)filterProductList();else document.getElementById('uProductDropdown').style.display='';}
+function selectUploadProduct(name){document.getElementById('uProductSearch').value=name;document.getElementById('uProductName').value=name;document.getElementById('uProductDropdown').style.display='none';}
+document.addEventListener('click',function(e){if(!e.target.closest('#uProductSearch')&&!e.target.closest('#uProductDropdown')){var d=document.getElementById('uProductDropdown');if(d)d.style.display='none';}});
+function closeUploadModal(){document.getElementById('uploadModal').style.display='none';}
+async function doUpload(){var c=document.getElementById('uContent').value.trim();if(!c)return toast('请粘贴脚本','error');var fd=new FormData();fd.append('title',document.getElementById('uTitle')?document.getElementById('uTitle').value.trim()||'未命名':'');fd.append('content',c);if(currentType==='facai'){fd.append('product_name',document.getElementById('uProductName')?document.getElementById('uProductName').value.trim()||'':'');fd.append('category','');fd.append('video_type','');fd.append('tags','');}else{fd.append('video_url',document.getElementById('uVideoUrl')?document.getElementById('uVideoUrl').value.trim()||'':'');fd.append('video_type','');fd.append('tags','');fd.append('notes','');}var url=currentType==='facai'?'/api/templates/viral/upload':'/api/reference/upload';try{var r=await fetch(url,{method:'POST',body:fd});var d=await r.json();if(r.ok){toast(d.message||'上传成功','success');closeUploadModal();loadAll();}else toast('失败','error');}catch(e){toast('失败','error');}}
+
+async function viewScript(type,id){currentType=type;modalProduct=null;var url=type==='facai'?'/api/templates/viral/'+id:'/api/reference/'+id;var r=await fetch(url);currentScript=await r.json();document.getElementById('modalTitle').textContent=currentScript.title;document.getElementById('btnToggleHigh').textContent=currentScript.is_high_conversion?'取消高成交':'标记高成交';document.getElementById('modalTags').innerHTML=(currentScript.category?'<span class="badge badge-f">'+currentScript.category+'</span>':'')+(currentScript.video_type?'<span class="badge badge-t">'+currentScript.video_type+'</span>':'')+(currentScript.video_url?'<span class="badge badge-m">'+currentScript.video_url.substring(0,40)+'</span>':'');document.getElementById('modalScript').textContent=currentScript.script_content;document.getElementById('modalRewriteResult').style.display='none';document.getElementById('btnModalRewrite').disabled=true;if(!products.length){var r2=await fetch('/api/products/');products=await r2.json();}renderModalProducts();document.getElementById('viewModal').style.display='';}
+function closeViewModal(){document.getElementById('viewModal').style.display='none';}
+function copyViewScript(){if(!currentScript)return;copyText(currentScript.script_content).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});}
+async function toggleViewHigh(){if(!currentScript)return;var url=currentType==='facai'?'/api/templates/viral/'+currentScript.id+'/toggle-high':'/api/reference/'+currentScript.id+'/toggle-high';await fetch(url,{method:'POST'});viewScript(currentType,currentScript.id);loadAll();}
+function filterModalProducts(){renderModalProducts(document.getElementById('modalProductSearch').value);}
+function renderModalProducts(filter){
+var list=products;if(filter)list=list.filter(function(p){return p.name.includes(filter)||p.category.includes(filter);});
+var h='';for(var i=0;i<Math.min(list.length,12);i++){var p=list[i];var sel=modalProduct&&modalProduct.id===p.id;h+='<div style="border-radius:var(--r);border:1px solid '+(sel?'var(--facai)':'var(--border)')+';padding:10px 12px;cursor:pointer;background:'+(sel?'var(--facai-ghost)':'var(--surface)')+'" onclick="selectModalProduct('+p.id+')"><span class="pcat">'+p.category+'</span><p style="font-size:12px;font-weight:500;margin:4px 0">'+p.name+'</p><span class="pprice" style="font-size:16px">&yen;'+p.price+'</span></div>';}
+document.getElementById('modalProductList').innerHTML=h||'<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:10px 0">无匹配</div>';
+}
+function selectModalProduct(id){modalProduct=products.find(function(p){return p.id===id;});document.getElementById('btnModalRewrite').disabled=false;renderModalProducts();}
+async function doRewrite(){if(!currentScript||!modalProduct)return;var btn=document.getElementById('btnModalRewrite');btn.disabled=true;btn.textContent='改写中&hellip;';var r=await fetch('/api/scripts/rewrite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({original_script:currentScript.script_content,product_id:modalProduct.id})});var d=await r.json();document.getElementById('modalRewriteResult').style.display='';document.getElementById('modalRewriteResult').textContent=d.rewritten_script;toast('完成','success');btn.disabled=false;btn.textContent='改写';}
+
+async function doSemSearch(){
+ var q=document.getElementById('semSearch').value.trim();if(!q)return clearSemSearch();
+ document.getElementById('semSearchBtn').style.display='';
+ var c=document.getElementById('scriptList');
+ c.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)">搜索中&hellip;</div>';
+ try{
+  var params='q='+encodeURIComponent(q)+'&limit=30';if(highOnly)params+='&high_only=1';
+  var r=await fetch('/api/templates/viral/search?'+params);
+  var results=await r.json();
+  if(!results.length){c.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)">无匹配结果</div>';return;}
+  renderSemResults(results);
+ }catch(e){c.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)">搜索失败</div>';}
+}
+function renderSemResults(results){
+ var c=document.getElementById('scriptList');
+ c.innerHTML=results.map(function(s){var dist=Math.round((1-s.distance)*100);return'<div class="scard'+(s.is_high_conversion?' hi':'')+'" onclick="viewScript(\''+(s.source==='viral'?'facai':'other')+'\','+s.id+')"><div style="display:flex;gap:6px;margin-bottom:8px;align-items:center"><span class="badge badge-f">'+(s.source==='viral'?'法采':'其他')+'</span>'+(s.video_type?'<span class="badge badge-t">'+s.video_type+'</span>':'')+(s.is_high_conversion?'<span class="badge badge-hi">高成交</span>':'')+'<span style="margin-left:auto;font-size:12px;color:var(--facai);font-weight:600">'+dist+'%</span></div><h4 style="font-weight:600;font-size:13px;margin-bottom:6px">'+(s.title||'无标题')+'</h4><p style="font-size:12px;color:var(--text-2);line-height:1.5" class="lc2">'+(s.script_content||'').substring(0,150)+'</p></div>';}).join('');
+}
+function clearSemSearch(){document.getElementById('semSearch').value='';document.getElementById('semSearchBtn').style.display='none';renderAll();}
+
+loadAll();
+document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
+</script>
+</body>
+</html>

@@ -1,0 +1,645 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>生成脚本 — 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260612">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<nav class="nav">
+<div class="nav-inner">
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<div class="nav-links">
+<a href="/app" class="nav-link on">生成</a>
+<a href="/app/rewrite" class="nav-link">改写</a>
+<a href="/app/products" class="nav-link">产品</a>
+<a href="/app/import" class="nav-link">导入</a>
+<a href="/app/templates" class="nav-link">模板库</a>
+<a href="/app/history" class="nav-link">历史</a>
+<a href="/app/search" class="nav-link">检索</a>
+</div></div></nav>
+
+<!-- ====== Hero Banner ====== -->
+<section class="hero">
+  <div class="hero-inner">
+    <p class="hero-copy">AI 创作引擎：以创意与数据成就带货艺术，为法采 57 款烘焙产品量身打造高转化短视频脚本。选产品 &rarr; 定类型 &rarr; 即时生成。</p>
+  </div>
+</section>
+<style>
+.hero {
+  background: #faf8f5;
+  border-bottom: 1px solid var(--border);
+}
+.hero-inner {
+  max-width: 1280px; margin: 0 auto; padding: 14px 40px;
+}
+.hero-copy {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 900px) {
+  .hero-inner { padding: 12px 16px; }
+  .hero-copy { white-space: normal; font-size: 13px; }
+}
+.generate-main{max-width:1540px}
+.generate-result-layout{display:grid;grid-template-columns:minmax(480px,1fr) minmax(620px,720px);gap:16px;align-items:start}
+.generate-script-col{min-width:0;display:flex;flex-direction:column}
+.script-output-frame{position:relative;min-width:0}
+.generate-script-col .so{height:520px;max-height:520px;overflow:auto;padding-bottom:86px}
+.result-actions{position:absolute;left:18px;right:18px;bottom:12px;display:flex;justify-content:flex-end;gap:6px;padding-top:10px;border-top:1px solid var(--border-soft);background:linear-gradient(to bottom,rgba(245,243,240,0),var(--surface-darker) 22px,var(--surface-darker))}
+.seedance-panel{border:1px solid var(--border);border-radius:var(--r);background:var(--surface-darker);padding:0;height:520px;max-height:520px;overflow:auto}
+.seedance-hd{position:sticky;top:0;z-index:3;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 12px;padding:14px 14px 10px;border-bottom:1px solid var(--border);background:var(--surface-darker)}
+.seedance-kicker{font-size:11px;font-weight:700;color:var(--facai);letter-spacing:.04em;margin-bottom:2px}
+.seedance-title{font-family:var(--font-ui);font-size:14px;margin:0;color:var(--text)}
+.seedance-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 14px 14px}
+.seedance-card{border:1px solid var(--border-soft);border-radius:var(--r-sm);background:#fff;padding:10px 12px;min-height:0;overflow:visible}
+.seedance-card-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.seedance-scene{font-size:12px;font-weight:800;color:var(--facai)}
+.seedance-copy{border:0;background:var(--facai-ghost);color:var(--facai);font-size:12px;font-weight:700;border-radius:var(--r-sm);padding:5px 8px;cursor:pointer}
+.seedance-copy:hover{background:var(--facai-soft)}
+.seedance-prompt{font-size:11.5px;line-height:1.62;color:var(--text);white-space:pre-wrap}
+.seedance-empty{grid-column:1/-1;font-size:12px;line-height:1.7;color:var(--text-3);padding:12px;border:1px dashed var(--border);border-radius:var(--r-sm);background:#fff}
+@media (max-width: 1240px) {
+  .generate-result-layout { grid-template-columns: 1fr; }
+}
+</style>
+
+<main class="page-main generate-main">
+
+<!-- ====== Step 1: 选产品 ====== -->
+<section id="step1" class="card">
+<div class="section-hd">
+<span class="step step-on">1</span><h2 style="margin:0">选择产品</h2>
+<div style="margin-left:auto;display:flex;gap:8px">
+<input id="searchInput" type="text" placeholder="搜索产品&hellip;" class="input" style="width:240px;font-size:14px">
+</div></div>
+
+<div class="product-picker-layout">
+<!-- 左侧品类栏 -->
+<div id="categorySidebar" class="category-sidebar">
+<div id="categoryAll" class="cat-item cat-on" onclick="selectCategory('')">全部品类</div>
+</div>
+<!-- 右侧产品卡片 -->
+<div style="flex:1;min-width:0">
+<div id="productGrid" class="product-grid">
+<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)">加载产品中&hellip;</div>
+</div>
+<div style="display:flex;justify-content:flex-end;margin-top:20px">
+<button id="btnToStep2" class="btn btn-pri" disabled>下一步：选择视频类型 &rarr;</button>
+</div>
+</div>
+</div>
+</section>
+<style>
+.product-picker-layout {
+  display: flex;
+  gap: 24px;
+  margin-top: 8px;
+  align-items: flex-start;
+}
+#productGrid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+#productGrid .product-card {
+  min-height: 116px;
+  padding: 16px;
+  border-radius: var(--r-sm);
+}
+#productGrid .product-card .pcat {
+  padding: 3px 10px;
+  font-size: 10.5px;
+}
+#productGrid .product-card .pname {
+  margin-top: 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+#productGrid .product-card .pmeta {
+  margin-top: 10px;
+}
+.category-sidebar {
+  flex: 0 0 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(480px, calc(100vh - 112px));
+  overflow-y: auto;
+  padding-right: 8px;
+  position: sticky;
+  top: 88px;
+  align-self: flex-start;
+  z-index: 8;
+}
+.cat-item {
+  padding: 8px 14px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all var(--fast) var(--ease);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cat-item:hover {
+  background: var(--facai-ghost);
+  color: var(--accent);
+}
+.cat-item.cat-on {
+  background: var(--facai);
+  color: #fff;
+  font-weight: 600;
+}
+.cat-item.cat-on:hover {
+  background: var(--facai-hover);
+  color: #fff;
+}
+.product-detail-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(41, 37, 36, .38);
+  backdrop-filter: blur(5px);
+}
+.product-detail-modal.is-open { display: flex; }
+.product-detail-box {
+  width: min(680px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--s-4);
+}
+.product-detail-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 26px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.product-detail-heading {
+  min-width: 0;
+  flex: 1;
+}
+.product-detail-title {
+  margin: 8px 0 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.product-detail-hd .pcat {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--facai-soft);
+  color: var(--facai);
+}
+.product-detail-close {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--r-sm);
+}
+.product-detail-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.product-detail-next {
+  white-space: nowrap;
+}
+.product-detail-body { padding: 22px 26px 26px; }
+.detail-price-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.detail-price-box {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  background: var(--surface-darker);
+}
+.detail-price-label {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+.detail-price {
+  font-family: var(--font-ui);
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--facai);
+  line-height: 1.2;
+}
+.detail-points {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+.detail-point {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  background: #fff;
+}
+.detail-point-type {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--facai);
+  margin-bottom: 3px;
+}
+.detail-point-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+}
+@media (max-width: 680px) {
+  .product-detail-modal { padding: 14px; align-items: flex-end; }
+  .product-detail-box { max-height: calc(100vh - 28px); }
+  .product-detail-hd, .product-detail-body { padding-left: 18px; padding-right: 18px; }
+  .product-detail-hd { gap: 12px; }
+  .product-detail-top-actions { gap: 8px; }
+  .detail-price-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  #step1 .section-hd { display: grid; grid-template-columns: 32px minmax(0,1fr); align-items: center; gap: 10px 12px; }
+  #step1 .section-hd h2 { white-space: nowrap; }
+  #step1 .section-hd > div { grid-column: 1 / -1; width: 100%; margin-left: 0 !important; display: block !important; }
+  #searchInput { width: 100% !important; }
+  .category-sidebar { position: static; flex: 0 0 auto; width: 100%; max-height: none; overflow-x: auto; overflow-y: hidden; padding: 2px 0 8px; display: flex; flex-direction: row; gap: 8px; -webkit-overflow-scrolling: touch; }
+  .category-sidebar::-webkit-scrollbar { display: none; }
+  .category-sidebar .cat-item { flex: 0 0 auto; max-width: 44vw; padding: 8px 12px; }
+  .product-picker-layout { flex-direction: column; align-items: stretch; gap: 12px; }
+  #productGrid { grid-template-columns: 1fr; }
+  #btnToStep2 { width: 100%; }
+  #step3 .section-hd { flex-direction: column; align-items: stretch !important; }
+  #step3 .section-hd > div { width: 100%; flex-wrap: wrap; }
+  #step3 .section-hd .btn { flex: 1 1 auto; }
+  #step3 .callout > div { flex-direction: column; }
+  #optimizeInput, #btnOptimize { width: 100%; }
+  .generate-result-layout { grid-template-columns: 1fr; }
+  .generate-script-col .so { height: auto; min-height: 260px; max-height: 58vh; }
+  .result-actions { position: static; margin-top: 8px; flex-wrap: wrap; background: transparent; }
+  .seedance-panel { height: auto; max-height: none; }
+  .seedance-list { grid-template-columns: 1fr; }
+  .seedance-card { max-height: none; overflow: visible; }
+}
+</style>
+
+<!-- 浮动导航栏 -->
+<div id="floatBar" class="float-bar hidden">
+<span id="floatSelectedCat" style="font-size:14px;font-weight:600;color:var(--text)">全部品类</span>
+<button id="floatToStep2" class="btn btn-pri btn-sm" disabled onclick="document.getElementById('btnToStep2').click()">下一步 &rarr;</button>
+</div>
+
+<!-- ====== Step 2: 选类型 + 设置 ====== -->
+<section id="step2" style="display:none">
+<div class="card">
+<div class="section-hd step2-header">
+<div class="step2-title">
+<span class="step step-on">2</span><h2>选择视频类型 &amp; 设置</h2>
+</div>
+<button id="btnBackToStep1" class="btn btn-soft btn-sm step2-back" type="button">
+<i data-lucide="arrow-left" style="width:15px;height:15px"></i>返回
+</button>
+</div>
+
+<div class="step2-selected-box">
+<span class="step2-selected-label">已选产品</span>
+<span id="selectedProductLabel" class="step2-selected-value"></span>
+</div>
+
+<p style="font-size:13px;color:var(--text-3);margin-bottom:10px" id="recommendHint"></p>
+<div id="videoTypes" class="type-list"></div>
+
+<div style="margin-bottom:22px">
+<label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">引擎</label>
+<select id="aiEngine" class="input" style="max-width:220px;font-size:13px">
+<option value="deepseek">DeepSeek AI</option>
+<option value="template" selected>模板库改写</option>
+</select>
+<p style="font-size:12px;color:var(--text-3);margin-top:6px" id="engineHint">模板库改写：从脚本库中匹配高成交脚本，改写为当前产品的带货脚本</p>
+</div>
+
+<div style="margin-bottom:22px">
+<label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">需求预填写 <span style="font-weight:400;color:var(--text-3)">（选填）</span></label>
+<textarea id="reqPreFill" class="input" style="width:100%;min-height:80px;font-size:13px;resize:vertical" placeholder="填写你对脚本的具体要求、最新活动卖点、促销信息等…&#10;例如：双11期间每满200减30、新品上市首单9折、强调天然原料无添加"></textarea>
+<p style="font-size:12px;color:var(--text-3);margin-top:4px">填写的需求会自动注入到 AI 生成上下文中，让脚本更贴合当前活动</p>
+</div>
+
+<button id="btnGenerate" class="btn btn-pri btn-lg" disabled>生成脚本</button>
+</div>
+</section>
+
+<!-- ====== Step 3: 结果 ====== -->
+<section id="step3" style="display:none">
+<div class="card">
+<div class="section-hd" style="justify-content:space-between">
+<div style="display:flex;align-items:center;gap:10px">
+<span class="step step-done"><i data-lucide="check" style="width:15px;height:15px"></i></span>
+<span style="font-size:13px" id="resultMeta"></span>
+</div>
+<div style="display:flex;justify-content:flex-end">
+<button id="btnBack" class="btn btn-ghost btn-sm">返回</button>
+</div></div>
+
+<div class="generate-result-layout">
+<div class="generate-script-col">
+<div class="script-output-frame">
+<div id="scriptOutput" class="so"></div>
+<div id="resultActions" class="result-actions">
+<button id="btnCopy" class="btn btn-soft btn-sm">复制</button>
+<button id="btnSave" class="btn btn-soft btn-sm">存到模板库</button>
+<button id="btnRedo" class="btn btn-soft btn-sm">重新生成</button>
+</div>
+<div id="generatingHint" style="display:none;text-align:center;padding:56px 20px">
+<div class="spin" style="width:40px;height:40px;border-width:3px;margin:0 auto 16px"></div>
+<p class="pulse" style="margin:0;font-size:14px;color:var(--text-2)">AI 正在分析产品卖点和爆款逻辑&hellip;</p>
+<p style="font-size:12px;color:var(--text-3);margin-top:4px">通常在 5&ndash;15 秒内完成</p>
+</div>
+</div>
+
+<div class="callout">
+<p style="font-size:13px;font-weight:600;color:var(--facai);margin-bottom:8px">优化建议</p>
+<div style="display:flex;gap:8px">
+<input id="optimizeInput" type="text" placeholder="如：开头不够有力、强调性价比、加镜头指导&hellip;" class="input" style="flex:1;font-size:13px">
+<button id="btnOptimize" class="btn btn-pri btn-sm" disabled>按建议重生成</button>
+</div></div>
+
+<p style="font-size:12px;color:var(--text-3);margin-top:12px">脚本中的时间标注用于指导拍摄节奏，前 3 秒钩子决定完播率</p>
+</div>
+<aside class="seedance-panel" aria-label="Seedance 2.0 画面提示词">
+<div class="seedance-hd">
+<div><div class="seedance-kicker">Seedance 2.0</div><h3 class="seedance-title">画面提示词</h3></div>
+<button id="btnCopySeedanceAll" class="btn btn-soft btn-sm" type="button">复制全部</button>
+</div>
+<div id="seedancePromptList" class="seedance-list">
+<div class="seedance-empty">生成脚本后，会按每个（画面）自动整理视频提示词。</div>
+</div>
+</aside>
+</div>
+</div>
+</section>
+</main>
+
+<div id="tooltip" class="tip"></div>
+
+<div id="productDetailModal" class="product-detail-modal" onclick="if(event.target===this)closeProductModal()">
+  <div class="product-detail-box" role="dialog" aria-modal="true" aria-labelledby="productDetailTitle">
+    <div class="product-detail-hd">
+      <div class="product-detail-heading">
+        <span id="productDetailCategory" class="pcat"></span>
+        <h3 id="productDetailTitle" class="product-detail-title">产品详情</h3>
+      </div>
+      <div class="product-detail-top-actions">
+        <button id="productDetailNext" class="btn btn-pri product-detail-next" type="button">选择并继续</button>
+        <button class="btn btn-soft product-detail-close" type="button" onclick="closeProductModal()" aria-label="关闭">
+          <i data-lucide="x" style="width:18px;height:18px"></i>
+        </button>
+      </div>
+    </div>
+    <div class="product-detail-body">
+      <div class="detail-price-row">
+        <div class="detail-price-box">
+          <div class="detail-price-label">吊牌价</div>
+          <div id="productDetailPrice" class="detail-price">-</div>
+        </div>
+        <div class="detail-price-box">
+          <div class="detail-price-label">卖点数</div>
+          <div id="productDetailPointCount" class="detail-price">-</div>
+        </div>
+      </div>
+      <h3 style="font-family:var(--font-ui);font-size:14px;margin:0;color:var(--text)">产品卖点</h3>
+      <div id="productDetailPoints" class="detail-points"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+<script>
+function scrollToStep1(){document.getElementById('step1').scrollIntoView({behavior:'smooth',block:'start'});}
+
+const CAT_RECOMMEND={"烘焙调色":["对比类","场景类","机制类","认知类"],"烘焙装饰":["场景类","达人分享类","需求类"],"烘焙调味":["需求类","对比类","认知类"],"烘焙夹心":["制作方便","成本低","痛点类"],"烘焙配件":["机制类","成本低","对比类"]};
+const VIDEO_TYPES=[
+  {v:"机制类",icon:"settings-2"},
+  {v:"痛点类",icon:"alert-triangle"},
+  {v:"需求类",icon:"file-search"},
+  {v:"认知类",icon:"brain"},
+  {v:"达人分享类",icon:"users"},
+  {v:"制作方便",icon:"wrench"},
+  {v:"成本低",icon:"badge-dollar-sign"},
+  {v:"对比类",icon:"git-compare"},
+  {v:"情绪类",icon:"heart"},
+  {v:"场景类",icon:"map-pin"}
+];
+let state={products:[],categories:[],selectedProduct:null,selectedType:"",step:1,generating:false};
+let currentScript='',currentScriptId=null;
+
+function esc(t){return String(t||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;');}
+function formatPrice(v){const n=Number(v||0);return n.toLocaleString('zh-CN',{maximumFractionDigits:2});}
+function toast(msg,type){const t=document.createElement('div');t.className='toast toast-'+(type==='success'?'ok':'err');t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(function(){t.remove()},300)},2500);}
+function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
+function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
+function escHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+
+function showTip(e,summary){
+ const tip=document.getElementById('tooltip');
+ const parts=summary.split('；').slice(0,4);
+ tip.innerHTML=parts.map(function(s){const m=s.match(/^\[(.+?)\](.+)/);return m?'<div style="padding:2px 0"><span style="color:var(--facai);font-weight:600">'+m[1]+'</span> <span style="color:var(--text)">'+m[2]+'</span></div>':'<div style="padding:2px 0;color:var(--text)">'+s+'</div>';}).join('');
+ tip.style.display='';tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-10)+'px';
+}
+function hideTip(){document.getElementById('tooltip').style.display='none';}
+
+async function loadProducts(){
+ const s=document.getElementById('searchInput').value;
+ let u='/api/products/?';if(currentCategory)u+='category='+encodeURIComponent(currentCategory)+'&';if(s)u+='search='+encodeURIComponent(s)+'&';
+ try{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);state.products=await r.json();renderProducts();}
+ catch(e){document.getElementById('productGrid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)"><i data-lucide="wifi-off" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4"></i><div style="font-weight:600;margin-bottom:4px">服务器未启动</div><div style="font-size:14px">请双击 run.bat 启动服务，然后刷新页面</div></div>';if(window.lucide)lucide.createIcons();}
+}
+let currentCategory='';
+function selectCategory(cat){
+  currentCategory=cat;
+  document.getElementById('categoryAll').className='cat-item'+(cat===''?' cat-on':'');
+  const sb=document.getElementById('categorySidebar');
+  for(let i=0;i<sb.children.length;i++){
+    const el=sb.children[i];
+    if(el.id==='categoryAll')continue;
+    el.className='cat-item'+(el.dataset.cat===cat?' cat-on':'');
+  }
+  document.getElementById('floatSelectedCat').textContent=cat||'全部品类';
+  loadProducts();
+}
+async function loadCategories(){
+ try{const r=await fetch('/api/products/categories');state.categories=await r.json();
+  const sb=document.getElementById('categorySidebar');
+  state.categories.forEach(function(c){const d=document.createElement('div');d.className='cat-item';d.dataset.cat=c;d.textContent=c;d.onclick=function(){selectCategory(c);};sb.appendChild(d);});
+ }catch(e){}
+}
+
+function renderProducts(){
+ const g=document.getElementById('productGrid');
+ if(!state.products.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px 0;color:var(--text-3)">暂无产品，请先导入</div>';return;}
+ g.innerHTML=state.products.map(function(p){return'<div class="product-card'+(state.selectedProduct&&state.selectedProduct.id===p.id?' sel':'')+'" onclick="selectProduct('+p.id+')" onmouseenter="showTip(event,\''+esc(p.selling_point_summary||'暂无卖点')+'\')" onmouseleave="hideTip()"><span class="pcat">'+esc(p.category)+'</span><div class="pname">'+esc(p.name)+'</div><div class="pmeta">'+p.selling_point_count+' 个卖点</div></div>';}).join('');
+ document.getElementById('btnToStep2').disabled=!state.selectedProduct;
+}
+
+function selectProduct(id){state.selectedProduct=state.products.find(function(p){return p.id===id;});state.selectedType="";renderProducts();document.getElementById('btnToStep2').disabled=false;document.getElementById('floatToStep2').disabled=false;
+ const fb=document.getElementById('floatBar');fb.classList.remove('hidden');fb.classList.remove('pop');void fb.offsetWidth;fb.classList.add('pop');setTimeout(function(){fb.classList.remove('pop')},400);openProductModal(id);}
+
+async function openProductModal(id){
+ hideTip();
+ const modal=document.getElementById('productDetailModal');
+ const listProduct=state.products.find(function(p){return p.id===id;})||state.selectedProduct||{};
+ modal.classList.add('is-open');
+ document.body.style.overflow='hidden';
+ renderProductModal(listProduct,true);
+ try{
+  const r=await fetch('/api/products/'+id);
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const detail=await r.json();
+  state.selectedProduct=Object.assign({},listProduct,detail);
+  renderProductModal(state.selectedProduct,false);
+ }catch(e){
+  document.getElementById('productDetailPoints').innerHTML='<div class="detail-point"><div class="detail-point-text">卖点加载失败，请稍后重试。</div></div>';
+ }
+}
+function renderProductModal(product,loading){
+ document.getElementById('productDetailCategory').textContent=product.category||'产品';
+ document.getElementById('productDetailTitle').textContent=product.name||'产品详情';
+ document.getElementById('productDetailPrice').innerHTML='&yen;'+formatPrice(product.price);
+ const points=product.selling_points||[];
+ document.getElementById('productDetailPointCount').textContent=loading?'...':String(points.length||product.selling_point_count||0);
+ const box=document.getElementById('productDetailPoints');
+ if(loading){box.innerHTML='<div class="detail-point"><div class="detail-point-text">正在加载卖点...</div></div>';return;}
+ if(!points.length){box.innerHTML='<div class="detail-point"><div class="detail-point-text">暂无卖点。</div></div>';return;}
+ box.innerHTML=points.sort(function(a,b){return(a.priority||0)-(b.priority||0);}).map(function(point){return'<div class="detail-point"><div class="detail-point-type">'+esc(point.point_type||'卖点')+'</div><div class="detail-point-text">'+esc(point.content||'')+'</div></div>';}).join('');
+ if(window.lucide)lucide.createIcons();
+}
+function closeProductModal(){document.getElementById('productDetailModal').classList.remove('is-open');document.body.style.overflow='';}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeProductModal();});
+document.getElementById('productDetailNext').addEventListener('click',function(){closeProductModal();document.getElementById('btnToStep2').click();});
+
+document.getElementById('btnToStep2').addEventListener('click',function(){
+ state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';
+ document.getElementById('floatBar').classList.add('hidden');
+ document.getElementById('selectedProductLabel').textContent=state.selectedProduct.name+' · ¥'+formatPrice(state.selectedProduct.price);renderVideoTypes();
+});
+document.getElementById('btnBackToStep1').addEventListener('click',function(){
+ state.step=1;document.getElementById('step1').style.display='';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';
+ document.getElementById('floatBar').classList.remove('hidden');
+});
+
+function renderVideoTypes(){
+ const recs=CAT_RECOMMEND[state.selectedProduct&&state.selectedProduct.category]||["机制类","痛点类","需求类"];
+ document.getElementById('recommendHint').innerHTML='<span style="display:inline-block;width:6px;height:6px;background:var(--facai);border-radius:50%;vertical-align:middle;margin-right:4px"></span><b style="color:var(--accent);font-weight:600">'+state.selectedProduct.category+'</b> 推荐：'+recs.map(function(r){return'<span style="color:var(--accent);font-weight:500">'+r+'</span>';}).join(' &middot; ');
+ document.getElementById('videoTypes').innerHTML=VIDEO_TYPES.map(function(vt){const rec=recs.includes(vt.v);return'<div class="type-tag'+(state.selectedType===vt.v?' sel':'')+'" onclick="selectType(\''+vt.v+'\')"><span class="tag-icon"><i data-lucide="'+vt.icon+'" style="width:16px;height:16px"></i></span>'+vt.v+(rec?' <span class="star">&starf;</span>':'')+'</div>';}).join('');
+ if(window.lucide)lucide.createIcons();
+ document.getElementById('btnGenerate').disabled=!state.selectedType;
+}
+function selectType(type){state.selectedType=state.selectedType===type?"":type;renderVideoTypes();document.getElementById('btnGenerate').disabled=!state.selectedType;}
+
+document.getElementById('aiEngine').addEventListener('change',function(){
+ document.getElementById('engineHint').textContent=this.value==='deepseek'?'DeepSeek AI：已配置 API Key，创作更智能精准':'模板库改写：从脚本库匹配高成交脚本，改写为当前产品脚本';
+});
+
+async function doGenerate(extra){
+ if(!state.selectedProduct||!state.selectedType)return;state.step=3;state.generating=true;
+ document.getElementById('floatBar').classList.add('hidden');
+ document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='';
+ document.getElementById('scriptOutput').style.display='none';document.getElementById('generatingHint').style.display='';document.getElementById('btnOptimize').disabled=true;
+ document.getElementById('resultActions').style.display='none';
+ renderSeedancePrompts('');
+ try{
+  const body={product_id:state.selectedProduct.id,video_type:state.selectedType,engine:document.getElementById('aiEngine').value};
+  const preFill=document.getElementById('reqPreFill').value.trim();
+  const reqParts=[];if(preFill)reqParts.push('用户需求：'+preFill);if(extra)reqParts.push(extra);
+  if(reqParts.length)body.extra_requirements=reqParts.join('\n');
+  const r=await fetch('/api/scripts/generate?_='+Date.now(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error((await r.json()).detail||'生成失败');
+  const d=await r.json();currentScript=d.script_content;currentScriptId=d.id;
+  document.getElementById('scriptOutput').textContent=currentScript;
+  var metaExtra='';if(preFill||extra)metaExtra=' <span class="text-accent" style="font-weight:600">（'+(preFill?'含需求':'')+(preFill&&extra?'+':'')+(extra?'已优化':'')+'）</span>';
+  document.getElementById('resultMeta').innerHTML='产品：<b>'+d.product_name+'</b> &middot; 类型：<b class="text-accent">'+d.video_type+'</b>'+metaExtra;
+  renderSeedancePrompts(currentScript);
+ }catch(e){currentScript='';currentScriptId=null;renderSeedancePrompts('');document.getElementById('scriptOutput').textContent='生成失败：'+e.message}
+ finally{state.generating=false;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnOptimize').disabled=false;}
+}
+
+document.getElementById('btnGenerate').addEventListener('click',function(){doGenerate(null);});
+document.getElementById('optimizeInput').addEventListener('input',function(){document.getElementById('btnOptimize').disabled=!this.value.trim();});
+document.getElementById('btnOptimize').addEventListener('click',async function(){const s=document.getElementById('optimizeInput').value.trim();if(!s)return;await doGenerate('用户优化建议：'+s+'。请保持产品和视频类型不变，按要求重新生成。');document.getElementById('optimizeInput').value='';document.getElementById('btnOptimize').disabled=true;});
+document.getElementById('btnBack').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=!state.selectedType;currentScript='';currentScriptId=null;renderSeedancePrompts('');});
+document.getElementById('btnCopy').addEventListener('click',function(){const t=document.getElementById('scriptOutput').textContent;copyText(t).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
+document.getElementById('btnSave').addEventListener('click',async function(){if(!currentScriptId)return toast('请先生成脚本','error');try{const r=await fetch('/api/scripts/history/'+currentScriptId+'/save-to-library',{method:'POST'});if(r.ok)toast('已保存到模板库','success');else toast('保存失败','error');}catch(e){toast('保存失败','error');}});
+document.getElementById('btnRedo').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';currentScript='';currentScriptId=null;renderSeedancePrompts('');doGenerate(null);});
+document.getElementById('btnCopySeedanceAll').addEventListener('click',function(){var prompts=getSeedancePrompts(currentScript).map(function(x,i){return '画面'+(i+1)+'：'+x.scene+'\n'+x.prompt;}).join('\n\n');if(!prompts)return toast('暂无画面提示词','error');copyText(prompts).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
+document.getElementById('seedancePromptList').addEventListener('click',function(e){var btn=e.target.closest('.seedance-copy');if(!btn)return;var idx=Number(btn.dataset.index);var item=getSeedancePrompts(currentScript)[idx];if(!item)return;copyText(item.prompt).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
+document.getElementById('searchInput').addEventListener('input',function(){clearTimeout(window._st);window._st=setTimeout(loadProducts,300);});
+
+function getSeedancePrompts(script){
+ var text=String(script||'').trim();if(!text||text.startsWith('生成失败'))return [];
+ var re=/（([^）]{1,60})）/g,items=[],m,last=null;
+ while((m=re.exec(text))!==null){
+  if(last){last.line=text.slice(last.end,m.index).replace(/\s+/g,' ').trim();}
+  last={scene:m[1].trim(),end:re.lastIndex,line:''};items.push(last);
+ }
+ if(last)last.line=text.slice(last.end).replace(/\s+/g,' ').trim();
+ if(!items.length&&text)return [{scene:'口播画面',line:text.slice(0,90),prompt:buildSeedancePrompt('口播画面',text.slice(0,90),0)}];
+ return items.slice(0,24).map(function(item,i){return {scene:item.scene,line:item.line,prompt:buildSeedancePrompt(item.scene,item.line,i)};});
+}
+function buildSeedancePrompt(scene,line,index){
+ var product=state.selectedProduct&&state.selectedProduct.name?state.selectedProduct.name:'目标产品';
+ var category=state.selectedProduct&&state.selectedProduct.category?state.selectedProduct.category:'烘焙产品';
+ var shot=inferSeedanceShot(scene);
+ var action=line?line.slice(0,90):scene;
+ return '竖屏9:16，真实商业烘焙短视频，'+shot+'。主体是法采'+product+'，品类为'+category+'，画面要清晰展示产品包装、质地或使用过程。动作/内容参考：'+action+'。风格：明亮干净的烘焙工作室或蛋糕店，自然光，写实质感，近景和中景结合，轻微手持运动，产品对焦清楚，画面高级但真实。避免字幕、水印、畸变、多余文字、夸张特效。';
+}
+function inferSeedanceShot(scene){
+ if(/对比|分屏|差距/.test(scene))return '左右对比或前后对比镜头，突出产品差异';
+ if(/操作|演示|搅拌|加热|煮|倒|挤|切|打开/.test(scene))return '手部操作特写，完整展示制作动作和材料状态变化';
+ if(/空镜|产品|包装|展示|细节/.test(scene))return '产品空镜和细节特写，包装、粉体、成品质地清楚可见';
+ if(/成品|蛋糕|奶冻|夹心/.test(scene))return '成品蛋糕和夹心效果展示，镜头缓慢推进';
+ if(/口播|主播/.test(scene))return '主播半身口播，手拿产品或站在烘焙台前自然讲解';
+ return '烘焙场景实拍镜头，围绕产品和使用场景构图';
+}
+function renderSeedancePrompts(script){
+ var list=document.getElementById('seedancePromptList');var prompts=getSeedancePrompts(script);
+ if(!prompts.length){list.innerHTML='<div class="seedance-empty">生成脚本后，会按每个（画面）自动整理视频提示词。</div>';return;}
+ list.innerHTML=prompts.map(function(item,i){return '<div class="seedance-card"><div class="seedance-card-hd"><span class="seedance-scene">画面'+(i+1)+' · '+escHtml(item.scene)+'</span><button class="seedance-copy" type="button" data-index="'+i+'">复制</button></div><div class="seedance-prompt">'+escHtml(item.prompt)+'</div></div>';}).join('');
+}
+
+loadCategories();loadProducts();
+document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
+</script>
+</body>
+</html>

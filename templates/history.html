@@ -1,0 +1,99 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>生成脚本库 — 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260612">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+.script-preview-expanded {
+  max-height: none;
+  overflow: visible;
+}
+.script-preview-clickable {
+  cursor: pointer;
+}
+.script-preview-clickable:focus {
+  outline: 2px solid var(--facai-subtle);
+  outline-offset: 2px;
+}
+@media (max-width: 768px) {
+  #historyList .card > div:first-child { flex-direction: column; gap: 8px; }
+  #historyList .card > div:first-child > span { align-self: flex-start; }
+  #historyList .card > div:last-child .btn { flex: 1 1 auto; }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+<div class="nav-inner">
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<div class="nav-links">
+<a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link">模板库</a><a href="/app/history" class="nav-link on">历史</a>
+<a href="/app/search" class="nav-link">检索</a>
+</div></div></nav>
+
+<main class="page-main">
+<header class="page-hd">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div><h1>生成脚本库</h1><p style="margin-top:2px" id="countHint">加载中&hellip;</p></div>
+<a href="/app" class="btn btn-pri btn-sm">生成新脚本</a>
+</div></header>
+
+<div id="historyList"><div class="empty">加载中&hellip;</div></div>
+</main>
+
+<script>
+var scripts=[];
+var expandedScripts={};
+function toast(msg,type){var e=document.createElement('div');e.className='toast toast-'+(type==='success'?'ok':'err');e.textContent=msg;document.body.appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(function(){e.remove()},300)},2000);}
+function escHtml(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
+function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
+
+async function loadHistory(){try{var r=await fetch('/api/scripts/history');scripts=await r.json();}catch(e){}document.getElementById('countHint').textContent='共 '+scripts.length+' 条记录';renderList();}
+
+function renderList(){
+var c=document.getElementById('historyList');
+if(!scripts.length){c.innerHTML='<div class="card" style="text-align:center"><div class="empty"><div class="empty-icon">&#128240;</div><p style="margin-bottom:12px">暂无生成记录</p><a href="/app" class="btn btn-pri btn-sm">去生成第一个脚本 &rarr;</a></div></div>';return;}
+var h='';
+for(var i=0;i<scripts.length;i++){
+var s=scripts[i],hh=s.is_high_conversion;
+var content=s.script_content||'',isLong=content.length>400,isExpanded=!!expandedScripts[s.id];
+var preview=isExpanded||!isLong?content:content.substring(0,400)+'...';
+var previewAttrs=isLong?' onclick="toggleScriptExpanded('+s.id+')" onkeydown="handlePreviewKey(event,'+s.id+')" role="button" tabindex="0" title="'+(isExpanded?'点击收起':'点击查看全文')+'"':'';
+h+='<div class="card" style="margin-bottom:14px">';
+h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">';
+h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+h+='<span style="font-size:13px;font-weight:600">'+escHtml(s.product_name||'未知产品')+'</span>';
+if(s.video_type)h+='<span class="badge badge-a">'+escHtml(s.video_type)+'</span>';
+if(hh)h+='<span class="badge badge-hi">高成交</span>';
+if(s.ai_model)h+='<span style="font-size:12px;color:var(--text-3)">'+escHtml(s.ai_model)+'</span>';
+h+='</div><span style="font-size:12px;color:var(--text-3)">'+new Date(s.created_at).toLocaleString('zh-CN')+'</span></div>';
+h+='<div class="script-preview'+(isLong?' script-preview-clickable':'')+(isExpanded?' script-preview-expanded':'')+'"'+previewAttrs+' style="margin-bottom:10px">'+escHtml(preview)+'</div>';
+h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+if(isLong)h+='<button class="btn btn-soft btn-sm" onclick="toggleScriptExpanded('+s.id+')">'+(isExpanded?'收起':'查看全文')+'</button>';
+h+='<button class="btn btn-soft btn-sm" onclick="copyScript('+s.id+')">复制</button>';
+h+='<button class="btn btn-soft btn-sm" onclick="saveToLibrary('+s.id+')">存模板库</button>';
+h+='<button class="btn btn-soft btn-sm" onclick="toggleHigh('+s.id+')">'+(hh?'取消高成交':'标记高成交')+'</button>';
+h+='<button class="btn btn-danger btn-sm" onclick="deleteScript('+s.id+')">删除</button>';
+h+='</div></div>';
+}
+c.innerHTML=h;
+}
+
+function toggleScriptExpanded(id){expandedScripts[id]=!expandedScripts[id];renderList();}
+function handlePreviewKey(event,id){if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleScriptExpanded(id);}}
+async function copyScript(id){var s=scripts.find(function(x){return String(x.id)===String(id);});if(!s)return;try{await copyText(s.script_content);toast('已成功复制到剪贴板','success');}catch(e){toast('复制失败，请手动选中文案复制','error');}}
+async function saveToLibrary(id){var r=await fetch('/api/scripts/history/'+id+'/save-to-library',{method:'POST'});if(r.ok)toast('已保存到模板库','success');else toast('保存失败','error');}
+async function toggleHigh(id){await fetch('/api/scripts/history/'+id+'/toggle-high',{method:'POST'});loadHistory();}
+async function deleteScript(id){if(!confirm('确定删除？'))return;var r=await fetch('/api/scripts/history/'+id,{method:'DELETE'});if(r.ok){toast('已删除','success');loadHistory();}else toast('删除失败','error');}
+
+loadHistory();
+document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
+</script>
+</body>
+</html>

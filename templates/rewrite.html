@@ -1,0 +1,260 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>脚本改写 — 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260612">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+.pci{cursor:pointer;transition:all var(--normal) var(--ease);border:2px solid transparent;background:var(--surface);border-radius:var(--r);padding:14px}
+.pci:hover{border-color:var(--facai);background:var(--facai-ghost)}
+.pci.sel{border-color:var(--facai);background:var(--facai-ghost)}
+.rewrite-main{max-width:1540px}
+.rewrite-result-layout{display:grid;grid-template-columns:minmax(480px,1fr) minmax(620px,720px);gap:16px;align-items:stretch}
+.rewrite-script-col{min-width:0;display:flex;flex-direction:column}
+.script-output-frame{position:relative;min-width:0}
+.rewrite-script-col .so{height:520px;max-height:520px;overflow:auto;padding-bottom:86px}
+.result-actions{position:absolute;left:18px;right:18px;bottom:12px;display:flex;justify-content:flex-end;gap:6px;padding-top:10px;border-top:1px solid var(--border-soft);background:linear-gradient(to bottom,rgba(245,243,240,0),var(--surface-darker) 22px,var(--surface-darker))}
+.seedance-panel{border:1px solid var(--border);border-radius:var(--r);background:var(--surface-darker);padding:0;height:520px;max-height:520px;overflow:auto}
+.seedance-hd{position:sticky;top:0;z-index:3;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 12px;padding:14px 14px 10px;border-bottom:1px solid var(--border);background:var(--surface-darker)}
+.seedance-kicker{font-size:11px;font-weight:700;color:var(--facai);letter-spacing:.04em;margin-bottom:2px}
+.seedance-title{font-family:var(--font-ui);font-size:14px;margin:0;color:var(--text)}
+.seedance-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 14px 14px}
+.seedance-card{border:1px solid var(--border-soft);border-radius:var(--r-sm);background:#fff;padding:10px 12px;min-height:0;overflow:visible}
+.seedance-card-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.seedance-scene{font-size:12px;font-weight:800;color:var(--facai)}
+.seedance-copy{border:0;background:var(--facai-ghost);color:var(--facai);font-size:12px;font-weight:700;border-radius:var(--r-sm);padding:5px 8px;cursor:pointer}
+.seedance-copy:hover{background:var(--facai-soft)}
+.seedance-prompt{font-size:11.5px;line-height:1.62;color:var(--text);white-space:pre-wrap}
+.seedance-empty{grid-column:1/-1;font-size:12px;line-height:1.7;color:var(--text-3);padding:12px;border:1px dashed var(--border);border-radius:var(--r-sm);background:#fff}
+@media (max-width: 1240px) {
+  .rewrite-result-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 768px) {
+  #step1 .section-hd { align-items: flex-start !important; }
+  #step1 .section-hd > div { min-width: 0; }
+  #step1 [style*="justify-content:flex-end"] { justify-content: stretch !important; }
+  #btnToStep2, #btnRewrite { width: 100%; }
+  #step2 .card > div:first-child { flex-direction: column; align-items: stretch !important; }
+  #btnBackToStep1 { width: 100%; margin-left: 0 !important; }
+  #productPicker > div { min-width: 0; }
+  #productPicker > div[style*="display:flex"] { flex-direction: column !important; }
+  #productSearch, #categoryFilter { width: 100% !important; }
+  #productGrid { grid-template-columns: 1fr !important; max-height: none !important; }
+  #step3 .card > div:first-child { flex-direction: column; align-items: stretch !important; gap: 10px; }
+  #step3 .card > div:first-child > div:last-child { width: 100%; flex-wrap: wrap; }
+  #step3 .card > div:first-child .btn { flex: 1 1 auto; }
+  .rewrite-result-layout { grid-template-columns: 1fr; }
+  .rewrite-script-col .so { height: auto; min-height: 260px; max-height: 58vh; }
+  .result-actions { position: static; margin-top: 8px; flex-wrap: wrap; background: transparent; }
+  .seedance-panel { height: auto; max-height: none; }
+  .seedance-list { grid-template-columns: 1fr; }
+  .seedance-card { max-height: none; overflow: visible; }
+  #comparePanel > div { grid-template-columns: 1fr !important; }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+<div class="nav-inner">
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<div class="nav-links">
+<a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link on">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link">模板库</a><a href="/app/history" class="nav-link">历史</a>
+<a href="/app/search" class="nav-link">检索</a>
+</div></div></nav>
+
+<main class="page-main rewrite-main">
+<header class="page-hd"><h1>脚本改写</h1><p>粘贴原始脚本 &rarr; 选目标产品 &rarr; 保留参考结构并输出为资料脚本格式</p></header>
+
+<!-- Step 1 -->
+<section id="step1" class="card">
+<div class="section-hd" style="justify-content:space-between">
+<div style="display:flex;align-items:center;gap:10px"><span class="step step-on">1</span><h2 style="margin:0">粘贴原始脚本</h2></div>
+<span style="font-size:12px;color:var(--text-3)" id="charCount">0 字</span>
+</div>
+<textarea id="originalScript" class="so-input" placeholder="在此粘贴要改写的脚本内容...&#10;&#10;可以从模板库复制爆款脚本，或粘贴你自己写的脚本"></textarea>
+<p style="font-size:12px;color:var(--text-3);margin-top:8px">支持时间戳脚本或整段文案，改写会沿用原文顺序和表达节奏，并统一为“画面括号 + 口播文案”的资料表脚本格式</p>
+<div style="display:flex;justify-content:flex-end;margin-top:14px">
+<button id="btnToStep2" class="btn btn-pri" disabled>下一步：选目标产品 &rarr;</button>
+</div>
+</section>
+
+<!-- Step 2 -->
+<section id="step2" style="display:none">
+<div class="card">
+<div style="background:var(--facai-ghost);border-radius:var(--r);padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:12px;font-size:13px">
+<span style="color:var(--text-2)">待改写脚本：</span><span id="scriptPreview"></span>
+<button id="btnBackToStep1" class="btn btn-ghost btn-sm" style="margin-left:auto">更换脚本</button>
+</div>
+<div id="productPicker">
+<div class="section-hd"><span class="step step-on">2</span><h2 style="margin:0">选择目标产品</h2></div>
+<p style="font-size:12px;color:var(--text-3);margin-bottom:12px">将脚本改写为这个产品的版本</p>
+<div style="display:flex;gap:8px;margin-bottom:14px">
+<input id="productSearch" type="text" placeholder="搜索产品名称&hellip;" class="input" style="width:200px;font-size:13px">
+<select id="categoryFilter" class="input" style="width:140px;font-size:13px"><option value="">全部品类</option></select>
+</div>
+<div id="productGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;max-height:260px;overflow-y:auto;margin-bottom:14px"><div style="grid-column:1/-1;text-align:center;padding:28px 0;color:var(--text-3);font-size:13px">加载中&hellip;</div></div>
+</div>
+<div id="selectedHint" class="callout" style="display:none;margin-bottom:14px;font-size:13px;font-weight:500"></div>
+<div style="margin-bottom:18px">
+<label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">额外要求 <span style="font-weight:400;color:var(--border)">（选填）</span></label>
+<input id="extraReq" type="text" placeholder="如：保留数字冲击感、把促销话术改得更紧迫&hellip;" class="input" style="font-size:13px">
+</div>
+<button id="btnRewrite" class="btn btn-pri btn-lg" disabled>开始改写</button>
+</div>
+</section>
+
+<!-- Step 3 -->
+<section id="step3" style="display:none">
+<div class="card">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+<div style="font-size:13px"><span id="resultMeta"></span></div>
+<div style="display:flex;justify-content:flex-end">
+<button id="btnBackToStep2FromResult" class="btn btn-ghost btn-sm">返回</button>
+</div>
+</div>
+<div class="rewrite-result-layout">
+<div class="rewrite-script-col">
+<div class="script-output-frame">
+<div id="scriptOutput" class="so"></div>
+<div id="resultActions" class="result-actions">
+<button id="btnCopy" class="btn btn-soft btn-sm">复制</button>
+<button id="btnRedo" class="btn btn-soft btn-sm">再改一版</button>
+<button id="btnToggleCompare" class="btn btn-ghost btn-sm">对比原文</button>
+</div>
+<div id="generatingHint" style="display:none;text-align:center;padding:48px 20px">
+<div class="spin" style="width:36px;height:36px;border-width:3px;margin:0 auto 12px"></div>
+<p style="font-size:13px;color:var(--text-2);margin:0">AI 正在按原文结构逐句改写，并整理成资料脚本格式&hellip;</p>
+</div>
+</div>
+</div>
+<aside class="seedance-panel" aria-label="Seedance 2.0 画面提示词">
+<div class="seedance-hd">
+<div><div class="seedance-kicker">Seedance 2.0</div><h3 class="seedance-title">画面提示词</h3></div>
+<button id="btnCopySeedanceAll" class="btn btn-soft btn-sm" type="button">复制全部</button>
+</div>
+<div id="seedancePromptList" class="seedance-list">
+<div class="seedance-empty">生成脚本后，会按每个（画面）自动整理视频提示词。</div>
+</div>
+</aside>
+</div>
+<div id="comparePanel" style="display:none;margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+<div><h4 style="font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:8px">原文</h4><div style="background:var(--bg);border-radius:var(--r);padding:16px;font-size:12px;line-height:1.7;max-height:300px;overflow-y:auto;white-space:pre-wrap" id="compareOriginal"></div></div>
+<div><h4 class="text-accent" style="font-size:12px;font-weight:600;margin-bottom:8px">改写</h4><div style="background:var(--facai-ghost);border-radius:var(--r);padding:16px;font-size:12px;line-height:1.7;max-height:300px;overflow-y:auto;white-space:pre-wrap" id="compareRewritten"></div></div>
+</div></div>
+<p style="font-size:12px;color:var(--text-3);margin-top:12px">改写后会保留参考文案的信息顺序，同时统一为资料脚本表里的连续成稿格式。点「对比原文」查看改动处。</p>
+</div>
+</section>
+</main>
+
+<div id="tooltip" class="tip"></div>
+
+<script>
+var products=[],categories=[],selectedProduct=null,originalScript='',currentRewritten='';
+
+function toast(msg,type){var e=document.createElement('div');e.className='toast toast-'+(type==='success'?'ok':'err');e.textContent=msg;document.body.appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(function(){e.remove()},300)},2500);}
+function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
+function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
+function escHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+
+function showTip(e,summary){var tip=document.getElementById('tooltip');var parts=summary.split('；').slice(0,4);tip.innerHTML=parts.map(function(s){var m=s.match(/^\[(.+?)\](.+)/);return m?'<div style="padding:2px 0"><span style="color:var(--facai)">['+m[1]+']</span>'+m[2]+'</div>':'<div style="padding:2px 0;color:var(--text)">'+s+'</div>';}).join('');tip.style.display='';tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY-10)+'px';}
+function hideTip(){document.getElementById('tooltip').style.display='none';}
+
+async function loadProducts(){var r=await fetch('/api/products/');products=await r.json();renderProducts();}
+async function loadCategories(){var r=await fetch('/api/products/categories');categories=await r.json();var sel=document.getElementById('categoryFilter');categories.forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});}
+
+function renderProducts(filter){
+ filter=filter||'';var cat=document.getElementById('categoryFilter').value;
+ var filtered=products;if(cat)filtered=filtered.filter(function(p){return p.category===cat;});
+ if(filter)filtered=filtered.filter(function(p){return p.name.includes(filter)||p.category.includes(filter);});
+ var grid=document.getElementById('productGrid');
+ if(!filtered.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:20px 0;color:var(--text-3);font-size:13px">无匹配产品</div>';return;}
+ grid.innerHTML=filtered.map(function(p){return'<div class="pci'+(selectedProduct&&selectedProduct.id===p.id?' sel':'')+'" onclick="selectProduct('+p.id+')" onmouseenter="showTip(event,\''+(p.selling_point_summary||'暂无卖点').replace(/'/g,'&#39;').replace(/"/g,'&quot;')+'\')" onmouseleave="hideTip()"><span class="pcat">'+p.category+'</span><div class="pname" style="font-size:13px;margin:6px 0 4px">'+p.name+'</div><div style="display:flex;align-items:baseline;gap:6px"><span class="pprice" style="font-size:18px">&yen;'+p.price+'</span>'+(p.original_price?'<span style="font-size:12px;color:var(--text-3);text-decoration:line-through">&yen;'+p.original_price+'</span>':'')+'</div><div class="pmeta">'+p.selling_point_count+' 个卖点</div></div>';}).join('');
+}
+
+function selectProduct(id){selectedProduct=products.find(function(p){return p.id===id;});document.getElementById('productPicker').style.display='none';var hint=document.getElementById('selectedHint');hint.style.display='';hint.textContent='目标产品：'+selectedProduct.name+' | '+selectedProduct.category+' | ¥'+selectedProduct.price;document.getElementById('btnRewrite').disabled=false;}
+
+document.getElementById('productSearch').addEventListener('input',function(){renderProducts(this.value);});
+document.getElementById('categoryFilter').addEventListener('change',function(){renderProducts();});
+
+var ta=document.getElementById('originalScript');
+ta.addEventListener('input',function(){var len=this.value.length;document.getElementById('charCount').textContent=len+' 字';document.getElementById('btnToStep2').disabled=len<20;});
+
+var params=new URLSearchParams(window.location.search);var pf=params.get('script');
+if(pf){ta.value=decodeURIComponent(pf);document.getElementById('charCount').textContent=ta.value.length+' 字';document.getElementById('btnToStep2').disabled=false;}
+
+document.getElementById('btnToStep2').addEventListener('click',function(){originalScript=ta.value.trim();document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('scriptPreview').textContent=originalScript.substring(0,60).replace(/\n/g,' ')+'...';});
+document.getElementById('btnBackToStep1').addEventListener('click',function(){document.getElementById('step1').style.display='';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';});
+
+async function submitRewrite(extraOverride){
+ if(!originalScript||!selectedProduct)return;
+ document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='';
+ document.getElementById('scriptOutput').style.display='none';document.getElementById('generatingHint').style.display='';document.getElementById('comparePanel').style.display='none';
+ document.getElementById('resultActions').style.display='none';
+ renderSeedancePrompts('');
+ document.getElementById('btnRewrite').disabled=true;document.getElementById('btnRedo').disabled=true;
+ try{
+  var reqs=[];var baseReq=document.getElementById('extraReq').value.trim();if(baseReq)reqs.push(baseReq);if(extraOverride)reqs.push(extraOverride);
+  var r=await fetch('/api/scripts/rewrite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({original_script:originalScript,product_id:selectedProduct.id,extra_requirements:reqs.length?reqs.join('\n'):null})});
+  if(!r.ok)throw new Error((await r.json()).detail||'改写失败');
+  var d=await r.json();currentRewritten=d.rewritten_script;
+  document.getElementById('scriptOutput').textContent=currentRewritten;
+  document.getElementById('resultMeta').innerHTML='目标产品：<b>'+d.product_name+'</b> | 已保留参考结构并按资料脚本格式输出';
+  document.getElementById('compareOriginal').textContent=d.original_script;
+  document.getElementById('compareRewritten').textContent=d.rewritten_script;
+  renderSeedancePrompts(currentRewritten);
+ }catch(e){document.getElementById('scriptOutput').textContent='改写失败：'+e.message}
+ finally{document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnRewrite').disabled=false;document.getElementById('btnRedo').disabled=false;}
+}
+
+document.getElementById('btnRewrite').addEventListener('click',function(){submitRewrite(null);});
+
+document.getElementById('btnToggleCompare').addEventListener('click',function(){var p=document.getElementById('comparePanel');p.style.display=p.style.display==='none'?'':'';});
+document.getElementById('btnCopy').addEventListener('click',function(){var t=document.getElementById('scriptOutput').textContent;if(!t||t.startsWith('改写失败'))return toast('暂无可复制内容','error');copyText(t).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
+document.getElementById('btnBackToStep2FromResult').addEventListener('click',function(){document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';});
+document.getElementById('btnRedo').addEventListener('click',function(){var last=currentRewritten?'\n上一版文案：\n'+currentRewritten:'';submitRewrite('请在保留参考文案结构的前提下，直接生成一个不同于上一版的新版本，表达方式、镜头提示和措辞要有明显区别。'+last);});
+document.getElementById('btnCopySeedanceAll').addEventListener('click',function(){var prompts=getSeedancePrompts(currentRewritten).map(function(x,i){return '画面'+(i+1)+'：'+x.scene+'\n'+x.prompt;}).join('\n\n');if(!prompts)return toast('暂无画面提示词','error');copyText(prompts).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
+document.getElementById('seedancePromptList').addEventListener('click',function(e){var btn=e.target.closest('.seedance-copy');if(!btn)return;var idx=Number(btn.dataset.index);var item=getSeedancePrompts(currentRewritten)[idx];if(!item)return;copyText(item.prompt).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
+
+function getSeedancePrompts(script){
+ var text=String(script||'').trim();if(!text||text.startsWith('改写失败'))return [];
+ var re=/（([^）]{1,60})）/g,items=[],m,last=null;
+ while((m=re.exec(text))!==null){
+  if(last){last.line=text.slice(last.end,m.index).replace(/\s+/g,' ').trim();}
+  last={scene:m[1].trim(),end:re.lastIndex,line:''};items.push(last);
+ }
+ if(last)last.line=text.slice(last.end).replace(/\s+/g,' ').trim();
+ if(!items.length&&text)return [{scene:'口播画面',line:text.slice(0,90)}];
+ return items.slice(0,24).map(function(item,i){return {scene:item.scene,line:item.line,prompt:buildSeedancePrompt(item.scene,item.line,i)};});
+}
+function buildSeedancePrompt(scene,line,index){
+ var product=selectedProduct&&selectedProduct.name?selectedProduct.name:'目标产品';
+ var category=selectedProduct&&selectedProduct.category?selectedProduct.category:'烘焙产品';
+ var shot=inferSeedanceShot(scene);
+ var action=line?line.slice(0,90):scene;
+ return '竖屏9:16，真实商业烘焙短视频，'+shot+'。主体是法采'+product+'，品类为'+category+'，画面要清晰展示产品包装、质地或使用过程。动作/内容参考：'+action+'。风格：明亮干净的烘焙工作室或蛋糕店，自然光，写实质感，近景和中景结合，轻微手持运动，产品对焦清楚，画面高级但真实。避免字幕、水印、畸变、多余文字、夸张特效。';
+}
+function inferSeedanceShot(scene){
+ if(/对比|分屏|差距/.test(scene))return '左右对比或前后对比镜头，突出产品差异';
+ if(/操作|演示|搅拌|加热|煮|倒|挤|切|打开/.test(scene))return '手部操作特写，完整展示制作动作和材料状态变化';
+ if(/空镜|产品|包装|展示|细节/.test(scene))return '产品空镜和细节特写，包装、粉体、成品质地清楚可见';
+ if(/成品|蛋糕|奶冻|夹心/.test(scene))return '成品蛋糕和夹心效果展示，镜头缓慢推进';
+ if(/口播|主播/.test(scene))return '主播半身口播，手拿产品或站在烘焙台前自然讲解';
+ return '烘焙场景实拍镜头，围绕产品和使用场景构图';
+}
+function renderSeedancePrompts(script){
+ var list=document.getElementById('seedancePromptList');var prompts=getSeedancePrompts(script);
+ if(!prompts.length){list.innerHTML='<div class="seedance-empty">生成脚本后，会按每个（画面）自动整理视频提示词。</div>';return;}
+ list.innerHTML=prompts.map(function(item,i){return '<div class="seedance-card"><div class="seedance-card-hd"><span class="seedance-scene">画面'+(i+1)+' · '+escHtml(item.scene)+'</span><button class="seedance-copy" type="button" data-index="'+i+'">复制</button></div><div class="seedance-prompt">'+escHtml(item.prompt)+'</div></div>';}).join('');
+}
+
+loadCategories();loadProducts();
+document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
+</script>
+</body>
+</html>
