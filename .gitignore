@@ -19,6 +19,7 @@ output/
 data/chroma_db/*
 data/chroma_test/*
 data/models/*
+data/search_index.json
 data/product_files/*
 data/*.png
 !data/chroma_db/.gitkeep

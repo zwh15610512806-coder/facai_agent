@@ -1,5 +1,5 @@
 """数据库连接与会话管理"""
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from config import DATABASE_URL
 import os
@@ -25,3 +25,17 @@ def init_db():
     """初始化数据库表"""
     import models  # 确保模型类被注册到 Base.metadata
     Base.metadata.create_all(bind=engine)
+    _ensure_compatible_columns()
+
+
+def _ensure_compatible_columns():
+    """Add lightweight SQLite columns that create_all will not add to old tables."""
+    if engine.dialect.name != "sqlite":
+        return
+    inspector = inspect(engine)
+    if "products" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("products")}
+    with engine.begin() as connection:
+        if "pending_fields" not in columns:
+            connection.execute(text("ALTER TABLE products ADD COLUMN pending_fields JSON"))

@@ -505,6 +505,17 @@ async function fetchIndexStatus() {
     const r = await fetch('/api/search-proxy/index/status');
     const d = await r.json();
     if (d.success) {
+      if (d.is_indexing) {
+        $('indexBadgeText').textContent = '索引中...';
+        $('indexInfo').textContent = d.message || '正在更新文件索引';
+        $('indexBadge').classList.add('updating');
+        $('refreshIndexBtn').disabled = true;
+        $('refreshIndexBtn').textContent = '⏳ 索引中...';
+        $('totalFiles').textContent = d.total_files ? '已发现 ' + d.total_files.toLocaleString() + ' 文件' : '--';
+        return;
+      }
+      $('refreshIndexBtn').disabled = false;
+      $('refreshIndexBtn').textContent = '🔄 手动更新索引';
       const last = d.last_indexed;
       if (last) {
         const diff = (Date.now() - new Date(last).getTime()) / 36e5;
@@ -518,6 +529,7 @@ async function fetchIndexStatus() {
       } else {
         $('indexBadgeText').textContent = '尚未索引';
         $('indexInfo').textContent = '请先触发全量索引';
+        $('indexBadge').classList.remove('updating');
       }
     }
   } catch(e) { console.error(e); }
@@ -556,6 +568,8 @@ function fmtSize(b) {
 }
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('zh-CN') : '-'; }
 function escPath(p) { return (p || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+function escHtml(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); }
+function escAttr(v) { return escHtml(v).replace(/`/g, '&#96;'); }
 
 // ====== Render ======
 function renderFiles(files) {
@@ -571,12 +585,12 @@ function renderFiles(files) {
     return `<div class="file-item${isF ? ' folder' : ''}" data-id="${f.id}" ${ch}>
       <div class="file-icon ${iconClass(f.file_type)}">${fileIcon(f.file_type)}</div>
       <div class="file-info">
-        <div class="file-name" title="${f.file_name}">${f.file_name}</div>
-        ${f.parent_folder ? `<div class="file-folder">📁 ${(f.parent_folder || '').replace(/,/g, ' › ')}</div>` : ''}
-        <div class="file-path">📍 ${f.file_path}</div>
+        <div class="file-name" title="${escAttr(f.file_name)}">${escHtml(f.file_name)}</div>
+        ${f.parent_folder ? `<div class="file-folder">📁 ${escHtml((f.parent_folder || '').replace(/,/g, ' › '))}</div>` : ''}
+        <div class="file-path">📍 ${escHtml(f.file_path)}</div>
         <div class="file-meta">
           <span>📅 ${fmtDate(f.file_modified)}</span>
-          ${isF ? '<span>📂 文件夹</span>' : `<span>💾 ${fmtSize(f.file_size)}</span><span>📎 ${(f.file_extension || '').toUpperCase()}</span>`}
+          ${isF ? '<span>📂 文件夹</span>' : `<span>💾 ${fmtSize(f.file_size)}</span><span>📎 ${escHtml((f.file_extension || '').toUpperCase())}</span>`}
         </div>
       </div>
       <div class="file-actions">
@@ -718,7 +732,7 @@ async function previewFile(id, ft, ext) {
     const f = d.file;
     $('modalTitle').textContent = f.file_name;
     const pu = '/api/search-proxy/files/' + id + '/preview';
-    if (ft === 'image') $('modalBody').innerHTML = '<img src="' + pu + '" class="img-preview" alt="' + f.file_name + '">';
+    if (ft === 'image') $('modalBody').innerHTML = '<img src="' + pu + '" class="img-preview" alt="' + escAttr(f.file_name) + '">';
     else if (ft === 'video') $('modalBody').innerHTML = '<video class="vid-preview" controls><source src="' + pu + '" type="video/mp4"></video>';
     else if (ft === 'audio') $('modalBody').innerHTML = '<audio controls style="width:100%;margin:20px"><source src="' + pu + '" type="audio/mpeg"></audio>';
     else if (ft === 'document' && ext === 'pdf') $('modalBody').innerHTML = '<iframe src="' + pu + '" class="pdf-preview"></iframe>';

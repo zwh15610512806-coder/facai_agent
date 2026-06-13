@@ -78,6 +78,11 @@
 </div>
 <textarea id="originalScript" class="so-input" placeholder="在此粘贴要改写的脚本内容...&#10;&#10;可以从模板库复制爆款脚本，或粘贴你自己写的脚本"></textarea>
 <p style="font-size:12px;color:var(--text-3);margin-top:8px">支持时间戳脚本或整段文案，改写会沿用原文顺序和表达节奏，并统一为“画面括号 + 口播文案”的资料表脚本格式</p>
+<div style="margin-top:18px">
+<label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">需求预填写 <span style="font-weight:400;color:var(--text-3)">（选填）</span></label>
+<textarea id="rewriteReqPreFill" class="input" style="width:100%;min-height:80px;font-size:13px;resize:vertical" placeholder="填写你对改写脚本的限制、方向、活动卖点或语气要求…&#10;例如：保留原文强对比结构、突出买二送一活动、口播更像门店老板真实分享"></textarea>
+<p style="font-size:12px;color:var(--text-3);margin-top:4px">填写的需求会随改写请求一起传给 AI，用来限制或引导改写后的脚本</p>
+</div>
 <div style="display:flex;justify-content:flex-end;margin-top:14px">
 <button id="btnToStep2" class="btn btn-pri" disabled>下一步：选目标产品 &rarr;</button>
 </div>
@@ -167,17 +172,20 @@ function hideTip(){document.getElementById('tooltip').style.display='none';}
 
 async function loadProducts(){var r=await fetch('/api/products/');products=await r.json();renderProducts();}
 async function loadCategories(){var r=await fetch('/api/products/categories');categories=await r.json();var sel=document.getElementById('categoryFilter');categories.forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});}
+function hasPendingProductField(p,field){return Array.isArray(p&&p.pending_fields)&&p.pending_fields.indexOf(field)>=0;}
+function productCategoryLabel(p){return hasPendingProductField(p,'category')?'待更新':(p&&p.category?p.category:'待更新');}
+function productPriceLabel(p){return hasPendingProductField(p,'price')?'待更新':'¥'+(p&&p.price!=null?p.price:'');}
 
 function renderProducts(filter){
  filter=filter||'';var cat=document.getElementById('categoryFilter').value;
- var filtered=products;if(cat)filtered=filtered.filter(function(p){return p.category===cat;});
- if(filter)filtered=filtered.filter(function(p){return p.name.includes(filter)||p.category.includes(filter);});
+ var filtered=products;if(cat)filtered=filtered.filter(function(p){return productCategoryLabel(p)===cat;});
+ if(filter)filtered=filtered.filter(function(p){return p.name.includes(filter)||productCategoryLabel(p).includes(filter);});
  var grid=document.getElementById('productGrid');
  if(!filtered.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:20px 0;color:var(--text-3);font-size:13px">无匹配产品</div>';return;}
- grid.innerHTML=filtered.map(function(p){return'<div class="pci'+(selectedProduct&&selectedProduct.id===p.id?' sel':'')+'" onclick="selectProduct('+p.id+')" onmouseenter="showTip(event,\''+(p.selling_point_summary||'暂无卖点').replace(/'/g,'&#39;').replace(/"/g,'&quot;')+'\')" onmouseleave="hideTip()"><span class="pcat">'+p.category+'</span><div class="pname" style="font-size:13px;margin:6px 0 4px">'+p.name+'</div><div style="display:flex;align-items:baseline;gap:6px"><span class="pprice" style="font-size:18px">&yen;'+p.price+'</span>'+(p.original_price?'<span style="font-size:12px;color:var(--text-3);text-decoration:line-through">&yen;'+p.original_price+'</span>':'')+'</div><div class="pmeta">'+p.selling_point_count+' 个卖点</div></div>';}).join('');
+ grid.innerHTML=filtered.map(function(p){return'<div class="pci'+(selectedProduct&&selectedProduct.id===p.id?' sel':'')+'" onclick="selectProduct('+p.id+')" onmouseenter="showTip(event,\''+(p.selling_point_summary||'暂无卖点').replace(/'/g,'&#39;').replace(/"/g,'&quot;')+'\')" onmouseleave="hideTip()"><span class="pcat">'+productCategoryLabel(p)+'</span><div class="pname" style="font-size:13px;margin:6px 0 4px">'+p.name+'</div><div style="display:flex;align-items:baseline;gap:6px"><span class="pprice" style="font-size:18px">'+productPriceLabel(p)+'</span>'+(!hasPendingProductField(p,'price')&&p.original_price?'<span style="font-size:12px;color:var(--text-3);text-decoration:line-through">&yen;'+p.original_price+'</span>':'')+'</div><div class="pmeta">'+p.selling_point_count+' 个卖点</div></div>';}).join('');
 }
 
-function selectProduct(id){selectedProduct=products.find(function(p){return p.id===id;});document.getElementById('productPicker').style.display='none';var hint=document.getElementById('selectedHint');hint.style.display='';hint.textContent='目标产品：'+selectedProduct.name+' | '+selectedProduct.category+' | ¥'+selectedProduct.price;document.getElementById('btnRewrite').disabled=false;}
+function selectProduct(id){selectedProduct=products.find(function(p){return p.id===id;});document.getElementById('productPicker').style.display='none';var hint=document.getElementById('selectedHint');hint.style.display='';hint.textContent='目标产品：'+selectedProduct.name+' | '+productCategoryLabel(selectedProduct)+(hasPendingProductField(selectedProduct,'price')?' | 待更新':' | ¥'+selectedProduct.price);document.getElementById('btnRewrite').disabled=false;}
 
 document.getElementById('productSearch').addEventListener('input',function(){renderProducts(this.value);});
 document.getElementById('categoryFilter').addEventListener('change',function(){renderProducts();});
@@ -199,7 +207,7 @@ async function submitRewrite(extraOverride){
  renderSeedancePrompts('');
  document.getElementById('btnRewrite').disabled=true;document.getElementById('btnRedo').disabled=true;
  try{
-  var reqs=[];var baseReq=document.getElementById('extraReq').value.trim();if(baseReq)reqs.push(baseReq);if(extraOverride)reqs.push(extraOverride);
+  var reqs=[];var preFill=document.getElementById('rewriteReqPreFill').value.trim();var baseReq=document.getElementById('extraReq').value.trim();if(preFill)reqs.push('用户需求：'+preFill);if(baseReq)reqs.push(baseReq);if(extraOverride)reqs.push(extraOverride);
   var r=await fetch('/api/scripts/rewrite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({original_script:originalScript,product_id:selectedProduct.id,extra_requirements:reqs.length?reqs.join('\n'):null})});
   if(!r.ok)throw new Error((await r.json()).detail||'改写失败');
   var d=await r.json();currentRewritten=d.rewritten_script;

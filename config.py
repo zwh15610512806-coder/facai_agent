@@ -32,3 +32,10 @@ SEARCH_BACKEND_URL = os.getenv("SEARCH_BACKEND_URL", "http://127.0.0.1:5000")
 # 文件上传配置
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./data/uploads")
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Web access controls
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]

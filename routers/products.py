@@ -54,6 +54,7 @@ def list_products(
             brand=p.brand,
             image_url=p.image_url,
             info_file=p.info_file,
+            pending_fields=_normalize_pending_fields(p.pending_fields),
             status=p.status,
             selling_point_count=len(p.selling_points),
             selling_point_summary=summary if summary else "暂无卖点",
@@ -109,6 +110,7 @@ def semantic_search_products(
                 price=p.price, original_price=p.original_price,
                 commission_rate=p.commission_rate, brand=p.brand,
                 image_url=p.image_url, info_file=p.info_file,
+                pending_fields=_normalize_pending_fields(p.pending_fields),
                 status=p.status, selling_point_count=len(p.selling_points),
                 selling_point_summary=summary if summary else "暂无卖点",
             ))
@@ -425,6 +427,18 @@ def _sync_product_index(product_id: int, db: Session):
             ProductVectorStore().index_product(product, db)
     except Exception:
         pass
+
+
+def _normalize_pending_fields(value) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item]
+    if isinstance(value, (tuple, set)):
+        return [str(item) for item in value if item]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
 
 
 def _delete_product_index(product_id: int):

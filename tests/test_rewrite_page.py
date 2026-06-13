@@ -39,6 +39,13 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("已保留参考结构并按资料脚本格式输出", self.page)
         self.assertNotIn("已保留原脚本结构", self.page)
 
+    def test_rewrite_page_has_demand_prefill(self):
+        self.assertIn("需求预填写", self.page)
+        self.assertIn("id=\"rewriteReqPreFill\"", self.page)
+        self.assertIn("填写你对改写脚本的限制、方向、活动卖点或语气要求", self.page)
+        self.assertIn("document.getElementById('rewriteReqPreFill').value.trim()", self.page)
+        self.assertIn("reqs.push('用户需求：'+preFill)", self.page)
+
     def test_rewriter_extracts_timestamped_reference_structure(self):
         original = """00:00 头些年我还是当记者的时候
 00:01 我们采访老师就是说明黄水无所谓
@@ -52,6 +59,8 @@ class RewritePageTests(unittest.TestCase):
     def test_rewriter_prompt_prioritizes_reference_structure(self):
         self.assertIn("用户参考文案结构", ScriptRewriter.SYSTEM_PROMPT)
         self.assertIn("不能让同类参考脚本覆盖用户参考文案结构", ScriptRewriter.SYSTEM_PROMPT)
+        self.assertIn("拍摄主体、景别/镜头、动作或展示细节", ScriptRewriter.SYSTEM_PROMPT)
+        self.assertIn("不要只写（口播画面）（产品空镜）（产品展示）", ScriptRewriter.SYSTEM_PROMPT)
 
     def test_rewriter_cleanup_converts_sectioned_output_to_material_style(self):
         text = """改写后的脚本：
@@ -65,11 +74,39 @@ class RewritePageTests(unittest.TestCase):
 需要的点下方链接。
 """
         cleaned = ScriptRewriter()._cleanup_rewrite_output(text)
-        self.assertIn("（口播画面）老板们别再乱买了！", cleaned)
-        self.assertIn("（产品空镜）看一下法采这款产品", cleaned)
-        self.assertIn("（指向小黄车口播）需要的点下方链接。", cleaned)
+        self.assertIn("（主播半身站在烘焙台前开场，手边摆放产品包装）老板们别再乱买了！", cleaned)
+        self.assertIn("（产品包装正面近景，手拿转动展示规格）看一下法采这款产品", cleaned)
+        self.assertIn("（主播手指下方小黄车，引导查看详情）需要的点下方链接。", cleaned)
+        self.assertNotIn("（口播画面）", cleaned)
+        self.assertNotIn("（产品空镜）", cleaned)
         self.assertNotIn("【0-3s 开场钩子】", cleaned)
         self.assertNotIn("改写后的脚本", cleaned)
+
+    def test_rewriter_enriches_generic_scene_labels(self):
+        cleaned = ScriptRewriter()._cleanup_rewrite_output(
+            "（口播画面）老板们看过来。（产品空镜）看一下这款奶冻粉。（操作演示）加水搅拌。"
+        )
+
+        self.assertNotIn("（口播画面）", cleaned)
+        self.assertNotIn("（产品空镜）", cleaned)
+        self.assertIn("（主播半身站在烘焙台前开场，手边摆放产品包装）", cleaned)
+        self.assertIn("（产品包装正面近景，手拿转动展示规格）", cleaned)
+        self.assertIn("（俯拍操作台，手部演示使用步骤和状态变化）", cleaned)
+
+    def test_offline_rewrite_uses_detailed_scene_labels(self):
+        output = ScriptRewriter()._offline_material_rewrite(
+            "奶冻粉",
+            "烘焙夹心",
+            12.71,
+            [{"content": "凝固稳定，不容易出水"}],
+            original_script="00:00 老板们看过来\n00:01 看一下这个产品\n00:02 加水搅拌",
+        )
+
+        self.assertNotIn("（口播画面）", output)
+        self.assertNotIn("（产品空镜）", output)
+        self.assertIn("主播半身站在烘焙台前开场", output)
+        self.assertIn("奶冻粉包装正面近景", output)
+        self.assertIn("俯拍操作台", output)
 
     def test_rewrite_copy_button_has_fallback_and_error_feedback(self):
         self.assertIn("function fallbackCopyText", self.page)

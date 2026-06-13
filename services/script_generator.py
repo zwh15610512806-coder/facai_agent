@@ -2,6 +2,7 @@
 from services.ai_service import ai_service, AIService, build_faicai_script
 from models import ViralScript, ReferenceScript
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Dict, Optional, Any
 import json
 import logging
@@ -179,6 +180,75 @@ class ScriptGenerator:
             logger.warning(f"Keyword similar scripts failed: {e}")
             return []
 
+    def find_high_conversion_scripts(
+        self,
+        product: Dict,
+        db: Session,
+        limit: int = 5,
+    ) -> List[Dict]:
+        """Return only high-conversion viral-library scripts for auto type generation."""
+        try:
+            product_name = product.get("name", "")
+            category = product.get("category", "")
+            candidates = self._extract_keywords(product_name)
+            scripts = []
+            seen_ids = set()
+
+            def append_results(query):
+                nonlocal scripts
+                for script in query.all():
+                    if script.id in seen_ids:
+                        continue
+                    seen_ids.add(script.id)
+                    scripts.append(script)
+                    if len(scripts) >= limit:
+                        break
+
+            base_query = db.query(ViralScript).filter(ViralScript.is_high_conversion == 1)
+
+            if category:
+                append_results(
+                    base_query.filter(ViralScript.category.contains(category))
+                    .order_by(ViralScript.id.asc())
+                    .limit(limit)
+                )
+
+            for kw in candidates:
+                if len(scripts) >= limit:
+                    break
+                append_results(
+                    base_query.filter(
+                        or_(
+                            ViralScript.category.contains(kw),
+                            ViralScript.title.contains(kw),
+                            ViralScript.tags.contains(kw),
+                        )
+                    )
+                    .order_by(ViralScript.id.asc())
+                    .limit(limit)
+                )
+
+            if len(scripts) < limit:
+                append_results(
+                    base_query.order_by(ViralScript.id.asc()).limit(limit)
+                )
+
+            return [
+                {
+                    "title": s.title,
+                    "content": s.script_content,
+                    "video_type": s.video_type,
+                    "category": s.category,
+                    "tags": s.tags,
+                    "performance": s.performance_data,
+                    "is_high_conversion": True,
+                }
+                for s in scripts[:limit]
+            ]
+        except Exception as e:
+            logger.warning(f"High-conversion script search failed: {e}")
+            return []
+
     async def generate(
         self,
         product: Dict,
@@ -273,7 +343,9 @@ class ScriptGenerator:
         parts.append(f"产品名称：{product.get('name', '')}")
         parts.append(f"品类：{product.get('category', '')}")
         parts.append(f"品牌：{product.get('brand', '')}")
-        parts.append(f"售价：{product.get('price', 0)}元")
+        pending_fields = set(product.get("pending_fields") or [])
+        price_text = "待更新" if "price" in pending_fields else f"{product.get('price', 0)}元"
+        parts.append(f"售价：{price_text}")
         if product.get("original_price"):
             parts.append(f"原价：{product.get('original_price')}元")
         if product.get("description"):
@@ -356,6 +428,8 @@ class ScriptGenerator:
         product_name = product.get("name", "")
         product_category = product.get("category", "")
         product_price = product.get("price", 0)
+        product_pending_fields = set(product.get("pending_fields") or [])
+        product_price_text = "待更新" if "price" in product_pending_fields else f"{product_price}元"
         selling_points = product.get("selling_points", [])
 
         # 格式化卖点
@@ -393,7 +467,7 @@ class ScriptGenerator:
 ====================================
 产品名称：{product_name}
 品类：{product_category}
-售价：{product_price}元
+售价：{product_price_text}
 品牌：法采
 视频类型：{video_type}
 语言风格：{tone}

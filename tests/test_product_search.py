@@ -51,6 +51,27 @@ class ProductSearchTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_list_products_normalizes_pending_fields(self):
+        db = self.Session()
+        try:
+            db.add(
+                Product(
+                    name="Pending Product",
+                    category="Tools",
+                    price=12,
+                    status="active",
+                    pending_fields="category, price",
+                )
+            )
+            db.commit()
+
+            results = list_products(category=None, search=None, status="active", db=db)
+
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].pending_fields, ["category", "price"])
+        finally:
+            db.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,11 +11,12 @@ class ScriptRewriter:
     MATERIAL_SCRIPT_FORMAT = """【资料脚本生成文件格式要求】
 输出必须参考《资料/脚本生成.xlsx》的脚本格式：
 - 直接输出一条可拍摄的完整短视频脚本，不要解释、不要标题、不要 Markdown、不要编号列表。
-- 用中文全角括号写画面/拍摄/剪辑指令，例如：（口播画面）（产品空镜）（展示对比）（主播拿着产品口播）。
-- 括号后面直接接对应口播文案，形成连续成稿，例如：（口播画面）老板们别再乱买了，（产品空镜）看一下法采这款...
+- 用中文全角括号写具体画面/拍摄/剪辑指令，必须包含拍摄主体、镜头/景别、动作或道具，例如：（主播半身站在烘焙台前开场，手边摆放产品包装）（产品包装正面近景，手拿转动展示规格）（俯拍操作台，手部倒入原料并搅拌）（切开成品蛋糕近景，展示夹心层次）。
+- 括号后面直接接对应口播文案，形成连续成稿，例如：（主播半身站在烘焙台前开场，手边摆放产品包装）老板们别再乱买了，（产品包装正面近景，手拿转动展示规格）看一下法采这款...
+- 不要只写（口播画面）（产品空镜）（产品展示）这类泛标签；每一句口播前的括号都要像模板库脚本一样说明“拍什么、怎么拍、展示什么细节”。
 - 不要输出【开场钩子】【痛点激发】【产品卖点展示】这类段落标题。
 - 不要输出 0-3s、3-10s、00:00-00:03 这类时间戳；如果原文有时间戳，只吸收节奏，不保留时间戳格式。
-- 如果原文是一整段话，也要补出必要的（口播画面）（产品展示）（空镜/对比/操作演示）等括号画面指令。
+- 如果原文是一整段话，也要给每个关键句补出具体画面指令，例如主播口播、产品包装近景、手部操作俯拍、成品切面展示、左右对比展示等。
 - 必须保留用户参考文案的结构顺序：原文第1句对应改写第1个表达，原文第2句对应改写第2个表达，以此类推。
 - 不允许用同类爆款脚本或产品资料重新生成一条全新结构；同类脚本只能参考语气和括号画面写法。
 - 口播要保持资料表里的抖音烘焙带货口吻：自然、直接、有画面感，能开拍即用。"""
@@ -26,7 +27,7 @@ class ScriptRewriter:
 1. **统一输出格式**：无论原脚本是带时间戳、分段标题，还是一整段话，输出都必须按资料脚本生成文件的格式。
 2. **保留参考结构**：必须沿着用户原脚本的顺序逐句/逐段改写，不能重排、不能另起一套新结构。
 3. **替换所有产品相关信息**：产品名、品类名、卖点、价格、规格全部替换为目标产品信息。
-4. **补足拍摄指令**：每个关键表达前用（口播画面）（产品空镜）（展示对比）（操作演示）等中文全角括号标注画面。
+4. **补足拍摄指令**：每个关键表达前用中文全角括号标注具体画面，括号里要写清楚拍摄主体、景别/镜头、动作或展示细节，不要只写“口播画面”“产品空镜”这种泛标签。
 5. **卖点自然融入**：新产品卖点要自然嵌入脚本，不生搬硬套。
 6. **学习资料表表达方式**：只学习资料表的画面括号、口播质感和连续成稿形式，不改变用户参考文案的结构。
 
@@ -200,6 +201,8 @@ class ScriptRewriter:
         category = target_product.get("category", "")
         price = target_product.get("price", 0)
         original_price = target_product.get("original_price")
+        pending_fields = set(target_product.get("pending_fields") or [])
+        price_text = "待更新" if "price" in pending_fields else f"{price}元"
         description = target_product.get("description", "")
         selling_points = target_product.get("selling_points", [])
 
@@ -228,7 +231,7 @@ class ScriptRewriter:
 名称：{name}
 品牌：法采
 品类：{category}
-售价：{price}元"""
+售价：{price_text}"""
         if original_price:
             product_info += f"（原价{original_price}元）"
         if description:
@@ -257,9 +260,11 @@ class ScriptRewriter:
 
 改写要求：
 - 不管原脚本是带时间戳、分段标题，还是一整段话，输出都必须统一为资料脚本生成文件里的连续脚本格式
-- 输出使用“（画面/动作/剪辑指令）+口播文案”的连续成稿，不要 Markdown、不要编号、不要解释
+- 输出使用“（具体画面/动作/剪辑指令）+口播文案”的连续成稿，不要 Markdown、不要编号、不要解释
+- 每个括号里的画面信息都要参考模板库脚本的拍摄描述写法，写清楚主体、景别/镜头、动作或道具，例如“主播半身站在烘焙台前开场，手边摆放产品包装”“产品包装正面近景，手拿转动展示规格”“俯拍操作台，手部倒入原料并搅拌”“切开成品蛋糕近景，展示夹心层次”
+- 不要只写“口播画面”“产品空镜”“产品展示”这种泛标签；如果模型想写这些标签，必须扩写成可直接拍摄的详细画面
 - 不要保留原文的时间戳、【开场钩子】这类段落标题或小标题
-- 原文如果没有画面指令，要根据内容补出（口播画面）（产品空镜）（操作演示）（对比展示）等拍摄提示
+- 原文如果没有画面指令，要根据内容逐句补出具体拍摄提示：口播句写主播位置和动作，产品句写包装/规格/质地近景，操作句写手部动作和步骤，对比句写左右或前后对比，成交句写价格牌/小黄车/手指引导
 - 必须按上面的结构骨架逐条改写：第1条对应开头，第2条接第2条，第3条接第3条，不要跳段、不要重排
 - 可以把特别短的相邻两条自然合并进同一个画面括号，但不能改变原文信息出现顺序
 - 同类爆款脚本只用于学习资料表的表达质感，不能替代用户参考文案的结构
@@ -293,22 +298,94 @@ class ScriptRewriter:
                 return self._cleanup_rewrite_output(result)
             except Exception:
                 return self._offline_material_rewrite(
-                    name, category, price, selling_points, original_script=original_script
+                    name, category, price_text, selling_points, original_script=original_script
                 )
 
         return self._offline_material_rewrite(
-            name, category, price, selling_points, original_script=original_script
+            name, category, price_text, selling_points, original_script=original_script
         )
+
+    def _enrich_scene_label(
+        self,
+        label: str,
+        line: str = "",
+        index: int = 0,
+        product_name: str = "",
+    ) -> str:
+        """Expand generic material-script scene labels into shootable shot notes."""
+        raw = re.sub(r"\s+", "", (label or "").strip())
+        copy = (line or "").strip()
+        product = product_name or "产品"
+        detailed_markers = (
+            "近景", "中景", "特写", "俯拍", "半身", "手部", "转动", "推近",
+            "切开", "倒入", "搅拌", "挤出", "包装", "规格", "质地", "成品", "对比",
+        )
+        generic_labels = {
+            "口播画面", "产品空镜", "产品展示", "产品细节展示", "操作演示",
+            "对比展示", "价格口播", "促销信息口播", "指向小黄车口播", "场景展示",
+            "痛点场景展示",
+        }
+        if len(raw) >= 12 and any(marker in raw for marker in detailed_markers):
+            return raw
+
+        text = raw + copy
+        if raw == "口播画面" and index == 0:
+            return "主播半身站在烘焙台前开场，手边摆放产品包装"
+        if re.search(r"小黄车|链接|下方|详情|下单|拍下|直接拍|先囤|囤起来|活动机制|券|优惠", text):
+            return "主播手指下方小黄车，引导查看详情"
+        if re.search(r"价格|吊牌价|元|一盒|两盒|规格|500g|100g|克|斤", text):
+            return f"{product}包装和价格牌近景，手指点出规格价格"
+        if re.search(r"产品|包装|看一下|这款|法采|品牌|粉体|果酱|色素|原料|材料|粉|膏|酱", text):
+            return f"{product}包装正面近景，手拿转动展示规格"
+        if re.search(r"搅拌|加水|加热|煮|倒|挤|抹|切|打开|使用|操作|调味|比例", text):
+            return "俯拍操作台，手部演示使用步骤和状态变化"
+        if re.search(r"对比|差距|不如|普通|传统|之前|之后|翻车|稳定|不塌|不出水", text):
+            return "左右对比成品状态，镜头推近突出差异"
+        if re.search(r"成品|蛋糕|夹心|奶冻|慕斯|口感|切面|质地|状态|出品", text):
+            return "切开成品蛋糕近景，展示夹心层次和质地"
+        if raw in {"痛点场景展示", "场景展示"} or re.search(r"老板|门店|客户|开店|毕业|日常|备货", text):
+            return "烘焙店操作台中景，主播结合门店场景讲解"
+        if raw in generic_labels:
+            fallback = [
+                "主播半身站在烘焙台前开场，手边摆放产品包装",
+                f"{product}包装正面近景，手拿转动展示规格",
+                "俯拍操作台，手部演示使用步骤和状态变化",
+                "切开成品蛋糕近景，展示夹心层次和质地",
+                "左右对比成品状态，镜头推近突出差异",
+                "主播手指下方小黄车，引导查看详情",
+            ]
+            return fallback[index % len(fallback)]
+        return raw or "主播半身站在烘焙台前开场，手边摆放产品包装"
+
+    def _enrich_scene_labels(self, text: str, product_name: str = "") -> str:
+        """Post-process every full-width bracket scene label in a continuous script."""
+        matches = list(re.finditer(r"（([^）]{1,60})）", text or ""))
+        if not matches:
+            return text
+
+        pieces = []
+        last = 0
+        for idx, match in enumerate(matches):
+            pieces.append(text[last:match.start()])
+            next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+            line = text[match.end():next_start].strip(" ，。；;、\n")
+            pieces.append(
+                f"（{self._enrich_scene_label(match.group(1), line, idx, product_name)}）"
+            )
+            last = match.end()
+        pieces.append(text[last:])
+        return "".join(pieces)
 
     def _offline_material_rewrite(
         self,
         name: str,
         category: str,
-        price: float,
+        price,
         selling_points: list[dict],
         original_script: str = "",
     ) -> str:
         """Fallback rewrite when AI is unavailable, still using material-script style."""
+        price_display = str(price) if str(price).endswith("元") or str(price) == "待更新" else f"{price}元"
         point_texts = [sp.get("content", "") for sp in selling_points if sp.get("content")]
         if not point_texts:
             point_texts = [
@@ -322,36 +399,37 @@ class ScriptRewriter:
         beats = self._extract_reference_beats(original_script, limit=18)
         if beats:
             labels = [
-                "口播画面",
-                "口播画面",
-                "产品空镜",
-                "操作演示",
-                "产品展示",
-                "对比展示",
-                "产品细节展示",
-                "价格口播",
-                "指向小黄车口播",
+                "主播半身站在烘焙台前开场，手边摆放产品包装",
+                f"{name}包装正面近景，手拿转动展示规格",
+                "俯拍操作台，手部演示使用步骤和状态变化",
+                "切开成品蛋糕近景，展示夹心层次和质地",
+                "左右对比成品状态，镜头推近突出差异",
+                f"{name}包装和价格牌近景，手指点出规格价格",
+                "烘焙店操作台中景，主播结合门店场景讲解",
+                "主播手指下方小黄车，引导查看详情",
             ]
             clauses = []
             for idx, beat in enumerate(beats):
-                label = labels[idx] if idx < len(labels) else "口播画面"
+                label = labels[idx] if idx < len(labels) else self._enrich_scene_label(
+                    "口播画面", beat.get("text", ""), idx, name
+                )
                 point = point_texts[idx % len(point_texts)]
                 if idx == 0:
                     copy = f"做烘焙的老板们，如果你也有这种情况，可以看看法采这款{name}"
                 elif idx == len(beats) - 1:
-                    copy = f"{name}现在吊牌价{price}元，需要的直接点下方链接看看"
+                    copy = f"{name}现在吊牌价{price_display}，需要的直接点下方链接看看"
                 else:
                     copy = f"它的优势是{point}"
                 clauses.append(f"（{label}）{copy}")
             return "，".join(clauses)
 
         return (
-            f"（口播画面）烘焙店老板们，做{category or '烘焙'}真的别再随便选材料了，"
-            f"尤其是这种天天要用、直接影响出品效果的东西。（产品空镜）看一下法采这款{name}，"
-            f"{point_texts[0]}。（操作演示）实际用起来也很省心，{point_texts[1]}，"
-            f"不管是门店日常出品还是活动备货都很合适。（产品细节展示）而且它的优势不是只看着好，"
-            f"{point_texts[2]}。（价格口播）现在吊牌价是{price}元，想把出品效果和效率都提上来的，"
-            f"可以趁现在先囤起来。（指向小黄车口播）需要的烘焙姐妹直接点下方链接看看，别等用到的时候才发现没备货。"
+            f"（主播半身站在烘焙台前开场，手边摆放产品包装）烘焙店老板们，做{category or '烘焙'}真的别再随便选材料了，"
+            f"尤其是这种天天要用、直接影响出品效果的东西。（{name}包装正面近景，手拿转动展示规格）看一下法采这款{name}，"
+            f"{point_texts[0]}。（俯拍操作台，手部演示使用步骤和状态变化）实际用起来也很省心，{point_texts[1]}，"
+            f"不管是门店日常出品还是活动备货都很合适。（切开成品蛋糕近景，展示夹心层次和质地）而且它的优势不是只看着好，"
+            f"{point_texts[2]}。（{name}包装和价格牌近景，手指点出规格价格）现在吊牌价是{price_display}，想把出品效果和效率都提上来的，"
+            f"可以趁现在先囤起来。（主播手指下方小黄车，引导查看详情）需要的烘焙姐妹直接点下方链接看看，别等用到的时候才发现没备货。"
         )
 
     def _cleanup_rewrite_output(self, text: str) -> str:
@@ -404,6 +482,7 @@ class ScriptRewriter:
         cleaned = re.sub(r"\n{2,}", "\n", cleaned)
         cleaned = re.sub(r"\n(?=（)", "", cleaned)
         cleaned = re.sub(r"\n+", " ", cleaned)
+        cleaned = self._enrich_scene_labels(cleaned)
         return cleaned.strip()
 
 

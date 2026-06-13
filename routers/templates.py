@@ -1,5 +1,5 @@
 """脚本模板 & 爆款脚本 API"""
-from fastapi import APIRouter, Depends, HTTPException, Query, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Form, UploadFile, File
 from sqlalchemy.orm import Session
 from database import get_db
 from models import ScriptTemplate, ViralScript
@@ -62,6 +62,24 @@ async def analyze_script_ai(text: str, user_type: str = "") -> dict:
     except:
         pass
     return {}
+
+
+def _decode_txt(content: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "gbk", "gb2312", "utf-16"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("无法识别文件编码，请使用 UTF-8、GBK 或 UTF-16 文本")
+
+
+def _title_from_filename(filename: str | None) -> str:
+    name = (filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not name:
+        return "导入脚本"
+    if "." in name:
+        name = name.rsplit(".", 1)[0]
+    return name.strip() or "导入脚本"
 
 
 # ========== 脚本模板管理 ==========
@@ -283,6 +301,71 @@ async def upload_viral_script(
     db.refresh(viral)
     _sync_viral_index(viral, db)
     return ApiResponse(message=f"已上传并AI分析，归类为「{auto_category}」", data={"id": viral.id, "category": auto_category, "analysis": ai_analysis})
+
+
+@router.post("/viral/upload-txt-batch")
+async def upload_viral_txt_batch(
+    files: List[UploadFile] = File(...),
+    category: str = Form(""),
+    video_type: str = Form(""),
+    tags: str = Form(""),
+    product_name: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Batch upload local .txt scripts into the viral script library."""
+    result = {"total": len(files), "success": 0, "skipped": 0, "errors": [], "ids": []}
+    if not files:
+        raise HTTPException(status_code=400, detail="请选择 txt 文件")
+
+    auto_category = category or ""
+    if product_name and not auto_category:
+        from models import Product
+        matched = db.query(Product).filter(Product.name == product_name).first()
+        if matched:
+            auto_category = matched.category
+    if not auto_category:
+        auto_category = "烘焙配件"
+
+    for upload in files:
+        filename = upload.filename or ""
+        safe_name = filename.replace("\\", "/").rsplit("/", 1)[-1] or "未命名.txt"
+        if not safe_name.lower().endswith(".txt"):
+            result["skipped"] += 1
+            result["errors"].append(f"{safe_name}: 仅支持 .txt 文件")
+            continue
+
+        try:
+            content = await upload.read()
+            script_text = format_script(_decode_txt(content))
+            if len(script_text) < 20:
+                raise ValueError("脚本内容太短")
+
+            ai_analysis = await analyze_script_ai(script_text, video_type)
+            viral = ViralScript(
+                category=auto_category,
+                video_type=ai_analysis.get("video_type") or video_type or "机制类",
+                title=_title_from_filename(safe_name),
+                script_content=script_text,
+                tags=(tags or "") + ("," + ai_analysis.get("tags", "") if ai_analysis.get("tags") else ""),
+                performance_data={
+                    "source": "批量TXT上传",
+                    "filename": safe_name,
+                    "ai_structure": ai_analysis.get("structure", ""),
+                    "ai_viral_points": ai_analysis.get("viral_points", ""),
+                },
+            )
+            db.add(viral)
+            db.commit()
+            db.refresh(viral)
+            _sync_viral_index(viral, db)
+            result["success"] += 1
+            result["ids"].append(viral.id)
+        except Exception as exc:
+            db.rollback()
+            result["skipped"] += 1
+            result["errors"].append(f"{safe_name}: {exc}")
+
+    return ApiResponse(message=f"已导入 {result['success']} 个 txt 脚本", data=result)
 
 
 async def categorize_product_ai(name: str) -> str:

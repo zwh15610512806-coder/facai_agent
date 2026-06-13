@@ -155,6 +155,9 @@ let products=[],categories=[],uploadProductId=null,selectedFile=null,searchMode=
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function jsq(v){return String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
 function formatPrice(v){const n=Number(v);return Number.isFinite(n)?(Math.round(n*100)/100).toString():'';}
+function hasPending(p,field){return Array.isArray(p&&p.pending_fields)&&p.pending_fields.indexOf(field)>=0;}
+function displayCategory(p){return hasPending(p,'category')?'待更新':(p&&p.category?p.category:'待更新');}
+function displayPrice(p){return hasPending(p,'price')?'待更新':'¥'+formatPrice(p&&p.price);}
 
 function setSearchMode(mode){
  searchMode=mode;
@@ -184,11 +187,11 @@ function renderGrid(){
  g.innerHTML=products.map(function(p){
  let spHtml='<span style="font-size:12px;color:var(--text-3)">暂无卖点</span>';
   if(p.selling_point_summary){spHtml=p.selling_point_summary.split('；').slice(0,2).map(function(s){const m=s.match(/^\[(.+?)\](.+)/);return m?'<span class="spt spt-'+esc(m[1])+'">'+esc(m[2].substring(0,18))+'</span>':'';}).join(' ');}
-  const pname=esc(p.name),pcat=esc(p.category),pnameArg=jsq(p.name);
+  const pname=esc(p.name),pcat=esc(displayCategory(p)),pprice=esc(displayPrice(p)),pnameArg=jsq(p.name);
   return '<div class="product-card" role="button" tabindex="0" onclick="openProductDetail('+p.id+')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openProductDetail('+p.id+')}">'
    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px"><span class="pcat">'+pcat+'</span><span style="font-size:12px;color:var(--text-3)">'+p.selling_point_count+'卖点</span></div>'
    +'<div class="pname" style="margin:0">'+pname+'</div>'
-   +'<div style="display:flex;align-items:baseline;gap:8px;margin:8px 0"><span class="pprice">&yen;'+formatPrice(p.price)+'</span>'+(p.original_price?'<span style="font-size:12px;color:var(--text-3);text-decoration:line-through">&yen;'+formatPrice(p.original_price)+'</span>':'')+'</div>'
+   +'<div style="display:flex;align-items:baseline;gap:8px;margin:8px 0"><span class="pprice">'+pprice+'</span>'+(!hasPending(p,'price')&&p.original_price?'<span style="font-size:12px;color:var(--text-3);text-decoration:line-through">&yen;'+formatPrice(p.original_price)+'</span>':'')+'</div>'
    +'<div style="display:flex;gap:2px;flex-wrap:wrap;margin-bottom:10px;flex:1">'+spHtml+'</div>'
    +'<div class="product-card-actions">'
    +'<button type="button" class="product-card-action" onclick="event.stopPropagation();openUploadModal('+p.id+',\''+pnameArg+'\')" title="管理产品资料"><i data-lucide="file-up"></i><span>资料</span></button>'
@@ -212,7 +215,7 @@ async function openProductDetail(id){
   if(!r.ok)throw new Error('detail failed');
   const d=await r.json();
   document.getElementById('detailProductName').textContent=d.name||'产品详情';
-  document.getElementById('detailCategory').textContent=d.category||'未分类';
+  document.getElementById('detailCategory').textContent=hasPending(d,'category')?'待更新':(d.category||'未分类');
   const sourceText=(d.knowledge_sources&&d.knowledge_sources.length)?d.knowledge_sources.join('、'):(d.manual_source||'产品手册');
   document.getElementById('detailSource').textContent='卖点来源：'+sourceText;
   document.getElementById('detailSellingPoints').innerHTML=renderProductSellingPoints(d.selling_points||[]);

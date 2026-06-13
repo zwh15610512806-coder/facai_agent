@@ -6,9 +6,9 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from database import init_db
-from config import APP_TITLE, APP_VERSION, APP_DESCRIPTION
+from config import APP_TITLE, APP_VERSION, APP_DESCRIPTION, ALLOWED_ORIGINS
 LOCAL = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = LOCAL
 
@@ -31,7 +31,13 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION, description=APP_DESCRIPTION, lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
@@ -49,6 +55,14 @@ app.include_router(scripts.router, prefix="/api/scripts", tags=["scripts"])
 app.include_router(import_data.router, prefix="/api/import", tags=["import"])
 app.include_router(reference_scripts.router, prefix="/api/reference", tags=["reference"])
 app.include_router(search_router, prefix="/api/search-proxy", tags=["search"])
+
+@app.middleware("http")
+async def block_cross_site_api_requests(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        fetch_site = request.headers.get("sec-fetch-site", "").lower()
+        if fetch_site == "cross-site":
+            return JSONResponse({"detail": "Cross-site API requests are not allowed"}, status_code=403)
+    return await call_next(request)
 
 @app.get("/")
 def home(): return RedirectResponse(url="/app")

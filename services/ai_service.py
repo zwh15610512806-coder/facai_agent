@@ -211,6 +211,7 @@ def build_faicai_script(product: Dict, tone: str = "活泼") -> str:
     price = product.get("price", 0)
     original_price = product.get("original_price")
     selling_points = product.get("selling_points", [])
+    pending_fields = set(product.get("pending_fields") or [])
 
     templates = get_faicai_template(name, category)
     template = random.choice(templates)
@@ -228,7 +229,10 @@ def build_faicai_script(product: Dict, tone: str = "活泼") -> str:
         sp1, sp2, sp3 = "品质有保障", "性价比超高", "用过都说好"
 
     # 计算优惠
-    if original_price and original_price > price:
+    if "price" in pending_fields:
+        discount_str = "价格待更新"
+        price_str = "待更新"
+    elif original_price and original_price > price:
         discount = round(price / original_price * 10, 1)
         discount_str = f"{discount}折"
         price_str = f"{price}元（原价{original_price}，立省{original_price - price}元）"
@@ -237,7 +241,7 @@ def build_faicai_script(product: Dict, tone: str = "活泼") -> str:
         price_str = f"{price}元"
 
     # 计算单价（用于刀叉类）
-    unit_price = f"{price}元一套" if price >= 1 else f"{int(price * 10)}毛多"
+    unit_price = "价格待更新" if "price" in pending_fields else (f"{price}元一套" if price >= 1 else f"{int(price * 10)}毛多")
 
     # 判定品类话术
     pain_point_map = {

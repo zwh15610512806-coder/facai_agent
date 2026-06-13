@@ -281,6 +281,27 @@
   line-height: 1.7;
   color: var(--text);
 }
+.custom-type-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(420px, 100%);
+  margin: -10px 0 8px;
+}
+.custom-type-row .input {
+  height: 42px;
+  font-size: 13px;
+}
+.custom-type-row .btn {
+  flex: 0 0 auto;
+  min-height: 42px;
+  white-space: nowrap;
+}
+.type-tag{position:relative;padding-right:26px;overflow:visible}
+.type-delete{position:absolute;top:-6px;right:-6px;width:16px;height:16px;border:0;border-radius:999px;background:rgba(217,45,32,.78);color:#fff;display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;box-shadow:0 2px 6px rgba(217,45,32,.22);opacity:0;pointer-events:none;transform:scale(.9);transition:opacity var(--fast) var(--ease),transform var(--fast) var(--ease),background var(--fast) var(--ease)}
+.type-tag:hover .type-delete,.type-tag:focus-within .type-delete{opacity:.82;pointer-events:auto;transform:scale(1)}
+.type-delete::before{content:"";width:8px;height:2px;background:#fff;border-radius:2px}
+.type-delete:hover{opacity:1;background:rgba(180,35,24,.92)}
 @media (max-width: 680px) {
   .product-detail-modal { padding: 14px; align-items: flex-end; }
   .product-detail-box { max-height: calc(100vh - 28px); }
@@ -300,6 +321,7 @@
   .product-picker-layout { flex-direction: column; align-items: stretch; gap: 12px; }
   #productGrid { grid-template-columns: 1fr; }
   #btnToStep2 { width: 100%; }
+  .custom-type-row { width: 100%; margin-top: -6px; }
   #step3 .section-hd { flex-direction: column; align-items: stretch !important; }
   #step3 .section-hd > div { width: 100%; flex-wrap: wrap; }
   #step3 .section-hd .btn { flex: 1 1 auto; }
@@ -339,6 +361,11 @@
 
 <p style="font-size:13px;color:var(--text-3);margin-bottom:10px" id="recommendHint"></p>
 <div id="videoTypes" class="type-list"></div>
+<div class="custom-type-row">
+<input id="customVideoTypeInput" type="text" class="input" maxlength="20" placeholder="输入自定义视频类型">
+<button id="btnAddCustomType" class="btn btn-soft btn-sm" type="button">添加类型</button>
+</div>
+<p style="font-size:12px;color:var(--text-3);margin:8px 0 18px">不选类型时自动用高成交模板库生成。</p>
 
 <div style="margin-bottom:22px">
 <label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">引擎</label>
@@ -462,15 +489,64 @@ const VIDEO_TYPES=[
   {v:"情绪类",icon:"heart"},
   {v:"场景类",icon:"map-pin"}
 ];
+const CUSTOM_VIDEO_TYPES_KEY='facai_custom_video_types';
+const DELETED_VIDEO_TYPES_KEY='facai_deleted_video_types';
 let state={products:[],categories:[],selectedProduct:null,selectedType:"",step:1,generating:false};
 let currentScript='',currentScriptId=null;
+let customVideoTypes=loadCustomVideoTypes();
+let deletedVideoTypes=loadDeletedVideoTypes();
 
 function esc(t){return String(t||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;');}
 function formatPrice(v){const n=Number(v||0);return n.toLocaleString('zh-CN',{maximumFractionDigits:2});}
+function hasPendingProductField(p,field){return Array.isArray(p&&p.pending_fields)&&p.pending_fields.indexOf(field)>=0;}
+function productPriceLabel(p){return hasPendingProductField(p,'price')?'待更新':'¥'+formatPrice(p&&p.price);}
 function toast(msg,type){const t=document.createElement('div');t.className='toast toast-'+(type==='success'?'ok':'err');t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(function(){t.remove()},300)},2500);}
 function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
 function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
 function escHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+function normalizeCustomVideoType(type){return String(type||'').replace(/[<>"'`\\]/g,'').trim().replace(/\s+/g,'').slice(0,20);}
+function loadCustomVideoTypes(){
+ try{const raw=localStorage.getItem(CUSTOM_VIDEO_TYPES_KEY);const list=JSON.parse(raw||'[]');if(!Array.isArray(list))return [];
+  return list.map(normalizeCustomVideoType).filter(Boolean).filter(function(type,index,self){return self.indexOf(type)===index;}).slice(0,30);
+ }catch(e){return [];}
+}
+function loadDeletedVideoTypes(){
+ try{const raw=localStorage.getItem(DELETED_VIDEO_TYPES_KEY);const list=JSON.parse(raw||'[]');if(!Array.isArray(list))return [];
+  return list.map(normalizeCustomVideoType).filter(Boolean).filter(function(type,index,self){return self.indexOf(type)===index;}).slice(0,60);
+ }catch(e){return [];}
+}
+function persistCustomVideoTypes(){try{localStorage.setItem(CUSTOM_VIDEO_TYPES_KEY,JSON.stringify(customVideoTypes));}catch(e){}}
+function persistDeletedVideoTypes(){try{localStorage.setItem(DELETED_VIDEO_TYPES_KEY,JSON.stringify(deletedVideoTypes));}catch(e){}}
+function saveCustomVideoType(type){
+ type=normalizeCustomVideoType(type);if(!type)return '';
+ const deletedIndex=deletedVideoTypes.indexOf(type);if(deletedIndex>-1){deletedVideoTypes.splice(deletedIndex,1);persistDeletedVideoTypes();}
+ if(VIDEO_TYPES.some(function(vt){return vt.v===type;}))return type;
+ if(!customVideoTypes.includes(type)){customVideoTypes.push(type);persistCustomVideoTypes();}
+ return type;
+}
+function getAllVideoTypes(){
+ const types=VIDEO_TYPES.slice();
+ customVideoTypes.forEach(function(type){if(!types.some(function(vt){return vt.v===type;}))types.push({v:type,icon:"sparkles",custom:true});});
+ return types.filter(function(vt){return !deletedVideoTypes.includes(vt.v);});
+}
+function addCustomVideoType(){
+ const input=document.getElementById('customVideoTypeInput');
+ const type=saveCustomVideoType(input.value);
+ if(!type)return toast('请输入视频类型','error');
+ state.selectedType=type;input.value='';renderVideoTypes();toast('已添加自定义类型','success');
+}
+function deleteVideoType(event,type){
+ if(event){event.stopPropagation();event.preventDefault();}
+ type=normalizeCustomVideoType(type);if(!type)return;
+ if(!window.confirm('确认删除“'+type+'”这个视频类型吗？'))return;
+ if(state.selectedType===type)state.selectedType='';
+ if(VIDEO_TYPES.some(function(vt){return vt.v===type;})){
+  if(!deletedVideoTypes.includes(type)){deletedVideoTypes.push(type);persistDeletedVideoTypes();}
+ }else{
+  customVideoTypes=customVideoTypes.filter(function(item){return item!==type;});persistCustomVideoTypes();
+ }
+ renderVideoTypes();toast('已删除视频类型','success');
+}
 
 function showTip(e,summary){
  const tip=document.getElementById('tooltip');
@@ -536,7 +612,7 @@ async function openProductModal(id){
 function renderProductModal(product,loading){
  document.getElementById('productDetailCategory').textContent=product.category||'产品';
  document.getElementById('productDetailTitle').textContent=product.name||'产品详情';
- document.getElementById('productDetailPrice').innerHTML='&yen;'+formatPrice(product.price);
+ document.getElementById('productDetailPrice').textContent=productPriceLabel(product);
  const points=product.selling_points||[];
  document.getElementById('productDetailPointCount').textContent=loading?'...':String(points.length||product.selling_point_count||0);
  const box=document.getElementById('productDetailPoints');
@@ -552,7 +628,7 @@ document.getElementById('productDetailNext').addEventListener('click',function()
 document.getElementById('btnToStep2').addEventListener('click',function(){
  state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';
  document.getElementById('floatBar').classList.add('hidden');
- document.getElementById('selectedProductLabel').textContent=state.selectedProduct.name+' · ¥'+formatPrice(state.selectedProduct.price);renderVideoTypes();
+ document.getElementById('selectedProductLabel').textContent=state.selectedProduct.name+' · '+productPriceLabel(state.selectedProduct);renderVideoTypes();
 });
 document.getElementById('btnBackToStep1').addEventListener('click',function(){
  state.step=1;document.getElementById('step1').style.display='';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';
@@ -562,25 +638,29 @@ document.getElementById('btnBackToStep1').addEventListener('click',function(){
 function renderVideoTypes(){
  const recs=CAT_RECOMMEND[state.selectedProduct&&state.selectedProduct.category]||["机制类","痛点类","需求类"];
  document.getElementById('recommendHint').innerHTML='<span style="display:inline-block;width:6px;height:6px;background:var(--facai);border-radius:50%;vertical-align:middle;margin-right:4px"></span><b style="color:var(--accent);font-weight:600">'+state.selectedProduct.category+'</b> 推荐：'+recs.map(function(r){return'<span style="color:var(--accent);font-weight:500">'+r+'</span>';}).join(' &middot; ');
- document.getElementById('videoTypes').innerHTML=VIDEO_TYPES.map(function(vt){const rec=recs.includes(vt.v);return'<div class="type-tag'+(state.selectedType===vt.v?' sel':'')+'" onclick="selectType(\''+vt.v+'\')"><span class="tag-icon"><i data-lucide="'+vt.icon+'" style="width:16px;height:16px"></i></span>'+vt.v+(rec?' <span class="star">&starf;</span>':'')+'</div>';}).join('');
+ document.getElementById('videoTypes').innerHTML=getAllVideoTypes().map(function(vt){const rec=recs.includes(vt.v);return'<div class="type-tag'+(state.selectedType===vt.v?' sel':'')+'" onclick="selectType(\''+vt.v+'\')"><button class="type-delete" type="button" aria-label="删除视频类型'+esc(vt.v)+'" onclick="deleteVideoType(event,\''+vt.v+'\')"></button><span class="tag-icon"><i data-lucide="'+vt.icon+'" style="width:16px;height:16px"></i></span>'+esc(vt.v)+(rec?' <span class="star">&starf;</span>':'')+'</div>';}).join('');
  if(window.lucide)lucide.createIcons();
- document.getElementById('btnGenerate').disabled=!state.selectedType;
+ document.getElementById('btnGenerate').disabled=false;
 }
-function selectType(type){state.selectedType=state.selectedType===type?"":type;renderVideoTypes();document.getElementById('btnGenerate').disabled=!state.selectedType;}
+function selectType(type){state.selectedType=state.selectedType===type?"":type;renderVideoTypes();document.getElementById('btnGenerate').disabled=false;}
 
 document.getElementById('aiEngine').addEventListener('change',function(){
  document.getElementById('engineHint').textContent=this.value==='deepseek'?'DeepSeek AI：已配置 API Key，创作更智能精准':'模板库改写：从脚本库匹配高成交脚本，改写为当前产品脚本';
 });
 
 async function doGenerate(extra){
- if(!state.selectedProduct||!state.selectedType)return;state.step=3;state.generating=true;
+ if(!state.selectedProduct)return;state.step=3;state.generating=true;
  document.getElementById('floatBar').classList.add('hidden');
  document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='';
  document.getElementById('scriptOutput').style.display='none';document.getElementById('generatingHint').style.display='';document.getElementById('btnOptimize').disabled=true;
  document.getElementById('resultActions').style.display='none';
  renderSeedancePrompts('');
  try{
-  const body={product_id:state.selectedProduct.id,video_type:state.selectedType,engine:document.getElementById('aiEngine').value};
+  const selectedType=state.selectedType||'';
+  const engine=selectedType?document.getElementById('aiEngine').value:'template';
+  const body={product_id:state.selectedProduct.id,engine:engine};
+  if(selectedType)saveCustomVideoType(selectedType);
+  if(selectedType)body.video_type=selectedType;
   const preFill=document.getElementById('reqPreFill').value.trim();
   const reqParts=[];if(preFill)reqParts.push('用户需求：'+preFill);if(extra)reqParts.push(extra);
   if(reqParts.length)body.extra_requirements=reqParts.join('\n');
@@ -595,10 +675,12 @@ async function doGenerate(extra){
  finally{state.generating=false;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnOptimize').disabled=false;}
 }
 
+document.getElementById('btnAddCustomType').addEventListener('click',addCustomVideoType);
+document.getElementById('customVideoTypeInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addCustomVideoType();}});
 document.getElementById('btnGenerate').addEventListener('click',function(){doGenerate(null);});
 document.getElementById('optimizeInput').addEventListener('input',function(){document.getElementById('btnOptimize').disabled=!this.value.trim();});
 document.getElementById('btnOptimize').addEventListener('click',async function(){const s=document.getElementById('optimizeInput').value.trim();if(!s)return;await doGenerate('用户优化建议：'+s+'。请保持产品和视频类型不变，按要求重新生成。');document.getElementById('optimizeInput').value='';document.getElementById('btnOptimize').disabled=true;});
-document.getElementById('btnBack').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=!state.selectedType;currentScript='';currentScriptId=null;renderSeedancePrompts('');});
+document.getElementById('btnBack').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=false;currentScript='';currentScriptId=null;renderSeedancePrompts('');});
 document.getElementById('btnCopy').addEventListener('click',function(){const t=document.getElementById('scriptOutput').textContent;copyText(t).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('btnSave').addEventListener('click',async function(){if(!currentScriptId)return toast('请先生成脚本','error');try{const r=await fetch('/api/scripts/history/'+currentScriptId+'/save-to-library',{method:'POST'});if(r.ok)toast('已保存到模板库','success');else toast('保存失败','error');}catch(e){toast('保存失败','error');}});
 document.getElementById('btnRedo').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';currentScript='';currentScriptId=null;renderSeedancePrompts('');doGenerate(null);});

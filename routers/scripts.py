@@ -27,8 +27,10 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         raise HTTPException(status_code=404, detail="产品不存在")
 
     # 确定视频类型
+    engine = request.engine or "template"
     video_type = request.video_type
     template = None
+    auto_high_library = not video_type and not request.template_id
 
     if request.template_id:
         template = db.query(ScriptTemplate).filter(
@@ -36,12 +38,15 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         ).first()
         if template:
             video_type = template.video_type
+            auto_high_library = False
 
     if not video_type:
-        video_type = "机制类"
+        video_type = "高成交模板库" if auto_high_library else "机制类"
+        if auto_high_library:
+            engine = "template"
 
     # 获取相关模板（如果没指定）—— 随机选一个，避免每次生成结果相同
-    if not template:
+    if not template and not auto_high_library:
         all_templates = db.query(ScriptTemplate).filter(
             ScriptTemplate.video_type == video_type
         ).all()
@@ -55,6 +60,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         "category": product.category,
         "price": product.price,
         "original_price": product.original_price,
+        "pending_fields": product.pending_fields or [],
         "brand": product.brand,
         "description": product.description,
         "selling_points": [
@@ -77,15 +83,23 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
 
     # 检索相似爆款脚本（shuffle 避免每次返回同样顺序）
     # 模板库改写模式取更多参考脚本（5条），DeepSeek模式保持3条
-    ref_limit = 5 if request.engine == "template" else 3
-    reference_scripts = generator.find_similar_scripts(
-        product_context, video_type, db, limit=ref_limit
-    )
+    ref_limit = 5 if engine == "template" else 3
+    if auto_high_library:
+        reference_scripts = generator.find_high_conversion_scripts(
+            product_context, db, limit=ref_limit
+        )
+    else:
+        reference_scripts = generator.find_similar_scripts(
+            product_context, video_type, db, limit=ref_limit
+        )
     import random as _r
     _r.shuffle(reference_scripts)
 
+    if auto_high_library and not reference_scripts:
+        raise HTTPException(status_code=404, detail="暂无高成交模板库脚本，请先在模板库标记高成交脚本")
+
     # 根据引擎类型分支调用
-    if request.engine == "template" and reference_scripts:
+    if engine == "template" and reference_scripts:
         # 模板库改写模式：以参考脚本为主体进行改写
         script_content = await generator.generate_from_library(
             product=product_context,
@@ -106,7 +120,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         )
 
     # 保存生成记录
-    engine_label = "模板库改写" if request.engine == "template" and reference_scripts else "DeepSeek AI"
+    engine_label = "模板库改写" if engine == "template" and reference_scripts else "DeepSeek AI"
     record = GeneratedScript(
         product_id=product.id,
         template_id=template.id if template else None,
@@ -255,6 +269,7 @@ async def rewrite_script(request: ScriptRewriteRequest, db: Session = Depends(ge
             "category": product.category,
             "price": product.price,
             "original_price": product.original_price,
+            "pending_fields": product.pending_fields or [],
             "brand": product.brand,
             "description": product.description,
             "selling_points": selling_points,

@@ -5,12 +5,23 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Product, SellingPoint
 from schemas import ImportResult, ApiResponse
+from services.product_markdown_importer import (
+    PENDING_LABEL,
+    decode_markdown_bytes,
+    normalize_product_name,
+    parse_product_markdown,
+)
 import csv
 import io
 import os
+import re
+from typing import Any, List
 from config import UPLOAD_DIR
 
 router = APIRouter()
+
+PRODUCT_FILES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "product_files")
+os.makedirs(PRODUCT_FILES_DIR, exist_ok=True)
 
 
 # 导入模板字段说明
@@ -262,6 +273,198 @@ async def import_excel(
 
 
 # ========== 辅助函数 ==========
+@router.post("/markdown")
+async def import_markdown_products(
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+):
+    """Import one or more Markdown product files as new or updated products."""
+    result: dict[str, Any] = {
+        "total": len(files or []),
+        "created": 0,
+        "updated": 0,
+        "skipped": 0,
+        "warnings": [],
+        "errors": [],
+        "products": [],
+    }
+
+    if not files:
+        result["errors"].append("未选择 Markdown 文件")
+        return result
+
+    for upload in files:
+        filename = upload.filename or "product.md"
+        if not filename.lower().endswith((".md", ".markdown")):
+            result["skipped"] += 1
+            result["errors"].append(f"{filename}: 仅支持 .md/.markdown 文件")
+            continue
+
+        try:
+            content = await upload.read()
+            text = decode_markdown_bytes(content)
+            if text is None:
+                result["skipped"] += 1
+                result["errors"].append(f"{filename}: 无法识别文件编码，请使用 UTF-8")
+                continue
+
+            parsed = parse_product_markdown(text, filename=filename)
+            product = _find_existing_product(db, parsed.name)
+            action = "updated" if product else "created"
+            if product is None:
+                product = Product(
+                    name=parsed.name,
+                    category=parsed.category,
+                    price=parsed.price,
+                    original_price=parsed.original_price,
+                    commission_rate=parsed.commission_rate or 0.0,
+                    brand=parsed.brand,
+                    description=parsed.description,
+                    image_url=parsed.image_url,
+                    status="active",
+                    pending_fields=list(parsed.pending_fields),
+                )
+                db.add(product)
+                db.flush()
+                updated_fields = ["name", "category", "price"]
+                if parsed.brand:
+                    updated_fields.append("brand")
+                if parsed.description:
+                    updated_fields.append("description")
+                if parsed.image_url:
+                    updated_fields.append("image_url")
+                if parsed.original_price is not None:
+                    updated_fields.append("original_price")
+                if parsed.commission_rate is not None:
+                    updated_fields.append("commission_rate")
+                result["created"] += 1
+            else:
+                updated_fields = _apply_markdown_update(product, parsed)
+                result["updated"] += 1
+
+            product.info_file = _save_markdown_product_file(product.id, filename, content)
+            if "info_file" not in updated_fields:
+                updated_fields.append("info_file")
+
+            if parsed.selling_points:
+                db.query(SellingPoint).filter(SellingPoint.product_id == product.id).delete()
+                for point in parsed.selling_points:
+                    db.add(SellingPoint(
+                        product_id=product.id,
+                        point_type=point.point_type,
+                        content=point.content,
+                        priority=point.priority,
+                    ))
+                if "selling_points" not in updated_fields:
+                    updated_fields.append("selling_points")
+
+            pending_fields = _normalize_pending_fields(product.pending_fields)
+            if pending_fields:
+                result["warnings"].append(f"{filename}: {', '.join(pending_fields)} 待更新")
+
+            db.commit()
+            db.refresh(product)
+            _sync_product_index(product.id, db)
+            result["products"].append({
+                "id": product.id,
+                "name": product.name,
+                "action": action,
+                "updated_fields": updated_fields,
+                "pending_fields": _normalize_pending_fields(product.pending_fields),
+            })
+        except Exception as exc:
+            db.rollback()
+            result["skipped"] += 1
+            result["errors"].append(f"{filename}: 导入失败 - {exc}")
+
+    return result
+
+
+def _find_existing_product(db: Session, product_name: str) -> Product | None:
+    target = normalize_product_name(product_name)
+    if not target:
+        return None
+    for product in db.query(Product).all():
+        if normalize_product_name(product.name) == target:
+            return product
+    return None
+
+
+def _apply_markdown_update(product: Product, parsed) -> list[str]:
+    updated_fields: list[str] = []
+    pending_fields = set(_normalize_pending_fields(product.pending_fields))
+
+    if parsed.name and product.name != parsed.name:
+        product.name = parsed.name
+        updated_fields.append("name")
+
+    field_map = {
+        "category": parsed.category,
+        "price": parsed.price,
+        "original_price": parsed.original_price,
+        "commission_rate": parsed.commission_rate,
+        "brand": parsed.brand,
+        "description": parsed.description,
+        "image_url": parsed.image_url,
+    }
+    for field, value in field_map.items():
+        if field not in parsed.provided_fields:
+            continue
+        if value is None or value == "":
+            continue
+        if getattr(product, field) != value:
+            setattr(product, field, value)
+            updated_fields.append(field)
+        pending_fields.discard(field)
+
+    for field in parsed.pending_fields:
+        if field in pending_fields:
+            continue
+        if field == "category" and not product.category:
+            product.category = PENDING_LABEL
+            pending_fields.add(field)
+        elif field == "price" and product.price is None:
+            product.price = 0.0
+            pending_fields.add(field)
+
+    product.pending_fields = sorted(pending_fields)
+    return updated_fields
+
+
+def _normalize_pending_fields(value) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item]
+    if isinstance(value, (tuple, set)):
+        return [str(item) for item in value if item]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
+
+
+def _save_markdown_product_file(product_id: int, filename: str, content: bytes) -> str:
+    safe_name = os.path.basename(filename or "product.md")
+    safe_name = re.sub(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+", "_", safe_name).strip("._")
+    if not safe_name:
+        safe_name = "product.md"
+    path = os.path.join(PRODUCT_FILES_DIR, f"product_{product_id}_{safe_name}")
+    with open(path, "wb") as handle:
+        handle.write(content)
+    return path
+
+
+def _sync_product_index(product_id: int, db: Session):
+    try:
+        from vector_store.product_store import ProductVectorStore
+
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if product and product.status == "active":
+            ProductVectorStore().index_product(product, db)
+    except Exception:
+        pass
+
+
 def _parse_float(value, default=None):
     if value is None or str(value).strip() == "":
         return default

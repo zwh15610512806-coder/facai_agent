@@ -22,6 +22,7 @@ class Product(Base):
     image_url = Column(String(500), comment="产品图片URL")
     info_file = Column(String(500), comment="产品资料文件路径")
     status = Column(String(20), default="active", comment="状态: active/inactive")
+    pending_fields = Column(JSON, default=list, comment="pending product fields")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

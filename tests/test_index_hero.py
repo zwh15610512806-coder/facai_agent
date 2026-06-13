@@ -95,6 +95,46 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         self.assertIn("document.getElementById('resultActions').style.display='none'", self.page)
         self.assertIn("document.getElementById('resultActions').style.display='flex'", self.page)
 
+    def test_generate_can_run_without_video_type_using_template_library(self):
+        self.assertIn("不选类型时自动用高成交模板库生成", self.page)
+        self.assertIn("const selectedType=state.selectedType||''", self.page)
+        self.assertIn("const engine=selectedType?document.getElementById('aiEngine').value:'template'", self.page)
+        self.assertIn("if(selectedType)body.video_type=selectedType", self.page)
+        self.assertIn("document.getElementById('btnGenerate').disabled=false", self.page)
+        self.assertNotIn("document.getElementById('btnGenerate').disabled=!state.selectedType", self.page)
+
+    def test_custom_video_type_can_be_added_and_reused(self):
+        self.assertIn('id="customVideoTypeInput"', self.page)
+        self.assertIn('id="btnAddCustomType"', self.page)
+        self.assertIn("CUSTOM_VIDEO_TYPES_KEY", self.page)
+        self.assertIn("function loadCustomVideoTypes", self.page)
+        self.assertIn("function saveCustomVideoType", self.page)
+        self.assertIn("function getAllVideoTypes", self.page)
+        self.assertIn("function addCustomVideoType", self.page)
+        self.assertIn("localStorage.getItem(CUSTOM_VIDEO_TYPES_KEY)", self.page)
+        self.assertIn("localStorage.setItem(CUSTOM_VIDEO_TYPES_KEY", self.page)
+        self.assertIn("getAllVideoTypes().map", self.page)
+        self.assertIn("saveCustomVideoType(selectedType)", self.page)
+        self.assertIn("document.getElementById('customVideoTypeInput').addEventListener('keydown'", self.page)
+
+    def test_video_type_tags_can_be_deleted(self):
+        self.assertIn("DELETED_VIDEO_TYPES_KEY", self.page)
+        self.assertIn("function loadDeletedVideoTypes", self.page)
+        self.assertIn("function deleteVideoType", self.page)
+        self.assertIn("localStorage.getItem(DELETED_VIDEO_TYPES_KEY)", self.page)
+        self.assertIn("localStorage.setItem(DELETED_VIDEO_TYPES_KEY", self.page)
+        self.assertIn("deletedVideoTypes.includes(vt.v)", self.page)
+        self.assertIn('class="type-delete"', self.page)
+        self.assertIn("deleteVideoType(event,\\''+vt.v+'\\')", self.page)
+        self.assertIn(".type-tag{position:relative", self.page)
+        self.assertIn(".type-delete{position:absolute;top:-6px;right:-6px", self.page)
+        self.assertIn("background:rgba(217,45,32,.78);color:#fff", self.page)
+        self.assertIn("opacity:0;pointer-events:none", self.page)
+        self.assertIn(".type-tag:hover .type-delete,.type-tag:focus-within .type-delete", self.page)
+        self.assertIn("opacity:.82;pointer-events:auto", self.page)
+        self.assertIn(".type-delete::before{content:\"\";width:8px;height:2px;background:#fff", self.page)
+        self.assertIn("if(!window.confirm(", self.page)
+
 
 if __name__ == "__main__":
     unittest.main()

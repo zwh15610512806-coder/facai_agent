@@ -237,6 +237,7 @@ def build_product_detail_payload(product: Any, root: Path | str | None = None) -
         "brand": product.brand,
         "description": product.description,
         "info_file": product.info_file,
+        "pending_fields": product.pending_fields or [],
         "status": product.status,
         "source_name": material["source_name"],
         "manual_source": material["manual_source"],
