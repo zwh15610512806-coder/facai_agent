@@ -213,6 +213,15 @@ class MaterialsImportParsingTests(unittest.TestCase):
         self.assertNotIn("reset_product_collection()", init_body)
         self.assertNotIn("reset_script_collection()", init_body)
 
+    def test_vector_store_disables_chromadb_telemetry(self):
+        source = (ROOT / "vector_store" / "__init__.py").read_text(encoding="utf-8-sig")
+
+        self.assertIn("class NoopChromaTelemetry(ProductTelemetryClient):", source)
+        self.assertIn("def capture(self, event: ProductTelemetryEvent) -> None:", source)
+        self.assertIn("anonymized_telemetry=False", source)
+        self.assertIn('chroma_product_telemetry_impl="vector_store.NoopChromaTelemetry"', source)
+        self.assertIn("settings=_make_chroma_settings()", source)
+
     def test_generator_page_uses_requested_video_types(self):
         index_page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8-sig")
         video_types_block = index_page.split("const VIDEO_TYPES=", 1)[1].split("];", 1)[0]

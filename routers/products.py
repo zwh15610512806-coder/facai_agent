@@ -1,24 +1,216 @@
 """产品管理 API — CRUD + 搜索 + 筛选 + 文件上传"""
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
 from models import Product, SellingPoint
 from schemas import (
     ProductCreate, ProductUpdate, ProductOut,
-    ProductListItem, SellingPointOut, ApiResponse
+    ProductListItem, SellingPointOut, SellingPointUpdate, ApiResponse
 )
 from typing import List, Optional
+import mimetypes
 import os
-import shutil
-from services.product_detail import build_product_detail_payload
+import re
+from pathlib import Path
+from urllib.parse import urlencode
+import import_materials
+from services.product_detail import (
+    HIDDEN_SELLING_POINT_TYPE,
+    _is_useless_selling_point,
+    _manual_source_name,
+    build_product_detail_payload,
+)
+from services.product_rag import answer_global_product_question, answer_product_question
 
 router = APIRouter()
 
 # 产品文件存储目录
 PRODUCT_FILES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "product_files")
 os.makedirs(PRODUCT_FILES_DIR, exist_ok=True)
+
+UPLOAD_CHUNK_SIZE = 1024 * 1024
+SOURCE_PREVIEW_CHAR_LIMIT = 120_000
+TEXT_SOURCE_EXTENSIONS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml"}
+
+
+def _safe_product_upload_path(product_id: int, filename: Optional[str]) -> str:
+    raw_name = os.path.basename((filename or "upload").replace("\\", "/")).strip()
+    safe_tail = re.sub(r"[^\w.\-]+", "_", raw_name, flags=re.UNICODE)
+    while ".." in safe_tail:
+        safe_tail = safe_tail.replace("..", ".")
+    safe_tail = safe_tail.strip("._-") or "upload"
+    base, ext = os.path.splitext(safe_tail)
+    base = (base or "upload")[:120]
+    ext = ext[:32]
+    safe_name = f"product_{product_id}_{base}{ext}"
+    root = os.path.abspath(PRODUCT_FILES_DIR)
+    os.makedirs(root, exist_ok=True)
+    file_path = os.path.abspath(os.path.join(root, safe_name))
+    try:
+        if os.path.commonpath([root, file_path]) != root:
+            raise ValueError
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid upload filename")
+    return file_path
+
+
+async def _write_upload_file(file: UploadFile, file_path: str) -> None:
+    with open(file_path, "wb") as out:
+        while True:
+            chunk = await file.read(UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            out.write(chunk)
+
+
+def _path_is_inside(base: Path, path: Path) -> bool:
+    try:
+        base_resolved = base.resolve()
+        path_resolved = path.resolve()
+        return os.path.commonpath([str(base_resolved), str(path_resolved)]) == str(base_resolved)
+    except (OSError, ValueError):
+        return False
+
+
+def _safe_source_name(source: str) -> str:
+    name = (source or "").strip()
+    if (
+        not name
+        or os.path.isabs(name)
+        or "/" in name
+        or "\\" in name
+        or ":" in name
+        or name in {".", ".."}
+        or ".." in name
+    ):
+        raise HTTPException(status_code=400, detail="Invalid source")
+    return name
+
+
+def _material_source_path(source_name: str) -> Path | None:
+    root = Path(__file__).resolve().parents[1]
+    try:
+        paths = import_materials.get_material_paths(root)
+    except (OSError, FileNotFoundError):
+        paths = None
+
+    material_dirs: list[Path] = []
+    aliases: dict[str, Path] = {}
+    if paths is not None:
+        material_dirs.append(paths.materials_dir)
+        if paths.product_2026_dir is not None:
+            material_dirs.append(paths.product_2026_dir)
+        aliases[paths.product_knowledge_md.name] = paths.product_knowledge_md
+        aliases[paths.product_manual_md.name] = paths.product_manual_md
+        aliases[_manual_source_name(str(paths.product_manual_md))] = paths.product_manual_md
+        if paths.price_system_xlsx is not None:
+            aliases[paths.price_system_xlsx.name] = paths.price_system_xlsx
+        if paths.knife_price_xlsx is not None:
+            aliases[paths.knife_price_xlsx.name] = paths.knife_price_xlsx
+        if paths.product_card_xlsx is not None:
+            aliases[paths.product_card_xlsx.name] = paths.product_card_xlsx
+    else:
+        material_dirs.extend([root / "资料", root / "资料" / "2026产品知识库"])
+
+    aliased = aliases.get(source_name)
+    if aliased and aliased.exists():
+        return aliased.resolve()
+
+    for base in material_dirs:
+        if not base or not base.exists():
+            continue
+        candidate = (base / source_name).resolve()
+        if candidate.exists() and candidate.is_file() and _path_is_inside(base, candidate):
+            return candidate
+    return None
+
+
+def _uploaded_source_path(source_name: str, product_id: Optional[int], db: Session) -> Path | None:
+    if not product_id:
+        return None
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product or not product.info_file:
+        return None
+    path = Path(product.info_file)
+    if path.name != source_name:
+        return None
+    resolved = path.resolve()
+    if not resolved.exists() or not resolved.is_file():
+        return None
+    if not _path_is_inside(Path(PRODUCT_FILES_DIR), resolved):
+        return None
+    return resolved
+
+
+def _resolve_source_path(source: str, product_id: Optional[int], db: Session) -> tuple[str, Path]:
+    source_name = _safe_source_name(source)
+    path = _uploaded_source_path(source_name, product_id, db) or _material_source_path(source_name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return source_name, path
+
+
+def _source_download_url(source_name: str, product_id: Optional[int]) -> str:
+    params = {"source": source_name}
+    if product_id:
+        params["product_id"] = str(product_id)
+    return "/api/products/source-download?" + urlencode(params)
+
+
+def _read_source_preview(path: Path) -> tuple[str, bool]:
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    truncated = len(text) > SOURCE_PREVIEW_CHAR_LIMIT
+    if truncated:
+        text = text[:SOURCE_PREVIEW_CHAR_LIMIT] + "\n\n...[内容已截断]"
+    return text, truncated
+
+
+class ProductRagRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    category: Optional[str] = None
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+class ProductScopedRagRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+
+
+def _visible_selling_points(points):
+    return [
+        point for point in sorted(points, key=lambda item: item.priority)
+        if point.point_type != HIDDEN_SELLING_POINT_TYPE
+        and not _is_useless_selling_point(point.point_type, point.content)
+    ]
+
+
+def _clear_hidden_marker(product_id: int, priority: int, db: Session):
+    db.query(SellingPoint).filter(
+        SellingPoint.product_id == product_id,
+        SellingPoint.point_type == HIDDEN_SELLING_POINT_TYPE,
+        SellingPoint.priority == priority,
+    ).delete(synchronize_session=False)
+
+
+def _hide_selling_point_priority(product_id: int, priority: int, db: Session):
+    priority = int(priority or 0)
+    if priority <= 0:
+        return
+    db.query(SellingPoint).filter(
+        SellingPoint.product_id == product_id,
+        SellingPoint.priority == priority,
+    ).delete(synchronize_session=False)
+    db.add(SellingPoint(
+        product_id=product_id,
+        point_type=HIDDEN_SELLING_POINT_TYPE,
+        content="hidden",
+        priority=priority,
+    ))
 
 
 @router.get("/", response_model=List[ProductListItem])
@@ -42,7 +234,7 @@ def list_products(
 
     result = []
     for p in products:
-        sps = sorted(p.selling_points, key=lambda x: x.priority)
+        sps = _visible_selling_points(p.selling_points)
         summary = "；".join([f"[{sp.point_type}]{sp.content}" for sp in sps[:3]])
         item = ProductListItem(
             id=p.id,
@@ -56,7 +248,7 @@ def list_products(
             info_file=p.info_file,
             pending_fields=_normalize_pending_fields(p.pending_fields),
             status=p.status,
-            selling_point_count=len(p.selling_points),
+            selling_point_count=len(sps),
             selling_point_summary=summary if summary else "暂无卖点",
         )
         result.append(item)
@@ -103,7 +295,7 @@ def semantic_search_products(
             p = product_map.get(r["product_id"])
             if not p:
                 continue
-            sps = sorted(p.selling_points, key=lambda sp: sp.priority)
+            sps = _visible_selling_points(p.selling_points)
             summary = "；".join([f"[{sp.point_type}]{sp.content}" for sp in sps[:3]])
             out.append(ProductListItem(
                 id=p.id, name=p.name, category=p.category,
@@ -111,7 +303,7 @@ def semantic_search_products(
                 commission_rate=p.commission_rate, brand=p.brand,
                 image_url=p.image_url, info_file=p.info_file,
                 pending_fields=_normalize_pending_fields(p.pending_fields),
-                status=p.status, selling_point_count=len(p.selling_points),
+                status=p.status, selling_point_count=len(sps),
                 selling_point_summary=summary if summary else "暂无卖点",
             ))
         return out
@@ -129,6 +321,78 @@ def reindex_products(db: Session = Depends(get_db)):
         return ApiResponse(message=f"已重建 {count} 个产品的向量索引")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"索引重建失败: {e}")
+
+
+@router.post("/rag-chat")
+async def global_product_rag_chat(
+    data: ProductRagRequest,
+    db: Session = Depends(get_db),
+):
+    """全局产品 RAG 问答。"""
+    query = (data.query or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="请输入问题")
+    return await answer_global_product_question(
+        query=query,
+        db=db,
+        category=(data.category or "").strip() or None,
+        limit=data.limit,
+    )
+
+
+@router.get("/rag-chat", include_in_schema=False)
+def global_product_rag_chat_get():
+    """Avoid routing a browser GET for rag-chat into /{product_id}."""
+    return RedirectResponse(url="/app/products", status_code=303)
+
+
+@router.get("/source-preview")
+def preview_product_source(
+    source: str = Query(..., min_length=1),
+    product_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    source_name, path = _resolve_source_path(source, product_id, db)
+    download_url = _source_download_url(source_name, product_id)
+    preview_kind = "text" if path.suffix.lower() in TEXT_SOURCE_EXTENSIONS else "download_only"
+    content = ""
+    truncated = False
+    if preview_kind == "text":
+        content, truncated = _read_source_preview(path)
+    return {
+        "name": source_name,
+        "preview_kind": preview_kind,
+        "content": content,
+        "truncated": truncated,
+        "download_url": download_url,
+    }
+
+
+@router.get("/source-download")
+def download_product_source(
+    source: str = Query(..., min_length=1),
+    product_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    source_name, path = _resolve_source_path(source, product_id, db)
+    media_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+    return FileResponse(str(path), media_type=media_type, filename=source_name)
+
+
+@router.post("/{product_id}/rag-chat")
+async def scoped_product_rag_chat(
+    product_id: int,
+    data: ProductScopedRagRequest,
+    db: Session = Depends(get_db),
+):
+    """只在指定产品资料内进行 RAG 问答。"""
+    query = (data.query or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="请输入问题")
+    try:
+        return await answer_product_question(product_id=product_id, query=query, db=db)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/{product_id}", response_model=ProductOut)
@@ -165,6 +429,7 @@ def create_product(data: ProductCreate, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(product)
+    _sync_product_index(product.id, db)
     return product
 
 
@@ -205,7 +470,7 @@ def get_selling_points(product_id: int, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
-    return product.selling_points
+    return _visible_selling_points(product.selling_points)
 
 
 @router.post("/{product_id}/selling-points", response_model=SellingPointOut)
@@ -227,9 +492,65 @@ def add_selling_point(
         content=content,
         priority=priority,
     )
+    _clear_hidden_marker(product_id, priority, db)
     db.add(sp)
     db.commit()
     db.refresh(sp)
+    _sync_product_index(product_id, db)
+    return sp
+
+
+@router.post("/{product_id}/selling-points/hide")
+def hide_selling_point(
+    product_id: int,
+    data: SellingPointUpdate,
+    db: Session = Depends(get_db),
+):
+    """隐藏资料解析出来的卖点块。"""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="产品不存在")
+    if data.priority is None:
+        raise HTTPException(status_code=400, detail="缺少卖点位置")
+
+    _hide_selling_point_priority(product_id, data.priority, db)
+    db.commit()
+    _sync_product_index(product_id, db)
+    return ApiResponse(message="卖点已删除")
+
+
+@router.put("/{product_id}/selling-points/{sp_id}", response_model=SellingPointOut)
+def update_selling_point(
+    product_id: int,
+    sp_id: int,
+    data: SellingPointUpdate,
+    db: Session = Depends(get_db),
+):
+    """更新产品卖点。"""
+    sp = db.query(SellingPoint).filter(
+        SellingPoint.id == sp_id,
+        SellingPoint.product_id == product_id,
+    ).first()
+    if not sp:
+        raise HTTPException(status_code=404, detail="卖点不存在")
+
+    update_data = data.model_dump(exclude_unset=True)
+    if "content" in update_data:
+        content = (update_data["content"] or "").strip()
+        if not content:
+            raise HTTPException(status_code=400, detail="卖点内容不能为空")
+        sp.content = content
+    if "point_type" in update_data:
+        point_type = (update_data["point_type"] or "").strip()
+        if point_type:
+            sp.point_type = point_type
+    if update_data.get("priority") is not None:
+        sp.priority = int(update_data["priority"])
+
+    _clear_hidden_marker(product_id, sp.priority, db)
+    db.commit()
+    db.refresh(sp)
+    _sync_product_index(product_id, db)
     return sp
 
 
@@ -243,8 +564,14 @@ def delete_selling_point(product_id: int, sp_id: int, db: Session = Depends(get_
     if not sp:
         raise HTTPException(status_code=404, detail="卖点不存在")
 
+    priority = sp.priority
+    should_hide_material = sp.point_type != HIDDEN_SELLING_POINT_TYPE
     db.delete(sp)
+    db.flush()
+    if should_hide_material:
+        _hide_selling_point_priority(product_id, priority, db)
     db.commit()
+    _sync_product_index(product_id, db)
     return ApiResponse(message="卖点已删除")
 
 
@@ -261,13 +588,8 @@ async def upload_product_file(
         raise HTTPException(status_code=404, detail="产品不存在")
 
     # 保存文件
-    ext = os.path.splitext(file.filename)[1] if file.filename else ""
-    safe_name = f"product_{product_id}_{file.filename}"
-    file_path = os.path.join(PRODUCT_FILES_DIR, safe_name)
-
-    with open(file_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
+    file_path = _safe_product_upload_path(product_id, file.filename)
+    await _write_upload_file(file, file_path)
 
     # 更新数据库
     product.info_file = file_path
@@ -290,11 +612,13 @@ async def upload_product_file(
             )
             db.add(sp)
         db.commit()
+        _sync_product_index(product_id, db)
         return ApiResponse(
             message=f"文件已上传，并从资料中提取了 {len(points)} 条卖点",
             data={"file_path": file_path, "file_name": file.filename, "points_extracted": len(points)},
         )
 
+    _sync_product_index(product_id, db)
     return ApiResponse(
         message=f"文件已上传",
         data={"file_path": file_path, "file_name": file.filename}
@@ -326,6 +650,7 @@ def delete_product_file(product_id: int, db: Session = Depends(get_db)):
 
     product.info_file = None
     db.commit()
+    _sync_product_index(product_id, db)
     return ApiResponse(message="文件已删除")
 
 
@@ -365,6 +690,7 @@ async def extract_points_from_file(product_id: int, db: Session = Depends(get_db
         db.add(sp)
 
     db.commit()
+    _sync_product_index(product_id, db)
     return ApiResponse(
         message=f"已从资料中提取 {len(points)} 条卖点",
         data={"points": points},
@@ -400,13 +726,15 @@ async def extract_all_points(db: Session = Depends(get_db)):
                         priority=pt.get("priority", i + 1),
                     )
                     db.add(sp)
+                db.commit()
+                _sync_product_index(product.id, db)
                 results.append({"id": product.id, "name": product.name, "status": f"已提取{len(points)}条"})
             else:
                 results.append({"id": product.id, "name": product.name, "status": "未能提取"})
         except Exception as e:
+            db.rollback()
             results.append({"id": product.id, "name": product.name, "status": f"失败: {e}"})
 
-    db.commit()
     return ApiResponse(message=f"处理完成", data={"total": len(products), "results": results})
 
 

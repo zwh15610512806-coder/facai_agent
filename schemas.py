@@ -23,6 +23,12 @@ class SellingPointCreate(BaseModel):
     priority: int = Field(default=0, description="优先级")
 
 
+class SellingPointUpdate(BaseModel):
+    point_type: Optional[str] = Field(None, description="卖点类型")
+    content: Optional[str] = Field(None, description="话术内容")
+    priority: Optional[int] = Field(None, description="优先级")
+
+
 class SellingPointOut(SellingPointCreate):
     id: int
     product_id: int
@@ -166,18 +172,43 @@ class ScriptGenerateRequest(BaseModel):
     engine: Optional[str] = Field(default="template", description="引擎类型: deepseek 或 template")
 
 
+    include_shot_design: bool = Field(default=False, description="是否需要设计画面和镜头说明")
+
+
 class ScriptRewriteRequest(BaseModel):
     """脚本改写请求"""
     original_script: str = Field(..., description="原始脚本")
     product_id: int = Field(..., description="目标产品ID")
     video_type: Optional[str] = Field(None, description="保持的视频类型")
     extra_requirements: Optional[str] = Field(None, description="额外改写要求")
+    include_shot_design: bool = Field(default=True, description="是否需要设计画面和镜头说明")
 
 
 class ScriptRewriteResponse(BaseModel):
     original_script: str = Field(..., description="原始脚本")
     rewritten_script: str = Field(..., description="改写后的脚本")
     product_name: str = Field(..., description="目标产品名称")
+
+
+class ScriptShotMatchRequest(BaseModel):
+    """为现有口播文案匹配拍摄镜头"""
+    product_id: int = Field(..., description="产品ID")
+    script_content: str = Field(..., description="需要匹配画面的文案")
+    script_id: Optional[int] = Field(None, description="当前生成记录ID")
+
+    @field_validator("script_content")
+    @classmethod
+    def script_content_must_not_be_blank(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("文案不能为空")
+        return text
+
+
+class ScriptShotMatchResponse(BaseModel):
+    product_name: str = Field(..., description="产品名称")
+    original_script: str = Field(..., description="原始文案")
+    script_content: str = Field(..., description="匹配镜头后的脚本")
 
 
 class ScriptGenerateResponse(BaseModel):
@@ -208,6 +239,40 @@ class GeneratedScriptOut(BaseModel):
 
 
 # ============ 数据导入 ============
+class ViralScriptPageOut(BaseModel):
+    items: List[ViralScriptOut] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    per_page: int = 24
+    total_pages: int = 1
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, index):
+        return self.items[index]
+
+
+class GeneratedScriptPageOut(BaseModel):
+    items: List[GeneratedScriptOut] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    per_page: int = 20
+    total_pages: int = 1
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, index):
+        return self.items[index]
+
+
 class ImportResult(BaseModel):
     total: int = 0
     success: int = 0

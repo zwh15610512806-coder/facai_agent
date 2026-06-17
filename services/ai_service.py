@@ -333,9 +333,9 @@ class AIService:
             return self.model
         return "法采模板引擎"
 
-    async def chat(self, messages: List[Dict], temperature: float = 0.8) -> str:
+    async def chat(self, messages: List[Dict], temperature: float = 0.8, allow_fallback: bool = True) -> str:
         if not self.is_available:
-            return self._fallback_response(messages)
+            return self._fallback_response(messages) if allow_fallback else ""
 
         try:
             response = self.client.chat.completions.create(
@@ -348,7 +348,7 @@ class AIService:
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"AI 调用失败: {e}")
-            return self._fallback_response(messages)
+            return self._fallback_response(messages) if allow_fallback else ""
 
     def _fallback_response(self, messages) -> str:
         """离线模式：用法采模板生成脚本，每次调用都随机生成新内容"""

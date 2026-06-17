@@ -9,6 +9,247 @@ from typing import Any
 import import_materials
 
 
+HIDDEN_SELLING_POINT_TYPE = "__hidden__"
+
+
+USELESS_POINT_TYPES = {
+    "资料标题",
+    "产品手卡",
+    "售价",
+    "产品价格",
+}
+
+USELESS_CONTENT_MARKERS = (
+    "打印预览尺寸",
+    "代表产品：",
+    "产品——手卡",
+    "产品--手卡",
+)
+
+
+PROFILE_SECTION_DEFINITIONS = [
+    ("product_info", "产品信息"),
+    ("product_price", "产品价格"),
+    ("product_usage", "产品用途"),
+    ("usage_scenarios", "使用场景"),
+    ("main_selling_points", "主要卖点"),
+]
+
+PROFILE_INFO_TYPES = {
+    "产品名称",
+    "规格",
+    "保质期",
+    "保存方式",
+    "储存方式",
+    "状态",
+    "命名对照",
+    "标准命名",
+    "口味",
+    "用户人群",
+    "适用人群",
+    "颜色体系",
+    "SKU规格",
+}
+
+PROFILE_USAGE_TYPES = {
+    "用途",
+    "用途简述",
+    "用途场景",
+    "使用",
+    "使用方法",
+    "制作方法",
+    "用量",
+    "推荐用量",
+    "场景用量",
+    "FAQ：用途",
+    "FAQ：怎么制作？",
+    "FAQ：怎么使用？",
+}
+
+PROFILE_SCENARIO_TYPES = {
+    "场景",
+    "主要场景",
+    "使用场景",
+    "经营场景",
+    "门店方案",
+    "解决方案",
+    "具体行动及结果",
+}
+
+PROFILE_SELLING_TYPES = {
+    "一句话卖点",
+    "产品亮点",
+    "产品卖点",
+    "卖点",
+    "卖点排序",
+    "产品价值",
+    "核心亮点",
+    "核心优势",
+    "痛点切入",
+    "差异化卖点",
+    "差异化卖点 （重点）",
+    "优势",
+    "特质",
+    "对比",
+    "客户价值",
+    "销售表达",
+}
+
+PROFILE_WEAK_INFO_LABELS = {
+    "产品名称",
+    "品类",
+    "品牌",
+    "产品描述",
+    "资料来源",
+    "命名对照",
+    "标准命名",
+    "规格",
+    "保质期",
+    "保存方式",
+    "储存方式",
+    "状态",
+    "产品售价",
+    "原价",
+}
+
+PROFILE_CATEGORY_FALLBACKS = {
+    "烘焙夹心": {
+        "product_usage": [
+            ("用途简述", "适合用于蛋糕夹心、甜品夹层、面包夹馅或口感颗粒搭配。"),
+            ("推荐搭配", "可搭配奶油、果酱、茶酱、慕斯、蛋糕胚等基础出品，增强夹层风味和咀嚼感。"),
+            ("使用方法", "按门店出品需求加入夹层、撒入奶油夹心或做表面点缀，建议先小量试做确认口感比例。"),
+        ],
+        "usage_scenarios": [
+            ("使用场景", "适合门店做夹心蛋糕上新、甜品夹层组合、增加产品口感层次时使用。"),
+            ("门店方案", "适合搭配口味蛋糕、生日蛋糕、甜品杯和面包夹馅，作为快速增加产品差异化的夹心素材。"),
+            ("经营场景", "适合新品测试、节日款组合、门店菜单升级和需要提升口感记忆点的产品线。"),
+        ],
+        "main_selling_points": [
+            ("主要卖点", "帮助蛋糕和甜品增加夹心口感与层次，适合门店快速做差异化产品。"),
+            ("核心亮点", "夹心颗粒类产品使用灵活，能在不大改原有配方的情况下增加口感变化。"),
+            ("产品价值", "适合做风味补充和口感升级，帮助门店把基础蛋糕做出更清晰的卖点表达。"),
+        ],
+    },
+    "烘焙装饰": {
+        "product_usage": [
+            ("用途简述", "适合用于蛋糕装饰、表面点缀、造型出单和成品陈列。"),
+            ("推荐搭配", "可搭配奶油蛋糕、翻糖造型、主题插件、节日装饰和门店陈列款。"),
+            ("使用方法", "根据蛋糕主题和色系选择装饰位置，控制装饰密度，避免遮挡主体造型。"),
+        ],
+        "usage_scenarios": [
+            ("使用场景", "适合生日蛋糕、节日主题蛋糕、门店陈列款和社交平台出片款。"),
+            ("门店方案", "适合快速提升成品视觉完整度，帮助门店做主题化、套系化的蛋糕出样。"),
+            ("经营场景", "适合高频定制款、节日活动款、橱窗展示款和需要提高照片传播效果的产品。"),
+        ],
+        "main_selling_points": [
+            ("主要卖点", "提升蛋糕外观完成度和出片效果，降低门店装饰搭配成本。"),
+            ("核心亮点", "可直接服务成品视觉表达，让普通蛋糕更容易形成主题感和仪式感。"),
+            ("产品价值", "帮助门店提升出样效率和视觉溢价空间，适合批量化做陈列款。"),
+        ],
+    },
+    "烘焙调味": {
+        "product_usage": [
+            ("用途简述", "适合用于奶油、慕斯、淋面、饮品或蛋糕风味调配。"),
+            ("推荐搭配", "可搭配淡奶油、慕斯、巴斯克、蛋糕卷、饮品和甜品杯等常见门店出品。"),
+            ("使用方法", "按目标风味少量多次加入并试味，兼顾颜色、甜度和整体风味平衡。"),
+        ],
+        "usage_scenarios": [
+            ("使用场景", "适合门店上新风味蛋糕、饮品甜品搭配、季节限定口味开发。"),
+            ("门店方案", "适合做口味蛋糕、下午茶甜品、饮品联名款和小红书风味趋势款。"),
+            ("经营场景", "适合新品菜单更新、爆款口味复刻、节日限定和门店提高复购的风味升级。"),
+        ],
+        "main_selling_points": [
+            ("主要卖点", "帮助门店快速建立稳定风味，适合做口味差异化和复购款。"),
+            ("核心亮点", "减少从零熬制或调配风味的时间，让门店更快完成新品测试。"),
+            ("产品价值", "能把基础奶油、蛋糕和饮品做出口味记忆点，适合持续扩展菜单。"),
+        ],
+    },
+    "烘焙调色": {
+        "product_usage": [
+            ("用途简述", "适合用于奶油、蛋糕胚、淋面、翻糖等烘焙调色场景。"),
+            ("推荐搭配", "可搭配奶油调色、蛋糕胚上色、翻糖造型、淋面调色和主题甜品色彩还原。"),
+            ("使用方法", "建议少量多次添加，先做小样确认色相和深浅，再批量用于正式出品。"),
+        ],
+        "usage_scenarios": [
+            ("使用场景", "适合网红色系还原、主题蛋糕配色、节日款和定制蛋糕调色。"),
+            ("门店方案", "适合门店做主题色系蛋糕、节日限定色、儿童款和社交平台热门颜色复刻。"),
+            ("经营场景", "适合接定制单、做视觉爆款、统一门店色系和提升成品照片识别度。"),
+        ],
+        "main_selling_points": [
+            ("主要卖点", "帮助门店更稳定地完成颜色表达，提升主题蛋糕和定制款出品效率。"),
+            ("核心亮点", "调色路径清晰，适合高频做颜色还原和批量出单。"),
+            ("产品价值", "减少反复试色成本，让门店更容易把图片色、主题色转化为稳定成品。"),
+        ],
+    },
+    "烘焙配件": {
+        "product_usage": [
+            ("用途简述", "适合用于蛋糕打包、门店出单、展示陈列和随餐配套。"),
+            ("推荐搭配", "可搭配生日蛋糕、甜品礼盒、外带配送、门店陈列和活动套餐。"),
+            ("使用方法", "按产品规格和出单场景搭配使用，保证包装、展示和交付体验完整。"),
+        ],
+        "usage_scenarios": [
+            ("使用场景", "适合门店外带配送、生日蛋糕交付、节日礼盒和仪式感套餐。"),
+            ("门店方案", "适合补齐蛋糕交付链路，让消费者从取餐、分享、食用到拍照都有完整体验。"),
+            ("经营场景", "适合门店提升客单体验、节日套餐包装、批量出单和外卖配送场景。"),
+        ],
+        "main_selling_points": [
+            ("主要卖点", "补齐交付和使用体验，提升门店成品包装的完整度。"),
+            ("核心亮点", "配件类产品能直接影响消费者收到产品后的仪式感和便利度。"),
+            ("产品价值", "适合门店做标准化交付，减少临时搭配成本，提升成品专业度。"),
+        ],
+    },
+}
+
+PROFILE_PRODUCT_FALLBACKS = {
+    "开心果碎": {
+        "product_usage": [
+            ("用途简述", "适合用于蛋糕夹心、甜品夹层、面包夹馅和开心果风味口感颗粒搭配。"),
+            ("推荐搭配", "可搭配奶油、慕斯、巴斯克、蛋糕胚、果酱或茶酱，增加坚果风味和颗粒口感。"),
+            ("使用方法", "可撒入夹层、拌入奶油夹心或用于表面点缀，建议根据口感需求控制添加量。"),
+        ],
+        "usage_scenarios": [
+            ("使用场景", "适合开心果风味蛋糕、夹心蛋糕上新、甜品杯夹层和面包夹馅。"),
+            ("门店方案", "适合作为开心果风味产品的口感补充，配合开心果酱、奶油或蛋糕胚形成更完整的风味表达。"),
+            ("经营场景", "适合门店做风味升级、新品试做、节日限定款和需要提升口感记忆点的产品。"),
+        ],
+        "main_selling_points": [
+            ("主要卖点", "为蛋糕和甜品增加开心果风味颗粒感，让夹心层次更清晰。"),
+            ("核心亮点", "作为夹心颗粒使用灵活，可用于夹层、拌料和表面点缀，帮助门店快速做风味差异化。"),
+            ("产品价值", "适合把基础蛋糕升级成带坚果风味和咀嚼记忆点的门店新品。"),
+        ],
+    },
+    "巧克力脆馅": {
+        "product_usage": [
+            ("用途简述", "适合用于蛋糕夹心、甜品夹层和巧克力风味口感颗粒搭配。"),
+            ("推荐搭配", "可搭配奶油、慕斯、蛋糕胚、果酱或巧克力风味甜品，增加夹心层次。"),
+            ("使用方法", "可撒入夹层或拌入夹心体系，建议根据成品甜度和脆感需求调整添加量。"),
+        ],
+        "usage_scenarios": [
+            ("使用场景", "适合巧克力风味蛋糕、夹心蛋糕上新、甜品夹层组合和提升口感层次。"),
+            ("门店方案", "适合门店开发巧克力风味夹心款、儿童款、生日蛋糕和甜品杯组合。"),
+            ("经营场景", "适合需要增加脆感记忆点、丰富夹心层次和做口味差异化的产品线。"),
+        ],
+        "main_selling_points": [
+            ("主要卖点", "为蛋糕和甜品增加巧克力脆感夹心元素，帮助门店做出更有记忆点的夹心口感。"),
+            ("核心亮点", "脆感夹心能强化咀嚼体验，适合与奶油、蛋糕胚和甜品夹层组合。"),
+            ("产品价值", "帮助基础蛋糕快速升级成带口感层次的夹心款，便于门店做新品表达。"),
+        ],
+    },
+}
+
+PROFILE_FALLBACK_PRIORITY_BASES = {
+    "product_usage": 9000,
+    "usage_scenarios": 9100,
+    "main_selling_points": 9200,
+}
+
+PROFILE_MIN_DETAIL_ITEMS = {
+    "product_usage": 3,
+    "usage_scenarios": 3,
+    "main_selling_points": 3,
+}
+
+
 PRODUCT_CARD_POINT_LABELS = {
     "一句话卖点",
     "产品名称",
@@ -140,7 +381,7 @@ def build_material_product_detail(
         str(root_path.resolve()),
         product_names,
     )
-    selling_points = _merge_points(selling_points, knowledge_points)
+    selling_points = _clean_merge_points(selling_points, knowledge_points)
     manual_source = _manual_source_name(str(paths.product_manual_md))
     sources = [manual_source, *knowledge_sources]
 
@@ -215,19 +456,48 @@ def _manual_source_name(path_text: str) -> str:
 
 def build_product_detail_payload(product: Any, root: Path | str | None = None) -> dict[str, Any]:
     material = build_material_product_detail(product.name, root)
-    db_points = [
-        {
+    db_points = []
+    hidden_priorities: set[int] = set()
+    for point in sorted(product.selling_points, key=lambda item: item.priority):
+        if point.point_type == HIDDEN_SELLING_POINT_TYPE:
+            try:
+                hidden_priorities.add(int(point.priority))
+            except (TypeError, ValueError):
+                pass
+            continue
+        if _is_useless_selling_point(point.point_type, point.content):
+            continue
+        db_points.append({
             "id": point.id,
             "product_id": point.product_id,
             "point_type": point.point_type,
-            "content": point.content,
+            "content": _clean_selling_point_content(point.content),
             "priority": point.priority,
-        }
-        for point in sorted(product.selling_points, key=lambda item: item.priority)
-    ]
-    selling_points = material["selling_points"] or db_points
+        })
+    material_points = material["selling_points"]
+    if (db_points or hidden_priorities) and material_points:
+        selling_points = list(material_points)
+        for priority in hidden_priorities:
+            index = priority - 1
+            if 0 <= index < len(selling_points):
+                selling_points[index] = None
+        for offset, point in enumerate(db_points):
+            try:
+                index = max(int(point.get("priority") or (offset + 1)) - 1, 0)
+            except (TypeError, ValueError):
+                index = offset
+            if index + 1 in hidden_priorities:
+                continue
+            if index < len(selling_points):
+                selling_points[index] = point
+            else:
+                selling_points.append(point)
+        selling_points = [point for point in selling_points if point is not None]
+    else:
+        selling_points = db_points or material_points
+    selling_points = _clean_merge_points(selling_points, [])
 
-    return {
+    detail = {
         "id": product.id,
         "name": product.name,
         "category": product.category,
@@ -244,7 +514,306 @@ def build_product_detail_payload(product: Any, root: Path | str | None = None) -
         "knowledge_sources": material["knowledge_sources"],
         "selling_points": selling_points,
         "sku_prices": material["sku_prices"],
+        "hidden_selling_point_priorities": sorted(hidden_priorities),
     }
+    detail["profile_sections"] = build_profile_sections(detail)
+    return detail
+
+
+def build_profile_sections(detail: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build the five fixed product-detail sections shown in the product workspace."""
+    points = detail.get("selling_points") or []
+    point_buckets = _bucket_profile_points(points)
+    sources = _profile_sources(detail)
+
+    info_items = [
+        _profile_item("产品名称", detail.get("name")),
+        _profile_item("品类", detail.get("category")),
+    ]
+    if detail.get("brand"):
+        info_items.append(_profile_item("品牌", detail.get("brand")))
+    if detail.get("description"):
+        info_items.append(_profile_item("产品描述", detail.get("description")))
+    info_items.extend(point_buckets["product_info"])
+    if sources:
+        info_items.append({
+            "label": "资料来源",
+            "content": "、".join(sources),
+            "values": sources,
+            "source": "",
+        })
+    info_items = _dedupe_profile_items(info_items)
+
+    price_skus = [_profile_sku_price(sku) for sku in detail.get("sku_prices") or []]
+    price_items = []
+    if detail.get("price") is not None:
+        price_items.append(_profile_item("产品售价", f"¥{_profile_price(detail.get('price'))}"))
+    if detail.get("original_price") is not None:
+        price_items.append(_profile_item("原价", f"¥{_profile_price(detail.get('original_price'))}"))
+    price_items.extend(point_buckets["product_price"])
+
+    sections_by_id = {
+        "product_info": {"items": info_items, "sku_prices": []},
+        "product_price": {"items": _dedupe_profile_items(price_items), "sku_prices": price_skus},
+        "product_usage": {"items": _dedupe_profile_items(point_buckets["product_usage"]), "sku_prices": []},
+        "usage_scenarios": {"items": _dedupe_profile_items(point_buckets["usage_scenarios"]), "sku_prices": []},
+        "main_selling_points": {"items": _dedupe_profile_items(point_buckets["main_selling_points"]), "sku_prices": []},
+    }
+    _fill_empty_profile_sections(detail, sections_by_id)
+
+    sections = []
+    for section_id, title in PROFILE_SECTION_DEFINITIONS:
+        section = sections_by_id[section_id]
+        sections.append({
+            "id": section_id,
+            "title": title,
+            "items": section["items"],
+            "sku_prices": section["sku_prices"],
+        })
+    return sections
+
+
+def _fill_empty_profile_sections(
+    detail: dict[str, Any],
+    sections_by_id: dict[str, dict[str, list[dict[str, Any]]]],
+) -> None:
+    for section_id in ("product_usage", "usage_scenarios"):
+        sections_by_id[section_id]["items"] = _with_minimum_profile_items(
+            detail,
+            section_id,
+            sections_by_id[section_id]["items"],
+        )
+
+    selling_items = sections_by_id["main_selling_points"]["items"]
+    if not _has_substantive_profile_items(selling_items):
+        selling_items = []
+    sections_by_id["main_selling_points"]["items"] = _with_minimum_profile_items(
+        detail,
+        "main_selling_points",
+        selling_items,
+    )
+
+
+def _with_minimum_profile_items(
+    detail: dict[str, Any],
+    section_id: str,
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    min_count = PROFILE_MIN_DETAIL_ITEMS.get(section_id, 0)
+    current = _dedupe_profile_items(items)
+    if len(current) >= min_count:
+        return current
+    return _dedupe_profile_items([
+        *current,
+        *_visible_fallback_profile_items(detail, section_id),
+    ])
+
+
+def _visible_fallback_profile_items(detail: dict[str, Any], section_id: str) -> list[dict[str, Any]]:
+    hidden_priorities = {
+        int(priority)
+        for priority in detail.get("hidden_selling_point_priorities", [])
+        if str(priority).isdigit()
+    }
+    return [
+        item for item in _fallback_profile_items(detail, section_id)
+        if int(item.get("priority") or 0) not in hidden_priorities
+    ]
+
+
+def _fallback_profile_items(detail: dict[str, Any], section_id: str) -> list[dict[str, Any]]:
+    product_name = str(detail.get("name") or "")
+    product_specs = PROFILE_PRODUCT_FALLBACKS.get(product_name, {}).get(section_id)
+    base_priority = PROFILE_FALLBACK_PRIORITY_BASES.get(section_id, 9900)
+    if product_specs:
+        return [
+            _fallback_profile_item(label, content, base_priority + index)
+            for index, (label, content) in enumerate(product_specs, start=1)
+        ]
+
+    category_key = _profile_category_key(detail)
+    category_specs = PROFILE_CATEGORY_FALLBACKS.get(category_key, {}).get(section_id, [])
+    return [
+        _fallback_profile_item(label, content, base_priority + index)
+        for index, (label, content) in enumerate(category_specs, start=1)
+    ]
+
+
+def _fallback_profile_item(label: str, content: str, priority: int) -> dict[str, Any] | None:
+    item = _profile_item(label, content)
+    if not item:
+        return None
+    item.update({
+        "priority": priority,
+        "generated": True,
+        "editable": True,
+    })
+    return item
+
+
+def _profile_category_key(detail: dict[str, Any]) -> str:
+    category = str(detail.get("category") or "")
+    name = str(detail.get("name") or "")
+    if category in PROFILE_CATEGORY_FALLBACKS:
+        return category
+    if "夹心" in category or "夹心" in name or any(part in name for part in ("脆馅", "脆珠", "薄脆")):
+        return "烘焙夹心"
+    if "配件" in category or any(part in name for part in ("刀叉", "纸盘", "盒装")):
+        return "烘焙配件"
+    if "调色" in category or any(part in name for part in ("色素", "色粉", "红丝绒")):
+        return "烘焙调色"
+    if "装饰" in category or any(part in name for part in ("翻糖", "拉线", "糖珠", "插件")):
+        return "烘焙装饰"
+    if "调味" in category or any(part in name for part in ("果酱", "茶酱", "糖浆", "香草", "焦糖", "开心果酱")):
+        return "烘焙调味"
+    return category
+
+
+def _has_substantive_profile_items(items: list[dict[str, Any]]) -> bool:
+    return any(not _is_weak_profile_item(item) for item in items)
+
+
+def _is_weak_profile_item(item: dict[str, Any]) -> bool:
+    label = import_materials._clean_markdown(item.get("label", ""))
+    return label in PROFILE_WEAK_INFO_LABELS or label in PROFILE_INFO_TYPES
+
+
+def _bucket_profile_points(points: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    buckets = {
+        "product_info": [],
+        "product_price": [],
+        "product_usage": [],
+        "usage_scenarios": [],
+        "main_selling_points": [],
+    }
+    for point in points:
+        point_type = import_materials._clean_markdown(point.get("point_type", "卖点"))
+        content = _clean_selling_point_content(point.get("content", ""))
+        if not point_type or not content or _is_useless_selling_point(point_type, content):
+            continue
+        item = _point_to_profile_item({**point, "point_type": point_type, "content": content})
+        section_id = _profile_section_for_point(point_type)
+        if section_id:
+            buckets[section_id].append(item)
+        elif point_type.startswith("FAQ"):
+            buckets["main_selling_points"].append(item)
+    return buckets
+
+
+def _profile_section_for_point(point_type: str) -> str:
+    if point_type in PROFILE_INFO_TYPES:
+        return "product_info"
+    if point_type in {"售价", "产品价格", "SKU售价", "一件85折", "五件75折", "展会一件69折"} or "价格" in point_type or "折" in point_type:
+        return "product_price"
+    if point_type in PROFILE_USAGE_TYPES or "用法" in point_type or "制作" in point_type or "用量" in point_type:
+        return "product_usage"
+    if point_type in PROFILE_SCENARIO_TYPES or "场景" in point_type or "方案" in point_type:
+        return "usage_scenarios"
+    if point_type in PROFILE_SELLING_TYPES or "卖点" in point_type or "亮点" in point_type or "优势" in point_type or "价值" in point_type:
+        return "main_selling_points"
+    return "main_selling_points"
+
+
+def _point_to_profile_item(point: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "label": import_materials._clean_markdown(point.get("point_type", "卖点")),
+        "content": _clean_selling_point_content(point.get("content", "")),
+        "source": point.get("source", ""),
+        "point_id": point.get("id"),
+        "product_id": point.get("product_id"),
+        "priority": point.get("priority"),
+        "editable": bool(point.get("id")),
+    }
+
+
+def _profile_item(label: str, content: Any) -> dict[str, Any] | None:
+    text = _clean_selling_point_content(str(content or ""))
+    if not text:
+        return None
+    return {"label": label, "content": text, "source": ""}
+
+
+def _dedupe_profile_items(items: list[dict[str, Any] | None]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        if not item:
+            continue
+        label = import_materials._clean_markdown(item.get("label", ""))
+        content = _clean_selling_point_content(item.get("content", ""))
+        if not label or not content or _is_useless_selling_point(label, content):
+            continue
+        key = (_selling_point_type_key(label), _selling_point_content_key(content))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({**item, "label": label, "content": content})
+    return out
+
+
+def _profile_sources(detail: dict[str, Any]) -> list[str]:
+    sources = []
+    if detail.get("manual_source"):
+        sources.append(detail["manual_source"])
+    sources.extend(detail.get("knowledge_sources") or [])
+    seen: set[str] = set()
+    out: list[str] = []
+    for source in sources:
+        source_text = import_materials._clean_markdown(str(source or ""))
+        if not source_text or source_text in seen:
+            continue
+        seen.add(source_text)
+        out.append(source_text)
+    return out
+
+
+def _profile_sku_price(sku: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "product": sku.get("product", ""),
+        "spec": sku.get("spec", ""),
+        "name": " · ".join(part for part in [sku.get("product"), sku.get("spec")] if part) or "默认规格",
+        "price": _profile_price(sku.get("price")),
+        "daily_price": _profile_price(sku.get("daily_price")),
+        "count": sku.get("count"),
+        "category": sku.get("category", ""),
+        "activity_prices": [_profile_activity_price(activity) for activity in sku.get("activity_prices", [])],
+    }
+
+
+def _profile_activity_price(activity: dict[str, Any]) -> dict[str, Any]:
+    price = activity.get("final_price")
+    if price is None:
+        price = activity.get("activity_price")
+    if price is None:
+        price = activity.get("tag_price")
+    meta = []
+    if activity.get("activity_price") is not None and _profile_price(activity.get("activity_price")) != _profile_price(price):
+        meta.append(f"活动价 ¥{_profile_price(activity.get('activity_price'))}")
+    if activity.get("unit_price") is not None and _profile_price(activity.get("unit_price")) != _profile_price(price):
+        meta.append(f"均价 ¥{_profile_price(activity.get('unit_price'))}")
+    if activity.get("discount"):
+        meta.append(str(activity["discount"]))
+    if activity.get("coupon") and activity.get("coupon") != "0":
+        meta.append(f"券 {activity['coupon']}")
+    if activity.get("single_activity"):
+        meta.append(str(activity["single_activity"]))
+    return {
+        "mechanism": activity.get("mechanism") or "活动价",
+        "price": _profile_price(price),
+        "meta": " / ".join(meta),
+    }
+
+
+def _profile_price(value: Any) -> str:
+    if value is None or value == "":
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.2f}".rstrip("0").rstrip(".")
 
 
 @lru_cache(maxsize=4)
@@ -329,10 +898,13 @@ def _find_2026_knowledge_points(
         if entry["source"] not in sources:
             sources.append(entry["source"])
     if points:
+        alias_names = _alias_names_for_products(product_names, aliases)
+        if alias_names:
+            _append_2026_point(points, "命名对照", "旧资料名/别名：" + "、".join(alias_names[:8]), "05_产品命名主数据与旧称对照.md")
         for alias_source in _alias_sources(root, product_names, aliases):
             if alias_source not in sources:
                 sources.append(alias_source)
-    return _merge_points([], points), sources
+    return _clean_merge_points([], points), sources
 
 
 def _parse_2026_index(path: Path) -> list[dict[str, Any]]:
@@ -663,7 +1235,7 @@ def _append_2026_point(
     source: str,
 ) -> None:
     cleaned = import_materials._clean_markdown(content)
-    if not cleaned or _is_risky_2026_content(cleaned):
+    if not cleaned or _is_risky_2026_content(cleaned) or _is_useless_selling_point(point_type, cleaned):
         return
     if len(cleaned) > 520:
         cleaned = cleaned[:517].rstrip() + "..."
@@ -953,6 +1525,32 @@ def _alias_sources(root: str, product_names: list[str], aliases: dict[str, set[s
     return []
 
 
+def _alias_names_for_products(product_names: list[str], aliases: dict[str, set[str]]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for name in product_names:
+        root_keys = {_name_key(name), _name_key(_base_name(name))}
+        candidates = {name, _base_name(name)}
+        for candidate in list(candidates):
+            candidates.update(aliases.get(candidate, set()))
+        for candidate in list(candidates):
+            candidates.update(aliases.get(candidate, set()))
+        for candidate in candidates:
+            candidate_key = _name_key(candidate)
+            if candidate_key in root_keys:
+                continue
+            for alias in sorted(aliases.get(candidate, set())):
+                alias_key = _name_key(alias)
+                if not alias_key or alias_key in root_keys or alias_key in seen:
+                    continue
+                names.append(alias)
+                seen.add(alias_key)
+            if candidate_key and candidate_key not in seen:
+                names.append(candidate)
+                seen.add(candidate_key)
+    return names
+
+
 def _is_risky_2026_content(content: str) -> bool:
     compact = re.sub(r"\s+", "", content).lower()
     for phrase in RISKY_2026_PHRASES:
@@ -999,7 +1597,8 @@ def _merge_points(
     extra: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     merged: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    by_type: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
     for point in [*primary, *extra]:
         point_type = point.get("point_type", "卖点")
         content = point.get("content", "")
@@ -1014,6 +1613,86 @@ def _merge_points(
         })
         seen.add(key)
     return merged
+
+
+def _clean_merge_points(
+    primary: list[dict[str, Any]],
+    extra: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    by_type: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
+    for point in [*primary, *extra]:
+        point_type = import_materials._clean_markdown(point.get("point_type", "卖点"))
+        content = _clean_selling_point_content(point.get("content", ""))
+        if not content or _is_useless_selling_point(point_type, content):
+            continue
+        content_key = _selling_point_content_key(content)
+        if content_key in seen:
+            continue
+        type_key = _selling_point_type_key(point_type)
+        if type_key in by_type:
+            existing = by_type[type_key]
+            combined = _merge_selling_point_content(existing["content"], content)
+            if combined != existing["content"]:
+                existing["content"] = combined
+            seen.add(content_key)
+            continue
+
+        item = {
+            **point,
+            "point_type": point_type,
+            "content": content,
+            "priority": len(merged) + 1,
+        }
+        merged.append(item)
+        by_type[type_key] = item
+        seen.add(content_key)
+    for index, point in enumerate(merged, start=1):
+        point["priority"] = index
+    return merged
+
+
+def _is_useless_selling_point(point_type: str, content: str) -> bool:
+    clean_type = import_materials._clean_markdown(point_type)
+    clean_content = import_materials._clean_markdown(content)
+    if clean_type in USELESS_POINT_TYPES:
+        return True
+    if any(marker in clean_content for marker in USELESS_CONTENT_MARKERS):
+        return True
+    if "手卡" in clean_content and len(clean_content) <= 80:
+        return True
+    if "一页纸" in clean_content and len(clean_content) <= 80:
+        return True
+    return False
+
+
+def _clean_selling_point_content(content: str) -> str:
+    cleaned = import_materials._clean_markdown(content)
+    cleaned = re.sub(r"\s*\?{2,}\s*", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _selling_point_type_key(point_type: str) -> str:
+    return re.sub(r"[\s：:，,。；;、（）()]+", "", point_type).lower()
+
+
+def _selling_point_content_key(content: str) -> str:
+    cleaned = import_materials._clean_markdown(content)
+    return re.sub(r"[\s：:，,。；;、（）()【】\[\]\"'“”‘’]+", "", cleaned).lower()
+
+
+def _merge_selling_point_content(existing: str, incoming: str) -> str:
+    existing_key = _selling_point_content_key(existing)
+    incoming_key = _selling_point_content_key(incoming)
+    if not incoming_key or incoming_key in existing_key:
+        return existing
+    if existing_key and existing_key in incoming_key:
+        return incoming
+    combined = existing.rstrip("；;。") + "；" + incoming
+    if len(combined) > 900:
+        combined = combined[:897].rstrip("；;，,。 ") + "..."
+    return combined
 
 
 def _find_material_product(

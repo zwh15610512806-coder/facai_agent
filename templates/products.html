@@ -2,67 +2,161 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>产品信息 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260612">
+<title>产品信息 · 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 <style>
-.spt{display:inline-block;padding:3px 10px;border-radius:var(--r-pill);font-size:11px;font-weight:500;margin:1px}
-.spt-功效{background:#ecf5cc;color:#4a5a1c}.spt-性价比{background:var(--facai-soft);color:var(--facai)}.spt-场景{background:#dce6f5;color:#334a7a}.spt-痛点{background:#f5dedb;color:#9a3030}.spt-对比{background:#e0ddf0;color:#404078}
-.product-card-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:auto;width:100%}
-.product-card-action{height:30px;min-width:0;display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:0 7px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface);color:var(--text-2);font-family:var(--font-ui);font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;cursor:pointer;transition:border-color var(--fast) var(--ease),color var(--fast) var(--ease),background var(--fast) var(--ease),box-shadow var(--fast) var(--ease);line-height:1}
-.product-card-action svg,.product-card-action i{width:10px;height:10px;stroke-width:2;flex:0 0 auto}
-.product-card-action:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost);box-shadow:inset 0 -1px 0 rgba(122,139,60,.08)}
-.product-card-action.danger:hover{border-color:rgba(220,38,38,.35);color:var(--danger);background:var(--danger-soft)}
-.product-card-action.is-disabled{color:var(--text-3);background:var(--surface-darker);border-color:var(--border-soft);cursor:not-allowed;pointer-events:none;box-shadow:none}
-.section-hd-between{display:flex;align-items:center;justify-content:space-between;margin-bottom:32px}
-#productDetailModal{align-items:flex-start;padding:84px 28px 24px}
-.detail-box{max-width:min(1280px,calc(100vw - 56px));width:min(1280px,calc(100vw - 56px));height:calc(100dvh - 108px);max-height:calc(100dvh - 108px);display:flex;flex-direction:column;overflow:hidden}
-.detail-box .mo-hd{flex:0 0 auto;padding:22px 32px}
-.detail-box .mo-body{flex:1;min-height:0;overflow:hidden;padding:28px 32px 32px}
-.detail-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-.detail-pill{display:inline-flex;align-items:center;padding:4px 10px;border-radius:var(--r-pill);background:var(--facai-soft);color:var(--facai);font-size:12px;font-weight:600}
-.detail-grid{display:grid;grid-template-columns:minmax(340px,.8fr) minmax(720px,1.2fr);gap:24px;align-items:stretch;height:100%;min-height:0}
-.detail-grid>section{display:flex;flex-direction:column;min-height:0;overflow:hidden}
-.detail-section-title{font-family:var(--font-ui);font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px}
-.detail-point-list{display:grid;gap:10px;overflow:auto;padding-right:4px}
-.detail-point{border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;background:var(--surface-darker)}
-.detail-point-type{display:inline-block;margin-bottom:5px;font-size:11px;font-weight:700;color:var(--facai)}
-.detail-point-text{font-size:13px;line-height:1.7;color:var(--text)}
-#detailSkuPrices{display:flex;min-height:0;overflow:hidden}
-.detail-sku-wrap{border:1px solid var(--border);border-radius:var(--r);overflow:auto;background:var(--surface);max-height:100%;flex:1}
-.detail-sku-table{width:100%;min-width:720px;border-collapse:collapse;font-size:12px}
-.detail-sku-table th,.detail-sku-table td{padding:9px 10px;border-bottom:1px solid var(--border-soft);text-align:left;vertical-align:top}
-.detail-sku-table th{background:var(--surface-darker);color:var(--text-2);font-weight:700;position:sticky;top:0;z-index:1}
-.detail-sku-table tr:last-child td{border-bottom:0}
-.detail-activity-lines{display:grid;gap:5px;min-width:230px}
-.detail-activity-item{font-size:11px;line-height:1.45;color:var(--text-2)}
-.detail-activity-name{display:inline-block;font-weight:700;color:var(--facai);margin-right:4px}
-.detail-activity-price{font-weight:700;color:var(--text)}
-.detail-activity-meta{display:block;color:var(--text-3);margin-top:1px}
-.detail-empty{padding:18px;border:1px dashed var(--border);border-radius:var(--r);color:var(--text-3);font-size:13px;text-align:center}
-.detail-loading{padding:42px 0;text-align:center;color:var(--text-3);font-size:13px}
-@media (max-width: 768px) {
-  .section-hd-between { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 18px; }
-  .section-hd-between > div:last-child { display: grid !important; grid-template-columns: 1fr; gap: 8px; }
-  .card-sm > div { flex-direction: column; align-items: stretch; gap: 10px !important; }
-  .card-sm > div > div { width: 100%; margin-right: 0 !important; }
-  .card-sm .fpill { flex: 1 1 auto; }
-  #searchInput, #categoryFilter { max-width: 100% !important; }
-  .product-card-actions { gap: 6px; }
-  .product-card-action { height: 30px; padding: 0 5px; font-size: 11px; }
-  .mo-body > div:last-child { flex-wrap: wrap; justify-content: stretch !important; }
-  .mo-body > div:last-child .btn { flex: 1 1 auto; }
-  #productDetailModal { align-items: flex-end; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
-  .detail-box { width: 100%; max-width: 100%; height: calc(100dvh - 24px - env(safe-area-inset-bottom)); max-height: calc(100dvh - 24px - env(safe-area-inset-bottom)); }
-  .detail-box .mo-hd { padding: 16px; }
-  .detail-box .mo-body { padding: 16px; }
-  .detail-grid { grid-template-columns: 1fr; gap: 16px; overflow:auto; align-items:start; }
-  .detail-grid>section { overflow:visible; }
-  .detail-point-list { overflow:visible; padding-right:0; }
-  #detailSkuPrices { overflow:visible; }
-  .detail-sku-wrap { max-height:none; overflow:auto; }
+body{overflow:hidden}
+.products-page{max-width:min(1680px,calc(100vw - 32px));height:calc(100dvh - 68px);margin:0 auto;padding:16px 16px 20px;display:flex;flex-direction:column;gap:12px}
+.products-chat-shell{flex:1;min-height:0;display:grid;grid-template-columns:300px 500px minmax(420px,1fr);gap:14px}
+.products-panel{min-width:0;min-height:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--s-2);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-panel{grid-column:1;order:1}
+.detail-panel{grid-column:2;order:2}
+.chat-panel{grid-column:3;order:3}
+.products-panel-hd{flex:0 0 auto;padding:14px 16px;border-bottom:1px solid var(--border-soft);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:rgba(255,255,255,.96)}
+.products-panel-title{font-family:var(--font-ui);font-size:15px;font-weight:800;color:var(--text);line-height:1.35;margin:0}
+.products-panel-subtitle{font-size:12px;color:var(--text-2);line-height:1.5;margin-top:2px}
+.sidebar-heading{min-width:0}
+.sidebar-clear-selection{height:30px;display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:0 9px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-family:var(--font-ui);font-size:12px;font-weight:800;white-space:nowrap;cursor:pointer}
+.sidebar-clear-selection:hover:not(:disabled){border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.sidebar-clear-selection:disabled{opacity:.45;cursor:not-allowed;background:var(--surface-darker)}
+.sidebar-clear-selection svg,.sidebar-clear-selection i{width:12px;height:12px}
+.sidebar-toolbar{padding:12px 14px;border-bottom:1px solid var(--border-soft);display:grid;gap:10px}
+.sidebar-search{height:36px;font-size:14px}
+.sidebar-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sidebar-actions .btn{height:32px;padding:0 10px;font-size:12px}
+.category-tree{flex:1;min-height:0;overflow:auto;padding:10px 8px 12px}
+.category-group{border-radius:var(--r-sm);margin-bottom:6px}
+.category-toggle{width:100%;border:0;background:transparent;color:var(--text);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 8px;border-radius:var(--r-sm);font-family:var(--font-ui);font-size:13px;font-weight:800;cursor:pointer}
+.category-toggle:hover{background:var(--facai-ghost);color:var(--facai)}
+.category-toggle-left{display:flex;align-items:center;gap:7px;min-width:0}
+.category-toggle-left svg,.category-toggle-left i{width:13px;height:13px;flex:0 0 auto}
+.category-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.category-count{font-size:11px;color:var(--text-3);font-weight:700;white-space:nowrap}
+.category-products{display:grid;gap:5px;padding:0 4px 8px 21px}
+.product-list-item{width:100%;border:1px solid transparent;background:transparent;border-radius:var(--r-sm);padding:8px 9px;text-align:left;cursor:pointer;color:var(--text);display:grid;gap:4px}
+.product-list-item:hover{border-color:var(--border);background:var(--surface-darker)}
+.product-list-item.on{border-color:var(--facai-subtle);background:var(--facai-soft);box-shadow:inset 3px 0 0 var(--facai)}
+.product-list-name{font-size:15px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+.product-list-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--text-2)}
+.product-list-price{color:var(--facai);font-weight:800;white-space:nowrap}
+.chat-panel{background:linear-gradient(180deg,#fff 0%,#fff 60%,#fbfaf8 100%)}
+.chat-thread{flex:1;min-height:0;overflow:auto;padding:18px 18px 12px;display:flex;flex-direction:column;gap:12px}
+.chat-message{display:flex;gap:10px;align-items:flex-start;max-width:100%}
+.chat-message.user{justify-content:flex-end}
+.chat-avatar{width:28px;height:28px;border-radius:var(--r-pill);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;background:var(--facai-soft);color:var(--facai)}
+.chat-avatar svg,.chat-avatar i{width:14px;height:14px}
+.chat-bubble{max-width:min(760px,86%);border:1px solid var(--border-soft);border-radius:14px;background:var(--surface);padding:10px 12px;font-size:14px;line-height:1.75;color:var(--text);box-shadow:var(--s-1);white-space:pre-wrap;overflow-wrap:anywhere}
+.chat-message.user .chat-bubble{background:var(--facai);border-color:var(--facai);color:#fff;box-shadow:var(--s-brand)}
+.chat-empty{max-width:660px;margin:auto;text-align:center;color:var(--text-2);display:grid;gap:12px}
+.chat-empty-icon{width:44px;height:44px;border-radius:var(--r);margin:0 auto;background:var(--facai-soft);color:var(--facai);display:flex;align-items:center;justify-content:center}
+.chat-empty-icon svg,.chat-empty-icon i{width:20px;height:20px}
+.chat-empty h2{font-family:var(--font-display);font-size:1.5rem;margin:0;color:var(--text)}
+.prompt-grid{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.prompt-chip{border:1px solid var(--border);background:var(--surface);border-radius:var(--r-pill);height:32px;padding:0 12px;font-size:12px;font-weight:700;color:var(--text-2);cursor:pointer}
+.prompt-chip:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.rag-results{display:grid;gap:10px;white-space:normal}
+.rag-result-row{border-bottom:1px solid var(--border-soft);padding:2px 0 10px;display:grid;gap:5px}
+.rag-result-row:last-child{border-bottom:0;padding-bottom:0}
+.rag-result-sources{display:flex;flex-wrap:wrap;gap:5px}
+.rag-source-chip{max-width:100%;border:0;border-radius:var(--r-pill);background:var(--facai-soft);color:var(--facai);padding:3px 8px;font-family:var(--font-ui);font-size:12px;font-weight:800;line-height:1.4;cursor:pointer;overflow-wrap:anywhere;text-align:left}
+.rag-source-chip:hover{background:var(--facai-ghost);box-shadow:inset 0 0 0 1px var(--facai-subtle)}
+.rag-result-main{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.rag-result-name{border:0;background:transparent;padding:0;color:var(--text);font-family:var(--font-ui);font-size:15px;font-weight:900;text-align:left;cursor:pointer;overflow-wrap:anywhere}
+.rag-result-name:hover{color:var(--facai)}
+.rag-result-name.is-static{cursor:default}
+.rag-result-name.is-static:hover{color:var(--text)}
+.rag-result-meta{font-size:13px;color:var(--text-2);white-space:nowrap}
+.source-modal-box{width:min(820px,calc(100vw - 32px));max-width:min(820px,calc(100vw - 32px));max-height:calc(100dvh - 64px);display:flex;flex-direction:column}
+.source-modal-heading{min-width:0}
+.source-modal-title{margin:0;font-family:var(--font-display);font-size:1.25rem;color:var(--text)}
+.source-modal-subtitle{margin:4px 0 0;font-size:13px;color:var(--text-2);overflow-wrap:anywhere}
+.source-modal-close{border:0;background:transparent;font-size:24px;color:var(--text-3);cursor:pointer;line-height:1}
+.source-modal-body{min-height:0;overflow:auto;display:grid;gap:12px}
+.source-preview-text{max-height:58vh;overflow:auto;border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--surface-darker);padding:12px;font-size:13px;line-height:1.65;white-space:pre-wrap;color:var(--text);overflow-wrap:anywhere}
+.source-download-card{border:1px solid var(--border-soft);border-radius:var(--r);background:var(--surface-darker);padding:16px;display:grid;gap:10px;color:var(--text-2);font-size:14px;line-height:1.6}
+.source-download-link{width:max-content}
+.chat-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px;background:rgba(255,255,255,.96)}
+.chat-form{display:flex;gap:8px;align-items:flex-end}
+.chat-input{flex:1;min-height:42px;max-height:110px;resize:none;border:1.5px solid var(--border);border-radius:var(--r);padding:10px 12px;font:inherit;font-size:14px;line-height:1.55;background:var(--surface)}
+.chat-input:focus{outline:none;border-color:var(--facai);box-shadow:0 0 0 3px var(--facai-subtle)}
+.chat-send{width:42px;height:42px;border-radius:var(--r);border:0;background:var(--facai);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
+.chat-send:disabled{background:var(--border);cursor:not-allowed}
+.chat-send svg,.chat-send i{width:16px;height:16px}
+.detail-empty-state{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px;color:var(--text-2)}
+.detail-empty-state h2{font-size:1.25rem;margin:10px 0 4px}
+.detail-panel-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.selected-detail{flex:1;min-height:0;overflow:auto;padding:14px 16px 12px;display:flex;flex-direction:column;gap:14px}
+.selected-product-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.product-mini-action{height:32px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-family:var(--font-ui);font-size:12px;font-weight:800;text-decoration:none;cursor:pointer}
+.product-mini-action:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.product-mini-action.danger:hover{border-color:rgba(220,38,38,.35);color:var(--danger);background:var(--danger-soft)}
+.product-mini-action.is-disabled{color:var(--text-3);background:var(--surface-darker);pointer-events:none}
+.product-mini-action svg,.product-mini-action i{width:12px;height:12px}
+.detail-section-title{font-family:var(--font-ui);font-size:14px;font-weight:800;color:var(--text);margin-bottom:8px}
+.profile-section{border:1px solid var(--border);border-radius:var(--r);background:var(--surface);overflow:hidden}
+.selected-detail .profile-section{flex:0 0 auto}
+.profile-section-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:var(--surface-darker);border-bottom:1px solid var(--border-soft)}
+.profile-section-title-row{display:flex;align-items:center;gap:8px;min-width:0}
+.profile-section-title{font-family:var(--font-ui);font-size:13px;font-weight:900;color:var(--text);margin:0}
+.profile-section-count{font-size:11px;color:var(--text-3);font-weight:700;white-space:nowrap}
+.profile-section-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.profile-section-edit,.profile-section-save{height:28px;padding:0 11px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--surface);font-family:var(--font-ui);font-size:12px;font-weight:800;cursor:pointer}
+.profile-section-edit{color:var(--text-2)}
+.profile-section-edit:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.profile-section-save{color:var(--facai)}
+.profile-section-save:hover{border-color:var(--facai);background:var(--facai-ghost)}
+.profile-section-body{display:grid;gap:8px;padding:10px 12px}
+.profile-item{display:grid;gap:4px;min-width:0}
+.profile-item-label{font-size:13px;font-weight:800;color:var(--facai)}
+.profile-item-content{font-size:15px;line-height:1.7;color:var(--text);overflow-wrap:anywhere;word-break:break-word}
+.profile-section-editor{width:100%;min-height:260px;resize:vertical;border:1px solid var(--border-soft);border-radius:var(--r-sm);background:#fff;padding:11px 12px;font:inherit;font-size:15px;line-height:1.75;color:var(--text)}
+.profile-section-editor:focus{outline:none;border-color:var(--facai);box-shadow:0 0 0 3px var(--facai-subtle)}
+.profile-section-editor-help{font-size:13px;line-height:1.6;color:var(--text-3)}
+.profile-source-list{display:flex;flex-wrap:wrap;gap:6px}
+.profile-source-chip{max-width:100%;padding:4px 8px;border-radius:var(--r-pill);background:var(--facai-soft);color:var(--facai);font-size:13px;font-weight:700;line-height:1.4;overflow-wrap:anywhere}
+.price-sku-list{display:grid;gap:8px;min-width:0}
+.price-sku-card{border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--surface-darker);padding:10px;display:grid;gap:8px;min-width:0}
+.price-sku-name{font-size:15px;font-weight:900;color:var(--text);line-height:1.45;overflow-wrap:anywhere}
+.price-sku-meta{display:flex;flex-wrap:wrap;gap:6px}
+.price-chip{display:inline-flex;align-items:center;gap:4px;min-height:24px;padding:3px 8px;border-radius:var(--r-pill);background:#fff;border:1px solid var(--border);font-size:13px;color:var(--text-2);font-weight:800}
+.price-chip strong{color:var(--facai)}
+.price-activity-lines{display:grid;gap:5px}
+.price-activity-line{display:grid;grid-template-columns:minmax(72px,auto) 1fr;gap:6px;font-size:13px;line-height:1.5;color:var(--text-2)}
+.price-activity-name{font-weight:900;color:var(--facai);overflow-wrap:anywhere}
+.price-activity-value{overflow-wrap:anywhere}
+.price-sku-toggle{height:32px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--facai);font-family:var(--font-ui);font-size:12px;font-weight:900;cursor:pointer}
+.price-sku-toggle:hover{border-color:var(--facai);background:var(--facai-ghost)}
+.profile-section[data-section-id="main_selling_points"] .profile-section-body{gap:12px}
+.detail-empty{padding:18px;border:1px dashed var(--border);border-radius:var(--r);color:var(--text-3);font-size:15px;text-align:center}
+.detail-loading{padding:28px;text-align:center;color:var(--text-3);font-size:15px}
+.empty-copy{font-size:15px;line-height:1.7;color:var(--text-2)}
+@media (max-width: 1280px){
+  .products-chat-shell{grid-template-columns:280px 420px minmax(360px,1fr)}
+}
+@media (max-width: 980px){
+  body{overflow:auto}
+  .products-page{height:auto;max-width:100%;padding:12px}
+  .products-chat-shell{display:flex;flex-direction:column;gap:12px}
+  .products-panel{min-height:360px}
+  .sidebar-panel{max-height:420px}
+  .chat-panel{min-height:560px}
+  .detail-panel{min-height:620px}
+}
+@media (max-width: 640px){
+  .products-page{padding:10px}
+  .products-panel-hd{padding:12px;flex-direction:column;align-items:stretch}
+  .sidebar-clear-selection{width:100%}
+  .selected-product-actions,.sidebar-actions{grid-template-columns:1fr;display:grid}
+  .product-mini-action{width:100%}
+  .chat-thread{padding:14px 12px 10px}
+  .chat-bubble{max-width:92%}
+  .chat-form{gap:6px}
+  .chat-send{width:40px;height:40px}
+  .profile-section-hd{align-items:flex-start;flex-direction:column}
+  .profile-section-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}
 }
 </style>
 </head>
@@ -76,62 +170,69 @@
 <a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
 
-<main class="page-main">
-<header class="page-hd">
-<div class="section-hd-between">
-<div><h1>产品信息</h1><p style="margin-top:2px"><span id="productCount">0</span> 个法采产品</p></div>
-<div style="display:flex;gap:8px">
-<button class="btn btn-soft btn-sm" onclick="extractAllPoints()">批量整理卖点</button>
-<a href="/app/import" class="btn btn-soft btn-sm">批量导入</a>
-</div></div>
-</header>
+<main class="products-page">
+<section class="products-chat-shell" aria-label="产品资料问答工作台">
+  <aside class="products-panel sidebar-panel">
+    <div class="products-panel-hd">
+      <div class="sidebar-heading">
+        <h1 class="products-panel-title">产品分类</h1>
+        <div class="products-panel-subtitle"><span id="productCount">0</span> 个法采产品</div>
+      </div>
+      <button id="btnClearProductSelection" class="sidebar-clear-selection" type="button" onclick="clearSelectedProduct()" disabled aria-label="清除当前产品选择" title="清除当前产品选择"><i data-lucide="x"></i><span>清除选择</span></button>
+    </div>
+    <div class="sidebar-toolbar">
+      <input id="sidebarSearch" type="text" class="input sidebar-search" placeholder="搜索产品或品类..." oninput="renderSidebar()">
+      <div class="sidebar-actions">
+        <button class="btn btn-soft btn-sm" id="btnExtractAllPoints" type="button" onclick="extractAllPoints(this)">整理卖点</button>
+        <a href="/app/import" class="btn btn-soft btn-sm">批量导入</a>
+      </div>
+    </div>
+    <div id="categoryTree" class="category-tree">
+      <div class="detail-loading">加载产品...</div>
+    </div>
+  </aside>
 
-<div class="card card-sm" style="margin-bottom:18px">
-<div style="display:flex;flex-wrap:wrap;gap:12px">
-<div style="display:flex;gap:4px;margin-right:8px">
-<button id="searchModeKw" class="fpill on" onclick="setSearchMode('keyword')">关键词</button>
-<button id="searchModeSem" class="fpill" onclick="setSearchMode('semantic')">语义搜索</button>
-</div>
-<input id="searchInput" type="text" placeholder="搜索产品&hellip;" class="input" style="max-width:220px;font-size:13px" oninput="debounceLoad()">
-<select id="categoryFilter" class="input" style="max-width:160px;font-size:13px" onchange="loadProducts()"><option value="">全部品类</option></select>
-</div></div>
+  <section class="products-panel chat-panel">
+    <div class="products-panel-hd">
+      <div>
+        <h2 class="products-panel-title">产品资料助手</h2>
+        <div id="globalChatSubtitle" class="products-panel-subtitle">跨全部产品检索卖点、SKU、活动价和适用场景</div>
+      </div>
+    </div>
+    <div id="globalChatThread" class="chat-thread"></div>
+    <div class="chat-composer">
+      <form class="chat-form" onsubmit="sendGlobalChat(event)">
+        <textarea id="globalChatInput" class="chat-input" rows="1" placeholder="例如：适合调色的产品有哪些？" onkeydown="submitChatOnEnter(event,'global')"></textarea>
+        <button id="globalChatSend" class="chat-send" type="submit" aria-label="发送"><i data-lucide="send-horizontal"></i></button>
+      </form>
+    </div>
+  </section>
 
-<div id="productGrid" class="product-grid"><div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)">加载中&hellip;</div></div>
+  <aside class="products-panel detail-panel">
+    <div class="products-panel-hd">
+      <div>
+        <h2 id="detailProductName" class="products-panel-title">选择一个产品</h2>
+        <div id="detailProductSubtitle" class="products-panel-subtitle">从左侧点击产品后，这里显示资料、价格和产品内问答</div>
+      </div>
+      <div id="selectedProductActions" class="selected-product-actions"></div>
+    </div>
+    <div id="detailPanelBody" class="detail-panel-body">
+      <div class="detail-empty-state">
+        <div>
+          <div class="chat-empty-icon"><i data-lucide="panel-right-open"></i></div>
+          <h2>还没有选择产品</h2>
+          <p class="empty-copy">左侧按品类展开产品列表，点击产品后可查看卖点、SKU 售价和活动机制价格，并在下方只检索该产品资料。</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+</section>
 </main>
-
-<!-- 产品详情弹窗 -->
-<div id="productDetailModal" class="mo" style="display:none" onclick="if(event.target===this)closeProductDetail()">
-<div class="mo-box detail-box" role="dialog" aria-modal="true" aria-labelledby="detailProductName">
-<div class="mo-hd">
-<div>
-<h3 id="detailProductName" style="margin:0;font-family:var(--font-serif);font-size:1.18rem"></h3>
-<div class="detail-meta">
-<span id="detailCategory" class="detail-pill"></span>
-<span id="detailSource" class="detail-pill"></span>
-</div>
-</div>
-<button onclick="closeProductDetail()" style="background:none;border:none;font-size:22px;color:var(--text-3);cursor:pointer">&times;</button>
-</div>
-<div class="mo-body">
-<div id="detailLoading" class="detail-loading">加载产品详情&hellip;</div>
-<div id="detailContent" class="detail-grid" style="display:none">
-<section>
-<div class="detail-section-title">产品卖点</div>
-<div id="detailSellingPoints" class="detail-point-list"></div>
-</section>
-<section>
-<div class="detail-section-title">各 SKU 售价</div>
-<div id="detailSkuPrices"></div>
-</section>
-</div>
-</div>
-</div>
-</div>
 
 <!-- 文件上传弹窗 -->
 <div id="uploadModal" class="mo" style="display:none" onclick="if(event.target===this)closeUploadModal()">
 <div class="mo-box">
-<div class="mo-hd"><h3 style="margin:0;font-family:var(--font-serif);font-size:1.1rem">产品资料</h3><button onclick="closeUploadModal()" style="background:none;border:none;font-size:22px;color:var(--text-3);cursor:pointer">&times;</button></div>
+<div class="mo-hd"><h3 style="margin:0;font-family:var(--font-display);font-size:1.1rem">产品资料</h3><button onclick="closeUploadModal()" style="background:none;border:none;font-size:22px;color:var(--text-3);cursor:pointer">&times;</button></div>
 <div class="mo-body">
 <p style="font-size:13px;margin-bottom:4px">产品：<b id="uploadProductName"></b></p>
 <p style="font-size:12px;color:var(--text-3);margin-bottom:14px" id="uploadFileStatus"></p>
@@ -142,127 +243,449 @@
 <input type="file" id="fileInput" style="position:absolute;width:1px;height:1px;opacity:0" accept=".pdf,.doc,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.txt,.csv">
 </div>
 <div id="uploadProgress" style="text-align:center;font-size:13px;color:var(--facai);display:none;margin-bottom:12px"></div>
-<div style="display:flex;justify-content:flex-end;gap:8px">
+<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
 <button onclick="deleteFile()" id="btnDeleteFile" class="btn btn-danger btn-sm" style="display:none">删除文件</button>
 <button onclick="extractPoints()" id="btnExtractPoints" class="btn btn-soft btn-sm" style="display:none">从资料整理卖点</button>
 <button onclick="closeUploadModal()" class="btn btn-soft btn-sm">取消</button>
 <button onclick="uploadFile()" id="btnUpload" class="btn btn-pri btn-sm" disabled>上传</button>
 </div></div></div></div>
 
+<!-- 资料来源查看器 -->
+<div id="sourceModal" class="mo" style="display:none" onclick="if(event.target===this)closeSourceModal()">
+<div class="mo-box source-modal-box">
+<div class="mo-hd">
+<div class="source-modal-heading">
+<h3 id="sourceModalTitle" class="source-modal-title">资料来源</h3>
+<p id="sourceModalSubtitle" class="source-modal-subtitle"></p>
+</div>
+<button type="button" class="source-modal-close" onclick="closeSourceModal()" aria-label="关闭">&times;</button>
+</div>
+<div class="mo-body source-modal-body" id="sourceModalContent"></div>
+</div>
+</div>
+
+<script src="/static/js/common.js?v=20260616"></script>
 <script>
-let products=[],categories=[],uploadProductId=null,selectedFile=null,searchMode='keyword';
+let products=[],categories=[],expandedCategories={},selectedProductId=null,selectedProductDetail=null,uploadProductId=null,selectedFile=null,skuPricesExpanded=false,editingProfileSections={};
 
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function jsq(v){return String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
+function getApiErrorMessage(response,fallback){return FacaiUI.getApiErrorMessage(response,fallback);}
+function withBusyButton(button,busyText,task){return FacaiUI.withBusyButton(button,busyText,task);}
 function formatPrice(v){const n=Number(v);return Number.isFinite(n)?(Math.round(n*100)/100).toString():'';}
 function hasPending(p,field){return Array.isArray(p&&p.pending_fields)&&p.pending_fields.indexOf(field)>=0;}
 function displayCategory(p){return hasPending(p,'category')?'待更新':(p&&p.category?p.category:'待更新');}
 function displayPrice(p){return hasPending(p,'price')?'待更新':'¥'+formatPrice(p&&p.price);}
+function toast(msg,type){const t=document.createElement('div');t.className='toast toast-'+(type==='success'?'ok':'err');t.textContent=(type==='success'?'OK ':'!! ')+msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(function(){t.remove()},300)},2200);}
 
-function setSearchMode(mode){
- searchMode=mode;
- document.getElementById('searchModeKw').classList.toggle('on',mode==='keyword');
- document.getElementById('searchModeSem').classList.toggle('on',mode==='semantic');
- document.getElementById('searchInput').placeholder=mode==='semantic'?'描述你需要的产品&hellip;':'搜索产品&hellip;';
- loadProducts();
+function submitChatOnEnter(event,scope){
+ if(event.key==='Enter'&&!event.shiftKey){
+  event.preventDefault();
+  document.querySelector('#globalChatInput').closest('form').requestSubmit();
+ }
 }
-
-function toast(msg,type){const t=document.createElement('div');t.className='toast toast-'+(type==='success'?'ok':'err');t.textContent=(type==='success'?'OK ':'!! ')+msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(function(){t.remove()},300)},2000);}
-
-let _dt;function debounceLoad(){clearTimeout(_dt);_dt=setTimeout(loadProducts,300);}
 
 async function loadProducts(){
- const s=document.getElementById('searchInput').value,c=document.getElementById('categoryFilter').value;
- let u;if(searchMode==='semantic'&&s){u='/api/products/search/semantic?q='+encodeURIComponent(s)+'&limit=30';if(c)u+='&category='+encodeURIComponent(c);}
- else{u='/api/products/?';if(c)u+='category='+encodeURIComponent(c)+'&';if(s)u+='search='+encodeURIComponent(s)+'&';}
- const r=await fetch(u);products=await r.json();
+ const r=await fetch('/api/products/');
+ products=await r.json();
+ categories=Array.from(new Set(products.map(function(p){return displayCategory(p);}).filter(Boolean))).sort();
+ categories.forEach(function(c){if(expandedCategories[c]===undefined)expandedCategories[c]=true;});
  document.getElementById('productCount').textContent=products.length;
- renderGrid();
+ renderSidebar();
+ if(selectedProductId&&!products.some(function(p){return p.id===selectedProductId;}))clearSelectedProduct();
 }
-async function loadCategories(){const r=await fetch('/api/products/categories');categories=await r.json();const sel=document.getElementById('categoryFilter');categories.forEach(function(c){const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});}
 
-function renderGrid(){
- const g=document.getElementById('productGrid');
- if(!products.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px 0;color:var(--text-3)">暂无产品 &middot; <a href="/app/import" class="text-accent">去导入</a></div>';return;}
- g.innerHTML=products.map(function(p){
- let spHtml='<span style="font-size:12px;color:var(--text-3)">暂无卖点</span>';
-  if(p.selling_point_summary){spHtml=p.selling_point_summary.split('；').slice(0,2).map(function(s){const m=s.match(/^\[(.+?)\](.+)/);return m?'<span class="spt spt-'+esc(m[1])+'">'+esc(m[2].substring(0,18))+'</span>':'';}).join(' ');}
-  const pname=esc(p.name),pcat=esc(displayCategory(p)),pprice=esc(displayPrice(p)),pnameArg=jsq(p.name);
-  return '<div class="product-card" role="button" tabindex="0" onclick="openProductDetail('+p.id+')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openProductDetail('+p.id+')}">'
-   +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px"><span class="pcat">'+pcat+'</span><span style="font-size:12px;color:var(--text-3)">'+p.selling_point_count+'卖点</span></div>'
-   +'<div class="pname" style="margin:0">'+pname+'</div>'
-   +'<div style="display:flex;align-items:baseline;gap:8px;margin:8px 0"><span class="pprice">'+pprice+'</span>'+(!hasPending(p,'price')&&p.original_price?'<span style="font-size:12px;color:var(--text-3);text-decoration:line-through">&yen;'+formatPrice(p.original_price)+'</span>':'')+'</div>'
-   +'<div style="display:flex;gap:2px;flex-wrap:wrap;margin-bottom:10px;flex:1">'+spHtml+'</div>'
-   +'<div class="product-card-actions">'
-   +'<button type="button" class="product-card-action" onclick="event.stopPropagation();openUploadModal('+p.id+',\''+pnameArg+'\')" title="管理产品资料"><i data-lucide="file-up"></i><span>资料</span></button>'
-   +(p.info_file?'<a href="/api/products/'+p.id+'/download" class="product-card-action" title="下载产品资料" onclick="event.stopPropagation()"><i data-lucide="download"></i><span>下载</span></a>':'<span class="product-card-action is-disabled" title="暂无产品资料" onclick="event.stopPropagation()"><i data-lucide="download"></i><span>下载</span></span>')
-   +'<button type="button" class="product-card-action danger" onclick="event.stopPropagation();deleteProduct('+p.id+')" title="删除产品"><i data-lucide="trash-2"></i><span>删除</span></button>'
-   +'</div></div>';
+function groupedProducts(){
+ const q=(document.getElementById('sidebarSearch').value||'').trim().toLowerCase();
+ const groups={};
+ products.forEach(function(p){
+  const category=displayCategory(p);
+  const hay=[p.name,category,p.selling_point_summary||'',displayPrice(p)].join(' ').toLowerCase();
+  if(q&&hay.indexOf(q)<0)return;
+  if(!groups[category])groups[category]=[];
+  groups[category].push(p);
+ });
+ return groups;
+}
+
+function renderSidebar(){
+ updateClearSelectionButton();
+ const tree=document.getElementById('categoryTree');
+ const groups=groupedProducts();
+ const cats=categories.filter(function(c){return groups[c]&&groups[c].length;});
+ if(!cats.length){
+  tree.innerHTML='<div class="detail-empty">没有匹配的产品</div>';
+  return;
+ }
+ tree.innerHTML=cats.map(function(category){
+  const open=expandedCategories[category]!==false;
+  const items=groups[category]||[];
+  return '<div class="category-group">'
+   +'<button type="button" class="category-toggle" onclick="toggleCategory(\''+jsq(category)+'\')" aria-expanded="'+(open?'true':'false')+'">'
+   +'<span class="category-toggle-left"><i data-lucide="'+(open?'chevron-down':'chevron-right')+'"></i><span class="category-name">'+esc(category)+'</span></span>'
+   +'<span class="category-count">'+items.length+'</span></button>'
+   +(open?'<div class="category-products">'+items.map(renderSidebarProduct).join('')+'</div>':'')
+   +'</div>';
  }).join('');
  if(window.lucide)lucide.createIcons();
 }
 
-async function openProductDetail(id){
- document.getElementById('productDetailModal').style.display='';
- document.getElementById('detailLoading').innerHTML='加载产品详情&hellip;';
- document.getElementById('detailLoading').style.display='';
- document.getElementById('detailContent').style.display='none';
- document.getElementById('detailProductName').textContent='产品详情';
- document.getElementById('detailCategory').textContent='加载中';
- document.getElementById('detailSource').textContent='资料手册';
+function updateClearSelectionButton(){
+ const button=document.getElementById('btnClearProductSelection');
+ if(!button)return;
+ const hasSelection=!!selectedProductId;
+ button.disabled=!hasSelection;
+ button.setAttribute('aria-disabled',hasSelection?'false':'true');
+}
+
+function renderSidebarProduct(p){
+ return '<button type="button" class="product-list-item'+(selectedProductId===p.id?' on':'')+'" onclick="selectProduct('+p.id+')">'
+  +'<span class="product-list-name">'+esc(p.name)+'</span>'
+  +'<span class="product-list-meta"><span>'+esc(p.selling_point_count||0)+' 卖点</span><span class="product-list-price">'+esc(displayPrice(p))+'</span></span>'
+  +'</button>';
+}
+
+function toggleCategory(category){
+ expandedCategories[category]=expandedCategories[category]===false;
+ renderSidebar();
+}
+
+function setMainChatContext(subtitle,placeholder){
+ const subtitleEl=document.getElementById('globalChatSubtitle');
+ const input=document.getElementById('globalChatInput');
+ if(subtitleEl)subtitleEl.textContent=subtitle;
+ if(input)input.placeholder=placeholder;
+}
+
+function renderProductChatWelcome(product){
+ const name=(product&&product.name)||'当前产品';
+ setMainChatContext('只检索「'+name+'」的产品资料','问这个产品的卖点、价格或适用场景...');
+ const thread=document.getElementById('globalChatThread');
+ thread.innerHTML='<div class="chat-message assistant"><span class="chat-avatar"><i data-lucide="bot"></i></span><div class="chat-bubble">现在只检索「'+esc(name)+'」的资料。</div></div>';
+ if(window.lucide)lucide.createIcons();
+}
+
+function renderGlobalWelcome(){
+ const thread=document.getElementById('globalChatThread');
+ setMainChatContext('跨全部产品检索卖点、SKU、活动价和适用场景','例如：适合调色的产品有哪些？');
+ thread.innerHTML='<div class="chat-empty">'
+  +'<div class="chat-empty-icon"><i data-lucide="sparkles"></i></div>'
+  +'<h2>直接问产品资料</h2>'
+  +'<p class="empty-copy">可以问适用场景、卖点差异、SKU 售价、活动价机制，系统会先检索产品资料再总结。</p>'
+  +'<div class="prompt-grid">'
+  +'<button type="button" class="prompt-chip" onclick="useGlobalPrompt(\'适合调色的产品有哪些？\')">适合调色的产品有哪些？</button>'
+  +'<button type="button" class="prompt-chip" onclick="useGlobalPrompt(\'有哪些适合蛋糕夹心的产品？\')">适合夹心的产品</button>'
+  +'<button type="button" class="prompt-chip" onclick="useGlobalPrompt(\'帮我找有活动价的烘焙配件\')">有活动价的配件</button>'
+  +'</div></div>';
+ if(window.lucide)lucide.createIcons();
+}
+
+function useGlobalPrompt(text){
+ document.getElementById('globalChatInput').value=text;
+ document.querySelector('#globalChatInput').closest('form').requestSubmit();
+}
+
+function hasRagResults(data){return !!(data&&Array.isArray(data.results)&&data.results.length);}
+
+function appendMessage(threadId,role,text,data){
+ const thread=document.getElementById(threadId);
+ if(thread.querySelector('.chat-empty'))thread.innerHTML='';
+ const msg=document.createElement('div');
+ msg.className='chat-message '+(role==='user'?'user':'assistant');
+ const body=hasRagResults(data)?renderRagResults(data):esc(text||'').replace(/\n/g,'<br>')+(data?renderRagResults(data):'');
+ msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')
+  +'<div class="chat-bubble">'+body+'</div>'
+  +(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
+ thread.appendChild(msg);
+ thread.scrollTop=thread.scrollHeight;
+ if(window.lucide)lucide.createIcons();
+}
+
+function renderRagResults(data){
+ const results=(data&&data.results)||[];
+ if(!results.length)return '';
+ return '<div class="rag-results">'+results.slice(0,5).map(function(result){const sources=(result.sources||[]).slice(0,4);const sourceChips=sources.length?'<div class="rag-result-sources">'+sources.map(function(source){return '<button type="button" class="rag-source-chip" onclick="openSourceViewer(\''+jsq(source)+'\','+(result.product_id||'null')+')">'+esc(source)+'</button>';}).join('')+'</div>':'';const meta=esc(result.category||'未分类')+(result.price!=null?' · ¥'+formatPrice(result.price):'');const name=result.product_id?'<button type="button" class="rag-result-name" onclick="selectProduct('+result.product_id+')">'+esc(result.name||'相关产品')+'</button>':'<span class="rag-result-name is-static">'+esc(result.name||'相关产品')+'</span>';return '<div class="rag-result-row">'+sourceChips+'<div class="rag-result-main">'+name+'<span class="rag-result-meta">'+meta+'</span></div></div>';}).join('')+'</div>';
+}
+
+function sourceViewerUrl(path,source,productId){
+ const params=new URLSearchParams({source:source});
+ if(productId)params.set('product_id',productId);
+ return path+'?'+params.toString();
+}
+
+async function openSourceViewer(source,productId){
+ const modal=document.getElementById('sourceModal');
+ const title=document.getElementById('sourceModalTitle');
+ const subtitle=document.getElementById('sourceModalSubtitle');
+ const content=document.getElementById('sourceModalContent');
+ title.textContent=source||'资料来源';
+ subtitle.textContent='正在打开来源...';
+ content.innerHTML='<div class="detail-loading">加载资料来源...</div>';
+ modal.style.display='';
  try{
-  const r=await fetch('/api/products/'+id+'/detail');
-  if(!r.ok)throw new Error('detail failed');
-  const d=await r.json();
-  document.getElementById('detailProductName').textContent=d.name||'产品详情';
-  document.getElementById('detailCategory').textContent=hasPending(d,'category')?'待更新':(d.category||'未分类');
-  const sourceText=(d.knowledge_sources&&d.knowledge_sources.length)?d.knowledge_sources.join('、'):(d.manual_source||'产品手册');
-  document.getElementById('detailSource').textContent='卖点来源：'+sourceText;
-  document.getElementById('detailSellingPoints').innerHTML=renderProductSellingPoints(d.selling_points||[]);
-  document.getElementById('detailSkuPrices').innerHTML=renderProductSkuRows(d.sku_prices||[]);
-  document.getElementById('detailLoading').style.display='none';
-  document.getElementById('detailContent').style.display='';
+  const r=await fetch(sourceViewerUrl('/api/products/source-preview',source,productId));
+  const data=await r.json().catch(function(){return {};});
+  if(!r.ok)throw new Error(data.detail||'资料来源打开失败');
+  title.textContent=data.name||source||'资料来源';
+  subtitle.textContent=data.preview_kind==='text'?'文本预览':'原文件查看';
+  const download=data.download_url||sourceViewerUrl('/api/products/source-download',source,productId);
+  if(data.preview_kind==='text'){
+   content.innerHTML='<pre class="source-preview-text">'+esc(data.content||'')+'</pre><a class="btn btn-pri btn-sm source-download-link" href="'+esc(download)+'" target="_blank" rel="noopener">打开/下载原文件</a>';
+  }else{
+   content.innerHTML='<div class="source-download-card"><div>该来源是 Excel、PDF、Word、图片或其他二进制文件，可下载后查看原文件。</div><a class="btn btn-pri btn-sm source-download-link" href="'+esc(download)+'" target="_blank" rel="noopener">打开/下载原文件</a></div>';
+  }
  }catch(e){
-  document.getElementById('detailLoading').innerHTML='<div class="detail-empty">产品详情加载失败，请稍后重试</div>';
+  subtitle.textContent='打开失败';
+  content.innerHTML='<div class="source-download-card">'+esc(e&&e.message?e.message:'资料来源打开失败')+'</div>';
  }
 }
 
-function closeProductDetail(){document.getElementById('productDetailModal').style.display='none';}
+function closeSourceModal(){document.getElementById('sourceModal').style.display='none';}
 
-function renderProductSellingPoints(points){
- if(!points.length)return '<div class="detail-empty">暂无卖点</div>';
- return points.map(function(point){
-  return '<article class="detail-point">'
-   +'<span class="detail-point-type">'+esc(point.point_type||'卖点')+'</span>'
-   +'<div class="detail-point-text">'+esc(point.content||'')+'</div>'
-   +'</article>';
+async function sendGlobalChat(event){
+ event.preventDefault();
+ const input=document.getElementById('globalChatInput');
+ const button=document.getElementById('globalChatSend');
+ const query=input.value.trim();
+ if(!query)return;
+ input.value='';
+ appendMessage('globalChatThread','user',query);
+ button.disabled=true;
+ const productId=selectedProductId;
+ const scoped=!!productId;
+ appendMessage('globalChatThread','assistant',scoped?'检索当前产品资料中...':'检索产品资料中...');
+ const loading=document.querySelector('#globalChatThread .chat-message:last-child');
+ try{
+  const url=scoped?'/api/products/'+productId+'/rag-chat':'/api/products/rag-chat';
+  const payload=scoped?{query:query}:{query:query,limit:5};
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data=await r.json();
+  loading.remove();
+  if((selectedProductId||null)!==(productId||null))return;
+  if(!r.ok){appendMessage('globalChatThread','assistant',data.detail||'检索失败');return;}
+ appendMessage('globalChatThread','assistant',data.answer||'没有找到相关资料',data);
+}catch(e){
+  loading.remove();
+  if((selectedProductId||null)===(productId||null))appendMessage('globalChatThread','assistant','网络错误，请稍后重试。');
+}finally{
+  button.disabled=false;
+ }
+}
+
+async function selectProduct(id){
+ selectedProductId=id;
+ selectedProductDetail=null;
+ skuPricesExpanded=false;
+ const product=products.find(function(p){return p.id===id;})||{id:id,name:'当前产品'};
+ renderProductChatWelcome(product);
+ renderSidebar();
+ document.getElementById('detailProductName').textContent='加载产品...';
+ document.getElementById('detailProductSubtitle').textContent='正在读取卖点、SKU 与活动价';
+ document.getElementById('selectedProductActions').innerHTML='';
+ document.getElementById('detailPanelBody').innerHTML='<div class="detail-loading">加载产品详情...</div>';
+ try{
+  const r=await fetch('/api/products/'+id+'/detail');
+  if(!r.ok)throw new Error('detail failed');
+  selectedProductDetail=await r.json();
+  renderSelectedProduct();
+ }catch(e){
+  document.getElementById('detailPanelBody').innerHTML='<div class="detail-empty-state"><div><h2>产品详情加载失败</h2><p class="empty-copy">请稍后重试。</p></div></div>';
+ }
+}
+
+function clearSelectedProduct(){
+ selectedProductId=null;
+ selectedProductDetail=null;
+ document.getElementById('detailProductName').textContent='选择一个产品';
+ document.getElementById('detailProductSubtitle').textContent='从左侧点击产品后，这里显示资料、价格和产品内问答';
+ document.getElementById('selectedProductActions').innerHTML='';
+ document.getElementById('detailPanelBody').innerHTML='<div class="detail-empty-state"><div><div class="chat-empty-icon"><i data-lucide="panel-right-open"></i></div><h2>还没有选择产品</h2><p class="empty-copy">左侧按品类展开产品列表，点击产品后可查看卖点、SKU 售价和活动机制价格，并用右侧主对话框只检索该产品资料。</p></div></div>';
+ renderGlobalWelcome();
+ renderSidebar();
+ if(window.lucide)lucide.createIcons();
+}
+
+function renderSelectedProduct(){
+ const d=selectedProductDetail;
+ document.getElementById('detailProductName').textContent=d.name||'产品详情';
+ document.getElementById('detailProductSubtitle').textContent=(hasPending(d,'category')?'待更新':(d.category||'未分类'))+' · '+displayPrice(d);
+ document.getElementById('selectedProductActions').innerHTML=
+  '<button type="button" class="product-mini-action" onclick="openUploadModal('+d.id+')"><i data-lucide="file-up"></i><span>资料</span></button>'
+  +(d.info_file?'<a href="/api/products/'+d.id+'/download" class="product-mini-action"><i data-lucide="download"></i><span>下载</span></a>':'<span class="product-mini-action is-disabled"><i data-lucide="download"></i><span>下载</span></span>')
+ +'<button type="button" class="product-mini-action danger" onclick="deleteProduct('+d.id+',this)"><i data-lucide="trash-2"></i><span>删除</span></button>';
+ document.getElementById('detailPanelBody').innerHTML=
+  '<div class="selected-detail">'
+  +renderProfileSections(d.profile_sections||[])
+  +'</div>';
+ if(window.lucide)lucide.createIcons();
+}
+
+function renderProfileSections(sections){
+ const order=['product_info','product_price','product_usage','usage_scenarios','main_selling_points'];
+ const byId={};
+ (sections||[]).forEach(function(section){byId[section.id]=section;});
+ return order.map(function(id){
+  const section=byId[id]||{id:id,title:profileSectionTitle(id),items:[],sku_prices:[]};
+  return renderProfileSection(section);
  }).join('');
+}
+
+function profileSectionTitle(id){
+ return {product_info:'产品信息',product_price:'产品价格',product_usage:'产品用途',usage_scenarios:'使用场景',main_selling_points:'主要卖点'}[id]||'产品资料';
+}
+
+function renderProfileSection(section){
+ const items=section.items||[];
+ const skuPrices=section.sku_prices||[];
+ const count=section.id==='product_price'?skuPrices.length:items.length;
+ const editableItems=editableProfileItems(items,section.id);
+ let body='';
+ if(section.id==='product_price'){
+  body+=renderProfileItems(items,section.id);
+  body+=renderProductSkuRows(skuPrices);
+ }else{
+  body+=editingProfileSections[section.id]?renderProfileSectionEditor(section,editableItems):renderProfileItems(items,section.id);
+ }
+ if(!body)body='<div class="detail-empty">暂无资料</div>';
+ return '<section class="profile-section" data-section-id="'+esc(section.id||'')+'">'
+  +'<div class="profile-section-hd"><div class="profile-section-title-row"><h3 class="profile-section-title">'+esc(section.title||'产品资料')+'</h3><span class="profile-section-count">'+esc(count||0)+' 条</span></div>'+renderProfileSectionActions(section,editableItems)+'</div>'
+  +'<div class="profile-section-body">'+body+'</div></section>';
+}
+
+function renderProfileSectionActions(section,editableItems){
+ if(section.id==='product_price'||!editableItems.length)return '';
+ return '<div class="profile-section-actions">'
+  +'<button type="button" class="profile-section-edit" onclick="editProfileSection(\''+esc(section.id||'')+'\')">编辑</button>'
+  +'<button type="button" class="profile-section-save" onclick="saveProfileSection(\''+esc(section.id||'')+'\',this)">保存</button>'
+  +'</div>';
+}
+
+function renderProfileItems(items,sectionId){
+ if(!items||!items.length)return '';
+ return items.map(function(item){
+  if(item.values&&item.values.length){
+   return '<div class="profile-item"><div class="profile-item-label">'+esc(item.label||'资料')+'</div><div class="profile-source-list">'+item.values.map(function(value){return '<span class="profile-source-chip">'+esc(value)+'</span>';}).join('')+'</div></div>';
+  }
+  return '<div class="profile-item"><div class="profile-item-label">'+esc(item.label||'资料')+'</div><div class="profile-item-content">'+esc(item.content||'')+'</div></div>';
+ }).join('');
+}
+
+function editableProfileItems(items,sectionId){
+ return (items||[]).filter(function(item){return isEditableProfileItem(item,sectionId);});
+}
+
+function isEditableProfileItem(item,sectionId){
+ if(sectionId==='product_price')return false;
+ if(item&&item.values&&item.values.length)return false;
+ if(!item||!item.content)return false;
+ return !!(item.id||item.point_id||item.priority||item.generated||item.editable);
+}
+
+function renderProfileSectionEditor(section,editableItems){
+ if(!editableItems.length)return renderProfileItems(section.items||[],section.id);
+ return '<textarea class="profile-section-editor" data-section-id="'+esc(section.id||'')+'">'+esc(profileSectionEditorText(editableItems))+'</textarea>'
+  +'<div class="profile-section-editor-help">每段保留“标题：内容”的格式，段落之间空一行；点击大框右上角“保存”后统一保存。</div>';
+}
+
+function profileSectionEditorText(items){
+ return (items||[]).map(function(item){
+  return (item.label||item.point_type||'资料')+'：'+(item.content||'');
+ }).join('\n\n');
+}
+
+function editProfileSection(sectionId){
+ editingProfileSections[sectionId]=true;
+ renderSelectedProduct();
+ setTimeout(function(){
+  const editor=document.querySelector('.profile-section[data-section-id="'+sectionId+'"] .profile-section-editor');
+  if(editor)editor.focus();
+ },0);
+}
+
+async function refreshSelectedProduct(){
+ if(selectedProductId)await selectProduct(selectedProductId);
+ await loadProducts();
+}
+
+async function saveProfileSection(sectionId,button){
+ const section=(selectedProductDetail&&selectedProductDetail.profile_sections||[]).find(function(item){return item.id===sectionId;});
+ if(!section||section.id==='product_price')return;
+ if(!editingProfileSections[sectionId]){
+  editProfileSection(sectionId);
+  return;
+ }
+ const editor=document.querySelector('.profile-section[data-section-id="'+sectionId+'"] .profile-section-editor');
+ if(!editor)return;
+ const editableItems=editableProfileItems(section.items||[],section.id);
+ const entries=parseProfileSectionEditor(editor.value,editableItems);
+ if(!selectedProductId){toast('缺少产品 ID','error');return;}
+ if(!entries.length){toast('没有可保存的内容','error');return;}
+ try{
+  await withBusyButton(button,'保存中...',async function(){
+   for(let i=0;i<entries.length;i++){
+    const base=editableItems[i]||{};
+    const entry=entries[i];
+    const pointId=base.id||base.point_id||'';
+    const payload={point_type:entry.label||base.label||base.point_type||profileSectionTitle(sectionId),content:entry.content,priority:Number(base.priority)||sectionFallbackPriority(sectionId,i)};
+    let r;
+    if(pointId){
+     r=await fetch('/api/products/'+selectedProductId+'/selling-points/'+pointId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    }else{
+     const params=new URLSearchParams(payload);
+     r=await fetch('/api/products/'+selectedProductId+'/selling-points?'+params.toString(),{method:'POST'});
+    }
+    if(!r.ok){throw new Error(await getApiErrorMessage(r,'保存失败'));}
+   }
+   editingProfileSections[sectionId]=false;
+   toast('资料已保存','success');
+   await refreshSelectedProduct();
+  });
+ }catch(e){toast(e&&e.message?e.message:'网络错误','error');}
+}
+
+function parseProfileSectionEditor(text,items){
+ return String(text||'').split(/\n\s*\n/).map(function(block,index){
+  const raw=block.trim();
+  if(!raw)return null;
+  const match=raw.match(/^([^：:]{1,40})[：:]\s*([\s\S]*)$/);
+  const base=items[index]||{};
+  const label=match?(match[1].trim()):(base.label||base.point_type||'资料');
+  const content=(match?match[2]:raw).trim();
+  if(!content)return null;
+  return {label:label,content:content};
+ }).filter(Boolean);
+}
+
+function sectionFallbackPriority(sectionId,index){
+ const bases={product_info:8900,product_usage:9000,usage_scenarios:9100,main_selling_points:9200};
+ return (bases[sectionId]||9900)+index+1;
 }
 
 function renderProductSkuRows(skus){
  if(!skus.length)return '<div class="detail-empty">暂无 SKU 售价</div>';
- return '<div class="detail-sku-wrap"><table class="detail-sku-table">'
-  +'<thead><tr><th>SKU</th><th>售价</th><th>日常价</th><th>活动机制价</th></tr></thead>'
-  +'<tbody>'+skus.map(function(sku){
-    const skuName=[sku.product,sku.spec].filter(Boolean).join(' · ');
-    return '<tr><td>'+esc(skuName||'默认规格')+'</td><td style="font-weight:700;color:var(--facai)">¥'+formatPrice(sku.price)+'</td><td>'+(sku.daily_price?'¥'+formatPrice(sku.daily_price):'-')+'</td>'+renderActivityPriceCells(sku.activity_prices||[])+'</tr>';
-  }).join('')+'</tbody></table></div>';
+ const visible=skuPricesExpanded?skus:skus.slice(0,5);
+ return '<div class="price-sku-list">'+visible.map(renderPriceSkuCard).join('')
+  +(skus.length>5?'<button type="button" class="price-sku-toggle" onclick="toggleSkuPrices()">'+(skuPricesExpanded?'收起':'展开全部 '+skus.length+' 个 SKU')+'</button>':'')
+  +'</div>';
 }
 
-function renderActivityPriceCells(activities){
- if(!activities.length)return '<td>-</td>';
- return '<td><div class="detail-activity-lines">'+activities.map(function(activity){
-  const mechanism=shortMechanismName(activity.mechanism||'活动');
-  const price=activity.final_price||activity.activity_price||activity.tag_price;
-  const meta=[];
-  if(activity.activity_price&&formatPrice(activity.activity_price)!==formatPrice(price))meta.push('活动价 ¥'+formatPrice(activity.activity_price));
-  else if(activity.activity_price&&mechanism!=='日常')meta.push('活动价 ¥'+formatPrice(activity.activity_price));
-  if(activity.unit_price&&formatPrice(activity.unit_price)!==formatPrice(price))meta.push('瓶均 ¥'+formatPrice(activity.unit_price));
-  if(activity.discount)meta.push(activity.discount);
-  if(activity.coupon&&activity.coupon!=='0')meta.push('券 '+activity.coupon);
-  if(activity.single_activity)meta.push(activity.single_activity);
-  return '<div class="detail-activity-item"><span class="detail-activity-name">'+esc(mechanism)+'</span><span class="detail-activity-price">¥'+formatPrice(price)+'</span>'+(meta.length?'<span class="detail-activity-meta">'+esc(meta.join(' / '))+'</span>':'')+'</div>';
- }).join('')+'</div></td>';
+function renderPriceSkuCard(sku){
+ const price=sku.price?'<span class="price-chip">售价 <strong>¥'+esc(sku.price)+'</strong></span>':'';
+ const daily=sku.daily_price?'<span class="price-chip">日常价 <strong>¥'+esc(sku.daily_price)+'</strong></span>':'';
+ const count=sku.count?'<span class="price-chip">数量 <strong>'+esc(sku.count)+'</strong></span>':'';
+ const activities=(sku.activity_prices||[]).length?'<div class="price-activity-lines">'+(sku.activity_prices||[]).map(function(activity){
+  return '<div class="price-activity-line"><span class="price-activity-name">'+esc(shortMechanismName(activity.mechanism||'活动'))+'</span><span class="price-activity-value">¥'+esc(activity.price||'')+(activity.meta?' · '+esc(activity.meta):'')+'</span></div>';
+ }).join('')+'</div>':'<div class="profile-item-content">暂无活动机制价</div>';
+ return '<article class="price-sku-card">'
+  +'<div class="price-sku-name">'+esc(sku.name||'默认规格')+'</div>'
+  +'<div class="price-sku-meta">'+price+daily+count+'</div>'
+  +activities
+  +'</article>';
+}
+
+function toggleSkuPrices(){
+ skuPricesExpanded=!skuPricesExpanded;
+ renderSelectedProduct();
 }
 
 function shortMechanismName(name){
@@ -273,32 +696,72 @@ function shortMechanismName(name){
  return name.replace(/^淘宝/,'');
 }
 
-async function deleteProduct(id){if(!confirm('确定删除？'))return;await fetch('/api/products/'+id,{method:'DELETE'});toast('已删除','success');loadProducts();}
+async function deleteProduct(id,button){
+ if(!confirm('确定删除这个产品？'))return;
+ try{
+  await withBusyButton(button,'删除中',async function(){
+   const r=await fetch('/api/products/'+id,{method:'DELETE'});
+   if(r.ok){
+    toast('已删除','success');
+    if(selectedProductId===id)clearSelectedProduct();
+    await loadProducts();
+   }else toast(await getApiErrorMessage(r,'删除失败'),'error');
+  });
+ }catch(e){toast('网络错误','error');}
+}
 
-function openUploadModal(id,name){
+function openUploadModal(id){
  uploadProductId=id;selectedFile=null;
- document.getElementById('uploadProductName').textContent=name;
+ const p=products.find(function(x){return x.id===id;})||selectedProductDetail||{};
+ document.getElementById('uploadProductName').textContent=p.name||'当前产品';
  document.getElementById('fileInput').value='';
  document.getElementById('dropZone').querySelector('p').textContent='拖拽文件或点击选择';
  document.getElementById('btnUpload').disabled=true;
- const p=products.find(function(x){return x.id===id;});
  if(p&&p.info_file){document.getElementById('uploadFileStatus').textContent='已有：'+p.info_file.split(/[/\\]/).pop();document.getElementById('btnDeleteFile').style.display='';document.getElementById('btnExtractPoints').style.display='';}
  else{document.getElementById('uploadFileStatus').textContent='暂无资料';document.getElementById('btnDeleteFile').style.display='none';document.getElementById('btnExtractPoints').style.display='none';}
  document.getElementById('uploadProgress').style.display='none';document.getElementById('uploadModal').style.display='';
 }
 function closeUploadModal(){document.getElementById('uploadModal').style.display='none';}
 
-const dz=document.getElementById('dropZone');dz.addEventListener('click',function(){document.getElementById('fileInput').click();});
+const dz=document.getElementById('dropZone');
+dz.addEventListener('click',function(){document.getElementById('fileInput').click();});
 dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.borderColor='var(--facai)';dz.style.background='var(--facai-ghost)';});
 dz.addEventListener('dragleave',function(){dz.style.borderColor='var(--border)';dz.style.background='';});
 dz.addEventListener('drop',function(e){e.preventDefault();dz.style.borderColor='var(--border)';dz.style.background='';if(e.dataTransfer.files.length>0){selectedFile=e.dataTransfer.files[0];dz.querySelector('p').textContent='已选：'+selectedFile.name;document.getElementById('btnUpload').disabled=false;}});
 document.getElementById('fileInput').addEventListener('change',function(e){if(e.target.files.length>0){selectedFile=e.target.files[0];dz.querySelector('p').textContent='已选：'+selectedFile.name;document.getElementById('btnUpload').disabled=false;}});
-async function uploadFile(){if(!selectedFile||!uploadProductId)return toast('请选文件','error');document.getElementById('uploadProgress').style.display='';document.getElementById('uploadProgress').textContent='上传中，自动提取卖点&hellip;';document.getElementById('btnUpload').disabled=true;const fd=new FormData();fd.append('file',selectedFile);const r=await fetch('/api/products/'+uploadProductId+'/upload',{method:'POST',body:fd});const d=await r.json();if(r.ok){const n=d.data&&d.data.points_extracted?'已提取'+d.data.points_extracted+'条卖点':'已上传';toast(n,'success');closeUploadModal();loadProducts();}else toast('失败','error');document.getElementById('uploadProgress').style.display='none';}
-async function deleteFile(){if(!uploadProductId||!confirm('确定删除？'))return;await fetch('/api/products/'+uploadProductId+'/file',{method:'DELETE'});toast('已删除','success');closeUploadModal();loadProducts();}
-async function extractPoints(){if(!uploadProductId)return;document.getElementById('uploadProgress').style.display='';document.getElementById('uploadProgress').textContent='AI提取中&hellip;';const r=await fetch('/api/products/'+uploadProductId+'/extract-points',{method:'POST'});const d=await r.json();if(r.ok){toast(d.message,'success');closeUploadModal();loadProducts();}else toast('失败','error');document.getElementById('uploadProgress').style.display='none';}
-async function extractAllPoints(){if(!confirm('批量整理所有上传了资料的产品？'))return;const r=await fetch('/api/products/extract-all-points',{method:'POST'});if(r.ok){toast('处理完成','success');loadProducts();}else toast('失败','error');}
 
-loadCategories();loadProducts();
+async function uploadFile(){
+ if(!selectedFile||!uploadProductId)return toast('请选择文件','error');
+ document.getElementById('uploadProgress').style.display='';
+ document.getElementById('uploadProgress').textContent='上传中，自动提取卖点...';
+ document.getElementById('btnUpload').disabled=true;
+ const fd=new FormData();fd.append('file',selectedFile);
+ const r=await fetch('/api/products/'+uploadProductId+'/upload',{method:'POST',body:fd});
+ const d=await r.json();
+ if(r.ok){const n=d.data&&d.data.points_extracted?'已提取 '+d.data.points_extracted+' 条卖点':'已上传';toast(n,'success');closeUploadModal();await refreshSelectedProduct();}
+ else toast('失败','error');
+ document.getElementById('uploadProgress').style.display='none';
+}
+async function deleteFile(){
+ if(!uploadProductId||!confirm('确定删除资料文件？'))return;
+ const button=document.getElementById('btnDeleteFile');
+ try{await withBusyButton(button,'删除中...',async function(){const r=await fetch('/api/products/'+uploadProductId+'/file',{method:'DELETE'});if(r.ok){toast('已删除','success');closeUploadModal();await refreshSelectedProduct();}else toast(await getApiErrorMessage(r,'删除失败'),'error');});}catch(e){toast('网络错误','error');}
+}
+async function extractPoints(){
+ if(!uploadProductId)return;
+ const button=document.getElementById('btnExtractPoints');
+ document.getElementById('uploadProgress').style.display='';
+ document.getElementById('uploadProgress').textContent='AI 提取中...';
+ try{await withBusyButton(button,'整理中...',async function(){const r=await fetch('/api/products/'+uploadProductId+'/extract-points',{method:'POST'});if(r.ok){const d=await r.json().catch(function(){return {};});toast(d.message||'整理完成','success');closeUploadModal();await refreshSelectedProduct();}else toast(await getApiErrorMessage(r,'整理失败'),'error');});}catch(e){toast('网络错误','error');}finally{document.getElementById('uploadProgress').style.display='none';}
+}
+async function extractAllPoints(button){
+ if(!confirm('批量整理所有上传了资料的产品？'))return;
+ button=button||document.getElementById('btnExtractAllPoints');
+ try{await withBusyButton(button,'整理中...',async function(){const r=await fetch('/api/products/extract-all-points',{method:'POST'});if(r.ok){toast('处理完成','success');await loadProducts();}else toast(await getApiErrorMessage(r,'处理失败'),'error');});}catch(e){toast('网络错误','error');}
+}
+
+renderGlobalWelcome();
+loadProducts();
 document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
 </script>
 </body>

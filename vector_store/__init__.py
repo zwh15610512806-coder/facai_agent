@@ -2,6 +2,9 @@
 import os
 import logging
 import chromadb
+from chromadb.config import Settings
+from chromadb.telemetry.product import ProductTelemetryClient, ProductTelemetryEvent
+from overrides import override
 
 from config import (
     CHROMA_PERSIST_DIR,
@@ -13,6 +16,23 @@ from config import (
 logger = logging.getLogger("vector_store")
 
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
+
+class NoopChromaTelemetry(ProductTelemetryClient):
+    """Chroma telemetry client that intentionally drops all events."""
+
+    @override
+    def capture(self, event: ProductTelemetryEvent) -> None:
+        return None
+
+
+def _make_chroma_settings() -> Settings:
+    """Create Chroma settings without noisy third-party telemetry."""
+    return Settings(
+        anonymized_telemetry=False,
+        chroma_product_telemetry_impl="vector_store.NoopChromaTelemetry",
+        chroma_telemetry_impl="vector_store.NoopChromaTelemetry",
+    )
 
 
 class ChromaStore:
@@ -54,7 +74,7 @@ class ChromaStore:
         if self._client is not None:
             return
         os.makedirs(self._persist_dir, exist_ok=True)
-        self._client = chromadb.PersistentClient(path=self._persist_dir)
+        self._client = chromadb.PersistentClient(path=self._persist_dir, settings=_make_chroma_settings())
         try:
             from chromadb.utils import embedding_functions
             model_dir = os.path.join(os.path.dirname(self._persist_dir), "models", "BAAI", "bge-small-zh-v1___5")
