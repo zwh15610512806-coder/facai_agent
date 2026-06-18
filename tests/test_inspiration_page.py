@@ -72,8 +72,8 @@ class InspirationPageTests(unittest.TestCase):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
         self.assertIn("ensureActiveConversation()", page)
-        self.assertIn("addConversationMessage('user',message)", page)
-        self.assertIn("addConversationMessage('assistant',data.answer||'',{products:data.products})", page)
+        self.assertIn("addConversationMessage('user',message,{attachments:selectedAttachments})", page)
+        self.assertIn("addConversationMessage('assistant',data.answer||'',{products:data.products,reasoning:data.reasoning,sources:data.sources})", page)
         self.assertIn("renderConversationHistory()", page)
         self.assertIn("clearCurrentConversation()", page)
 
@@ -85,6 +85,36 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("renderReferenceProducts(data.products)", page)
         self.assertIn("if(!products||!products.length)return ''", page)
         self.assertIn("产品资料 + AI 对话", page)
+
+    def test_inspiration_composer_has_tool_modes_and_upload(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        for label in ["上传文件", "思考模式", "深入研究", "数据分析"]:
+            self.assertIn(label, page)
+        self.assertIn('id="inspirationFileInput"', page)
+        self.assertIn('accept=".txt,.md,.json,.csv,.pdf,.docx,.xlsx"', page)
+        self.assertIn("function setInspirationMode(mode)", page)
+        self.assertIn("function uploadInspirationFiles(files)", page)
+        self.assertIn("fetch('/api/inspiration/attachments'", page)
+
+    def test_inspiration_chat_request_sends_tool_mode_and_attachments(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("tool_mode:getActiveInspirationMode()", page)
+        self.assertIn("attachments:attachmentsForRequest", page)
+        self.assertIn("addConversationMessage('user',message,{attachments:selectedAttachments})", page)
+        self.assertIn("selectedAttachments=[]", page)
+        self.assertIn("renderSelectedAttachments()", page)
+
+    def test_inspiration_template_renders_reasoning_and_sources(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("function renderReasoning(reasoning)", page)
+        self.assertIn("思考过程", page)
+        self.assertIn("function renderSources(sources)", page)
+        self.assertIn("外网参考", page)
+        self.assertIn("reasoning:data.reasoning", page)
+        self.assertIn("sources:data.sources", page)
 
     def test_inspiration_long_answers_scroll_to_answer_start(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")

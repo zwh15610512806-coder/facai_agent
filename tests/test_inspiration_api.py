@@ -1,3 +1,4 @@
+import io
 import unittest
 
 from fastapi import FastAPI
@@ -76,12 +77,15 @@ class InspirationApiTests(unittest.TestCase):
         self.inspiration.ai_service.client = object()
         self.inspiration.ai_service.model = "deepseek-chat"
 
-        async def fake_chat(messages, temperature=0.7, allow_fallback=False):
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, model=None, thinking=False, return_reasoning=False, **kwargs):
             self.assertFalse(allow_fallback)
+            self.assertEqual(model, "deepseek-v4-flash")
+            self.assertFalse(thinking)
+            self.assertTrue(return_reasoning)
             self.assertEqual(messages[0]["role"], "system")
             self.assertIn("法采新媒体运营灵感助手", messages[0]["content"])
             self.assertEqual(messages[-1], {"role": "user", "content": "帮我想 3 个新品短视频开头"})
-            return "这里是 3 个开头。"
+            return {"content": "这里是 3 个开头。", "reasoning": "", "model": model}
 
         self.inspiration.ai_service.chat = fake_chat
 
@@ -94,9 +98,176 @@ class InspirationApiTests(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["answer"], "这里是 3 个开头。")
         self.assertEqual(data["mode"], "ai")
-        self.assertEqual(data["model"], "deepseek-chat")
+        self.assertEqual(data["model"], "deepseek-v4-flash")
         self.assertFalse(data["product_context_used"])
         self.assertEqual(data["products"], [])
+        self.assertEqual(data["tool_mode"], "chat")
+        self.assertEqual(data["reasoning"], "")
+        self.assertEqual(data["sources"], [])
+        self.assertEqual(data["attachments_used"], [])
+
+    def test_chat_thinking_mode_uses_v4_pro_and_returns_reasoning(self):
+        self.inspiration.ai_service.client = object()
+        captured = {}
+
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, model=None, thinking=False, reasoning_effort=None, return_reasoning=False, **kwargs):
+            captured["model"] = model
+            captured["thinking"] = thinking
+            captured["reasoning_effort"] = reasoning_effort
+            captured["return_reasoning"] = return_reasoning
+            captured["messages"] = messages
+            return {"content": "这是思考后的方案。", "reasoning": "先拆目标，再比较打法。", "model": model}
+
+        self.inspiration.ai_service.chat = fake_chat
+
+        response = self.client.post(
+            "/api/inspiration/chat",
+            json={"message": "帮我认真分析这个活动怎么做", "tool_mode": "thinking"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(captured["model"], "deepseek-v4-pro")
+        self.assertTrue(captured["thinking"])
+        self.assertEqual(captured["reasoning_effort"], "high")
+        self.assertTrue(captured["return_reasoning"])
+        self.assertIn("思考模式", captured["messages"][0]["content"])
+        self.assertEqual(data["answer"], "这是思考后的方案。")
+        self.assertEqual(data["model"], "deepseek-v4-pro")
+        self.assertEqual(data["tool_mode"], "thinking")
+        self.assertEqual(data["reasoning"], "先拆目标，再比较打法。")
+
+    def test_research_mode_adds_web_sources_to_prompt(self):
+        self.inspiration.ai_service.client = object()
+        captured = {}
+        original_search = getattr(self.inspiration, "search_web", None)
+
+        async def fake_search(query, max_results=5):
+            self.assertIn("烘焙", query)
+            return [
+                {"title": "烘焙内容趋势", "url": "https://example.com/trend", "snippet": "用户更关注低成本出片。"},
+                {"title": "直播运营方法", "url": "https://example.com/live", "snippet": "直播间促单需要明确价格锚点。"},
+            ]
+
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, model=None, thinking=False, return_reasoning=False, **kwargs):
+            captured["messages"] = messages
+            captured["model"] = model
+            captured["thinking"] = thinking
+            return {"content": "结合外网资料的研究结论。", "reasoning": "", "model": model}
+
+        self.inspiration.search_web = fake_search
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            response = self.client.post(
+                "/api/inspiration/chat",
+                json={"message": "研究一下烘焙短视频趋势", "tool_mode": "research"},
+            )
+        finally:
+            if original_search is None:
+                delattr(self.inspiration, "search_web")
+            else:
+                self.inspiration.search_web = original_search
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(captured["model"], "deepseek-v4-flash")
+        self.assertFalse(captured["thinking"])
+        self.assertIn("外网搜索结果", captured["messages"][-1]["content"])
+        self.assertIn("烘焙内容趋势", captured["messages"][-1]["content"])
+        self.assertEqual(data["tool_mode"], "research")
+        self.assertEqual(len(data["sources"]), 2)
+        self.assertEqual(data["sources"][0]["url"], "https://example.com/trend")
+
+    def test_analysis_mode_uses_attachments_and_web_sources(self):
+        self.inspiration.ai_service.client = object()
+        captured = {}
+        original_search = getattr(self.inspiration, "search_web", None)
+
+        async def fake_search(query, max_results=5):
+            return [{"title": "行业均值", "url": "https://example.com/data", "snippet": "短视频互动率均值约 3%。"}]
+
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, model=None, thinking=False, return_reasoning=False, **kwargs):
+            captured["messages"] = messages
+            return {"content": "数据分析结论。", "reasoning": "", "model": model}
+
+        self.inspiration.search_web = fake_search
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            response = self.client.post(
+                "/api/inspiration/chat",
+                json={
+                    "message": "分析这份投放数据",
+                    "tool_mode": "analysis",
+                    "attachments": [
+                        {
+                            "filename": "投放数据.csv",
+                            "file_type": "csv",
+                            "text": "日期,播放量,成交\n2026-06-01,1000,20",
+                            "char_count": 25,
+                        }
+                    ],
+                },
+            )
+        finally:
+            if original_search is None:
+                delattr(self.inspiration, "search_web")
+            else:
+                self.inspiration.search_web = original_search
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("附件资料", captured["messages"][-1]["content"])
+        self.assertIn("投放数据.csv", captured["messages"][-1]["content"])
+        self.assertIn("外网搜索结果", captured["messages"][-1]["content"])
+        self.assertEqual(data["tool_mode"], "analysis")
+        self.assertEqual(data["attachments_used"][0]["filename"], "投放数据.csv")
+        self.assertEqual(data["sources"][0]["title"], "行业均值")
+
+    def test_attachment_upload_extracts_text_file(self):
+        response = self.client.post(
+            "/api/inspiration/attachments",
+            files={"file": ("brief.txt", b"\xe7\x81\xb5\xe6\x84\x9f\xe9\x99\x84\xe4\xbb\xb6", "text/plain")},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["filename"], "brief.txt")
+        self.assertEqual(data["file_type"], "txt")
+        self.assertIn("灵感附件", data["text"])
+
+    def test_attachment_upload_extracts_word_docx(self):
+        from docx import Document
+
+        document = Document()
+        document.add_paragraph("Word 附件内容")
+        handle = io.BytesIO()
+        document.save(handle)
+        handle.seek(0)
+
+        response = self.client.post(
+            "/api/inspiration/attachments",
+            files={
+                "file": (
+                    "brief.docx",
+                    handle.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["file_type"], "docx")
+        self.assertIn("Word 附件内容", data["text"])
+
+    def test_attachment_upload_rejects_images_for_now(self):
+        response = self.client.post(
+            "/api/inspiration/attachments",
+            files={"file": ("photo.png", b"not-real-image", "image/png")},
+        )
+
+        self.assertEqual(response.status_code, 415)
+        self.assertIn("图片", response.json()["detail"])
 
     def test_chat_uses_product_context_when_message_mentions_product_intent(self):
         product = self._add_product(
@@ -109,7 +280,7 @@ class InspirationApiTests(unittest.TestCase):
         self.inspiration.ai_service.client = object()
         captured = {}
 
-        async def fake_chat(messages, temperature=0.7, allow_fallback=False):
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
             captured["messages"] = messages
             return "可以围绕水性色素做一个调色前后对比脚本。"
 
@@ -145,7 +316,7 @@ class InspirationApiTests(unittest.TestCase):
         )
         self.inspiration.ai_service.client = object()
 
-        async def fake_chat(messages, temperature=0.7, allow_fallback=False):
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
             return "已结合产品资料给出内容方向。"
 
         self.inspiration.ai_service.chat = fake_chat
@@ -203,7 +374,7 @@ class InspirationApiTests(unittest.TestCase):
         self.inspiration.ai_service.client = object()
         captured = {}
 
-        async def fake_chat(messages, temperature=0.7, allow_fallback=False):
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
             captured["messages"] = messages
             return "已结合上下文回答。"
 

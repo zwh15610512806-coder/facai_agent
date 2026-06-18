@@ -10,7 +10,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/script_agent.db")
 # DeepSeek API 配置
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "your-deepseek-api-key")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_V4_FLASH_MODEL = os.getenv("DEEPSEEK_V4_FLASH_MODEL", "deepseek-v4-flash")
+DEEPSEEK_V4_PRO_MODEL = os.getenv("DEEPSEEK_V4_PRO_MODEL", "deepseek-v4-pro")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", DEEPSEEK_V4_FLASH_MODEL)
 
 # ChromaDB 配置
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db")

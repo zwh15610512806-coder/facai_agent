@@ -328,27 +328,57 @@ class AIService:
     def is_available(self) -> bool:
         return self.client is not None
 
-    def get_model_name(self) -> str:
+    def get_model_name(self, model: Optional[str] = None) -> str:
         if self.is_available:
-            return self.model
+            return model or self.model
         return "法采模板引擎"
 
-    async def chat(self, messages: List[Dict], temperature: float = 0.8, allow_fallback: bool = True) -> str:
+    async def chat(
+        self,
+        messages: List[Dict],
+        temperature: float = 0.8,
+        allow_fallback: bool = True,
+        model: Optional[str] = None,
+        thinking: bool = False,
+        reasoning_effort: str = "high",
+        return_reasoning: bool = False,
+    ):
+        selected_model = model or self.model
         if not self.is_available:
-            return self._fallback_response(messages) if allow_fallback else ""
+            fallback = self._fallback_response(messages) if allow_fallback else ""
+            if return_reasoning:
+                return {"content": fallback, "reasoning": "", "model": self.get_model_name(selected_model)}
+            return fallback
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=2000,
-                top_p=0.9,
-            )
-            return response.choices[0].message.content
+            payload = {
+                "model": selected_model,
+                "messages": messages,
+                "max_tokens": 2400,
+            }
+            if thinking:
+                payload["reasoning_effort"] = reasoning_effort
+                payload["extra_body"] = {"thinking": {"type": "enabled"}}
+            else:
+                payload["temperature"] = temperature
+                payload["top_p"] = 0.9
+                payload["extra_body"] = {"thinking": {"type": "disabled"}}
+            response = self.client.chat.completions.create(**payload)
+            message = response.choices[0].message
+            content = message.content or ""
+            if return_reasoning:
+                return {
+                    "content": content,
+                    "reasoning": getattr(message, "reasoning_content", "") or "",
+                    "model": selected_model,
+                }
+            return content
         except Exception as e:
             logger.error(f"AI 调用失败: {e}")
-            return self._fallback_response(messages) if allow_fallback else ""
+            fallback = self._fallback_response(messages) if allow_fallback else ""
+            if return_reasoning:
+                return {"content": fallback, "reasoning": "", "model": selected_model}
+            return fallback
 
     def _fallback_response(self, messages) -> str:
         """离线模式：用法采模板生成脚本，每次调用都随机生成新内容"""
