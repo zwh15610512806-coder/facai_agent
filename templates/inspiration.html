@@ -17,6 +17,15 @@ body{overflow:hidden}
 .inspiration-side{padding:14px;gap:12px}
 .inspiration-new{width:100%;height:40px}
 .inspiration-side-title{font-family:var(--font-ui);font-size:13px;font-weight:900;color:var(--text);margin:8px 0 4px}
+.conversation-section{min-height:0;display:flex;flex-direction:column;gap:8px;flex:1}
+.conversation-list{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:2px}
+.conversation-item{width:100%;min-height:52px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;padding:8px 9px;text-align:left;display:grid;gap:3px;cursor:pointer;color:var(--text)}
+.conversation-item:hover{border-color:var(--border);background:var(--surface-darker)}
+.conversation-item.is-active{border-color:var(--facai-subtle);background:var(--facai-ghost);color:var(--facai)}
+.conversation-title{min-width:0;font-size:13px;font-weight:850;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conversation-meta{font-size:11px;font-weight:700;color:var(--text-3);line-height:1.35}
+.conversation-item.is-active .conversation-meta{color:var(--facai)}
+.conversation-empty{border:1px dashed var(--border);border-radius:var(--r-sm);padding:12px;color:var(--text-3);font-size:12px;line-height:1.65;background:var(--surface-darker)}
 .prompt-list{display:grid;gap:8px}
 .prompt-chip{border:1px solid var(--border);background:var(--surface);border-radius:var(--r-sm);padding:9px 10px;text-align:left;font-family:var(--font-ui);font-size:13px;font-weight:700;line-height:1.5;color:var(--text-2);cursor:pointer}
 .prompt-chip:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
@@ -60,6 +69,7 @@ body{overflow:hidden}
   .inspiration-page{height:auto;max-width:100%;padding:12px}
   .inspiration-shell{grid-template-columns:1fr}
   .inspiration-side{min-height:0}
+  .conversation-list{max-height:180px}
   .prompt-list{grid-template-columns:repeat(2,minmax(0,1fr))}
   .inspiration-main{min-height:calc(100dvh - 220px)}
 }
@@ -84,17 +94,12 @@ body{overflow:hidden}
 <main class="inspiration-page">
 <section class="inspiration-shell" aria-label="灵感 AI 对话工作台">
   <aside class="inspiration-panel inspiration-side">
-    <button class="btn btn-pri inspiration-new" type="button" onclick="clearChat()"><i data-lucide="plus"></i>新对话</button>
-    <div>
-      <div class="inspiration-side-title">常用提示</div>
-      <div class="prompt-list">
-        <button class="prompt-chip" type="button" onclick="usePrompt('帮我想 5 个烘焙新品短视频开头')">新品短视频开头</button>
-        <button class="prompt-chip" type="button" onclick="usePrompt('把这个卖点改成更适合抖音口播的表达')">卖点口播改写</button>
-        <button class="prompt-chip" type="button" onclick="usePrompt('给我一组直播间促单话术')">直播促单话术</button>
-        <button class="prompt-chip" type="button" onclick="usePrompt('根据这个活动设计 3 个内容选题')">活动内容选题</button>
-      </div>
+    <button class="btn btn-pri inspiration-new" type="button" onclick="startNewConversation()"><i data-lucide="plus"></i>新对话</button>
+    <div class="conversation-section">
+      <div class="inspiration-side-title">历史对话</div>
+      <div id="conversationHistoryList" class="conversation-list" aria-label="历史对话列表"></div>
     </div>
-    <div class="inspiration-note">适合头脑风暴、脚本方向、标题、口播、拍摄思路和活动表达。产品资料精确问答仍建议去「产品」页。</div>
+    <div class="inspiration-note">对话会保存在当前浏览器，适合沉淀脚本方向、标题、口播和活动表达。</div>
   </aside>
   <section class="inspiration-panel inspiration-main">
     <div class="inspiration-hd">
@@ -104,7 +109,7 @@ body{overflow:hidden}
     <div id="inspirationThread" class="inspiration-thread"></div>
     <div class="inspiration-composer">
       <form class="composer-form" onsubmit="sendInspirationChat(event)">
-        <button id="clearChatBtn" class="icon-button" type="button" onclick="clearChat()" aria-label="清空对话" title="清空对话"><i data-lucide="trash-2"></i></button>
+        <button id="clearChatBtn" class="icon-button" type="button" onclick="clearCurrentConversation()" aria-label="清空当前对话" title="清空当前对话"><i data-lucide="trash-2"></i></button>
         <textarea id="inspirationInput" class="inspiration-input" rows="1" placeholder="问点什么，例如：帮我想一个奶冻粉的短视频脚本方向..." onkeydown="submitOnEnter(event)"></textarea>
         <button id="inspirationSend" class="icon-button send-button" type="submit" aria-label="发送"><i data-lucide="send-horizontal"></i></button>
       </form>
@@ -118,6 +123,11 @@ const escHtml=ui.escHtml||function(v){return String(v==null?'':v).replace(/[&<>"
 const toast=ui.toast||function(message){alert(message);};
 const copyText=ui.copyText||function(text){return navigator.clipboard.writeText(text);};
 let chatHistory=[];
+const INSPIRATION_HISTORY_KEY='facai.inspiration.conversations.v1';
+const MAX_CONVERSATIONS=24;
+const MAX_MESSAGES_PER_CONVERSATION=60;
+let conversations=[];
+let activeConversationId='';
 const fallbackIconPaths={
  'bot':'<path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path>',
  'plus':'<path d="M5 12h14"></path><path d="M12 5v14"></path>',
@@ -136,6 +146,188 @@ function renderIcons(){
   const svg=fallbackIconSvg(icon.getAttribute('data-lucide'));
   if(svg)icon.outerHTML=svg;
  });
+}
+function createConversation(messages){
+ const now=Date.now();
+ return {id:'conv-'+now+'-'+Math.random().toString(36).slice(2,8),title:'新对话',messages:Array.isArray(messages)?messages:[],updatedAt:now};
+}
+function sanitizeProduct(product){
+ if(!product||typeof product!=='object')return null;
+ return {
+  product_id:product.product_id==null?'':String(product.product_id),
+  name:product.name==null?'':String(product.name),
+  category:product.category==null?'':String(product.category),
+  price:product.price
+ };
+}
+function sanitizeMessage(message){
+ if(!message||typeof message!=='object')return null;
+ const role=message.role==='assistant'?'assistant':'user';
+ const content=String(message.content==null?'':message.content);
+ if(!content.trim())return null;
+ const products=Array.isArray(message.products)?message.products.map(sanitizeProduct).filter(Boolean).slice(0,6):[];
+ return {role:role,content:content,products:products};
+}
+function deriveConversationTitle(messages){
+ const firstUser=(messages||[]).find(function(message){return message.role==='user'&&message.content;});
+ const clean=String(firstUser?firstUser.content:'新对话').replace(/\s+/g,' ').trim()||'新对话';
+ return clean.length>22?clean.slice(0,22)+'...':clean;
+}
+function sanitizeConversation(raw){
+ if(!raw||typeof raw!=='object')return null;
+ const messages=Array.isArray(raw.messages)?raw.messages.map(sanitizeMessage).filter(Boolean).slice(-MAX_MESSAGES_PER_CONVERSATION):[];
+ if(!messages.length)return null;
+ const title=String(raw.title||deriveConversationTitle(messages)).replace(/\s+/g,' ').trim()||deriveConversationTitle(messages);
+ const updatedAt=Number(raw.updatedAt)||Date.now();
+ return {id:String(raw.id||('conv-'+updatedAt)),title:title,messages:messages,updatedAt:updatedAt};
+}
+function currentConversation(){
+ return conversations.find(function(conversation){return conversation.id===activeConversationId;})||null;
+}
+function syncChatHistoryFromActive(){
+ const conversation=currentConversation();
+ chatHistory=conversation?conversation.messages.map(function(message){return {role:message.role,content:message.content};}).slice(-12):[];
+}
+function sortConversations(){
+ conversations.sort(function(a,b){return Number(b.updatedAt||0)-Number(a.updatedAt||0);});
+}
+function saveConversations(){
+ try{
+  const stored=conversations.filter(function(conversation){return conversation.messages&&conversation.messages.length;}).slice(0,MAX_CONVERSATIONS);
+  localStorage.setItem(INSPIRATION_HISTORY_KEY,JSON.stringify(stored));
+ }catch(error){}
+}
+function loadConversations(){
+ try{
+  const raw=JSON.parse(localStorage.getItem(INSPIRATION_HISTORY_KEY)||'[]');
+  conversations=(Array.isArray(raw)?raw:[]).map(sanitizeConversation).filter(Boolean).slice(0,MAX_CONVERSATIONS);
+ }catch(error){
+  conversations=[];
+ }
+ sortConversations();
+ if(conversations.length){
+  activeConversationId=conversations[0].id;
+ }else{
+  const conversation=createConversation();
+  conversations=[conversation];
+  activeConversationId=conversation.id;
+ }
+ syncChatHistoryFromActive();
+}
+function ensureActiveConversation(){
+ let conversation=currentConversation();
+ if(conversation)return conversation;
+ conversation=createConversation();
+ conversations.unshift(conversation);
+ activeConversationId=conversation.id;
+ syncChatHistoryFromActive();
+ return conversation;
+}
+function formatConversationMeta(conversation){
+ const count=conversation.messages.length;
+ const timestamp=Number(conversation.updatedAt)||Date.now();
+ const diff=Date.now()-timestamp;
+ let time='刚刚';
+ if(diff>=86400000){
+  const date=new Date(timestamp);
+  time=(date.getMonth()+1)+'/'+date.getDate();
+ }else if(diff>=3600000){
+  time=Math.floor(diff/3600000)+' 小时前';
+ }else if(diff>=60000){
+  time=Math.floor(diff/60000)+' 分钟前';
+ }
+ return time+' · '+count+' 条';
+}
+function renderConversationHistory(){
+ const list=document.getElementById('conversationHistoryList');
+ if(!list)return;
+ sortConversations();
+ const visible=conversations.filter(function(conversation){return conversation.messages&&conversation.messages.length;});
+ if(!visible.length){
+  list.innerHTML='<div class="conversation-empty">暂无历史对话<br>开始提问后会自动保存。</div>';
+  return;
+ }
+ list.innerHTML=visible.map(function(conversation){
+  const active=conversation.id===activeConversationId?' is-active':'';
+  return '<button class="conversation-item'+active+'" type="button" data-conversation-id="'+escHtml(conversation.id)+'"><span class="conversation-title">'+escHtml(conversation.title||deriveConversationTitle(conversation.messages))+'</span><span class="conversation-meta">'+escHtml(formatConversationMeta(conversation))+'</span></button>';
+ }).join('');
+ list.querySelectorAll('[data-conversation-id]').forEach(function(button){
+  button.addEventListener('click',function(){selectConversation(button.getAttribute('data-conversation-id')||'');});
+ });
+}
+function setModelPillLabel(text){
+ const label=document.querySelector('#modelPill span');
+ if(label)label.textContent=text;
+}
+function renderConversation(){
+ const conversation=ensureActiveConversation();
+ if(!conversation.messages.length){
+  renderWelcome();
+  return;
+ }
+ const thread=document.getElementById('inspirationThread');
+ thread.innerHTML='';
+ conversation.messages.forEach(function(message){
+  appendMessage(message.role,message.content,{products:message.products,scroll:'none'});
+ });
+ thread.scrollTop=thread.scrollHeight;
+ const hasProductContext=conversation.messages.some(function(message){return message.products&&message.products.length;});
+ setModelPillLabel(hasProductContext?'产品资料 + AI 对话':'AI 对话');
+ renderIcons();
+}
+function selectConversation(id){
+ if(!id||id===activeConversationId)return;
+ const conversation=conversations.find(function(item){return item.id===id;});
+ if(!conversation)return;
+ activeConversationId=conversation.id;
+ syncChatHistoryFromActive();
+ renderConversation();
+ renderConversationHistory();
+}
+function addConversationMessage(role,content,extras){
+ const conversation=ensureActiveConversation();
+ const message=sanitizeMessage({role:role,content:content,products:extras&&extras.products});
+ if(!message)return null;
+ conversation.messages.push(message);
+ conversation.messages=conversation.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
+ conversation.title=deriveConversationTitle(conversation.messages);
+ conversation.updatedAt=Date.now();
+ sortConversations();
+ syncChatHistoryFromActive();
+ saveConversations();
+ renderConversationHistory();
+ return message;
+}
+function startNewConversation(){
+ const current=currentConversation();
+ if(current&&current.messages.length){
+  const conversation=createConversation();
+  conversations.unshift(conversation);
+  activeConversationId=conversation.id;
+ }else if(current){
+  activeConversationId=current.id;
+ }else{
+  ensureActiveConversation();
+ }
+ syncChatHistoryFromActive();
+ document.getElementById('inspirationInput').value='';
+ setModelPillLabel('AI 对话');
+ renderWelcome();
+ renderConversationHistory();
+ saveConversations();
+ document.getElementById('inspirationInput').focus();
+}
+function clearCurrentConversation(){
+ const conversation=ensureActiveConversation();
+ conversation.messages=[];
+ conversation.title='新对话';
+ conversation.updatedAt=Date.now();
+ syncChatHistoryFromActive();
+ saveConversations();
+ document.getElementById('inspirationInput').value='';
+ setModelPillLabel('AI 对话');
+ renderWelcome();
+ renderConversationHistory();
 }
 function renderWelcome(){
  const thread=document.getElementById('inspirationThread');
@@ -207,19 +399,21 @@ async function sendInspirationChat(event){
  const input=document.getElementById('inspirationInput');
  const message=input.value.trim();
  if(!message)return;
+ ensureActiveConversation();
+ const historyForRequest=chatHistory.slice();
  input.value='';
  appendMessage('user',message);
+ addConversationMessage('user',message);
  const loading=appendMessage('assistant','正在思考...', {thinking:true});
  setBusy(true);
  try{
-  const response=await fetch('/api/inspiration/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:message,history:chatHistory})});
+  const response=await fetch('/api/inspiration/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:message,history:historyForRequest})});
   const data=await response.json();
   loading.remove();
   if(!response.ok)throw new Error(data.detail||data.message||'发送失败');
-  chatHistory.push({role:'user',content:message},{role:'assistant',content:data.answer||''});
-  chatHistory=chatHistory.slice(-12);
+  addConversationMessage('assistant',data.answer||'',{products:data.products});
   const referenceProductsHtml=renderReferenceProducts(data.products);
-  document.querySelector('#modelPill span').textContent=data.product_context_used?'产品资料 + AI 对话':(data.mode==='fallback'?'离线提示':(data.model||'AI 对话'));
+  setModelPillLabel(data.product_context_used?'产品资料 + AI 对话':(data.mode==='fallback'?'离线提示':(data.model||'AI 对话')));
   appendMessage('assistant',data.answer||'没有收到回复',{products:data.products,referenceProductsHtml:referenceProductsHtml});
  }catch(error){
   loading.remove();
@@ -230,12 +424,11 @@ async function sendInspirationChat(event){
  }
 }
 function clearChat(){
- chatHistory=[];
- document.getElementById('inspirationInput').value='';
- document.querySelector('#modelPill span').textContent='AI 对话';
- renderWelcome();
+ clearCurrentConversation();
 }
-renderWelcome();
+loadConversations();
+renderConversation();
+renderConversationHistory();
 document.addEventListener('DOMContentLoaded',renderIcons);
 </script>
 </body>

@@ -38,11 +38,44 @@ class InspirationPageTests(unittest.TestCase):
     def test_inspiration_template_has_prompt_chips_and_responsive_css(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
-        self.assertGreaterEqual(page.count("prompt-chip"), 4)
+        self.assertIn("inspiration-empty-prompts", page)
+        for label in ["新品开头", "低成本选题", "直播话术", "促单文案"]:
+            self.assertIn(label, page)
         self.assertIn("@media (max-width: 900px)", page)
         self.assertIn(".inspiration-shell{grid-template-columns:1fr", page)
         self.assertIn("@media (max-width: 640px)", page)
         self.assertIn(".inspiration-page{height:auto", page)
+
+    def test_inspiration_sidebar_is_conversation_history(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("历史对话", page)
+        self.assertIn('id="conversationHistoryList"', page)
+        self.assertIn("conversation-item", page)
+        self.assertIn("暂无历史对话", page)
+        self.assertIn("startNewConversation()", page)
+        self.assertNotIn("常用提示", page)
+
+    def test_inspiration_template_persists_conversation_history(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("INSPIRATION_HISTORY_KEY", page)
+        self.assertIn("function loadConversations()", page)
+        self.assertIn("function saveConversations()", page)
+        self.assertIn("function renderConversationHistory()", page)
+        self.assertIn("function selectConversation(id)", page)
+        self.assertIn("function addConversationMessage(role,content,extras)", page)
+        self.assertIn("localStorage.getItem(INSPIRATION_HISTORY_KEY)", page)
+        self.assertIn("localStorage.setItem(INSPIRATION_HISTORY_KEY", page)
+
+    def test_inspiration_send_and_clear_sync_current_conversation(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("ensureActiveConversation()", page)
+        self.assertIn("addConversationMessage('user',message)", page)
+        self.assertIn("addConversationMessage('assistant',data.answer||'',{products:data.products})", page)
+        self.assertIn("renderConversationHistory()", page)
+        self.assertIn("clearCurrentConversation()", page)
 
     def test_inspiration_template_renders_reference_products(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
