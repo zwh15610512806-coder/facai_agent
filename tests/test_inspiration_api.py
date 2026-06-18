@@ -96,7 +96,7 @@ class InspirationApiTests(unittest.TestCase):
             self.assertFalse(thinking)
             self.assertTrue(return_reasoning)
             self.assertEqual(messages[0]["role"], "system")
-            self.assertIn("法采新媒体运营灵感助手", messages[0]["content"])
+            self.assertIn("法采新媒体运营AI工作助手", messages[0]["content"])
             self.assertEqual(messages[-1], {"role": "user", "content": "帮我想 3 个新品短视频开头"})
             return {"content": "这里是 3 个开头。", "reasoning": "", "model": model}
 

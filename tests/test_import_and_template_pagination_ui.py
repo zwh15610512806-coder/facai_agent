@@ -28,7 +28,7 @@ class TemplatePaginationUiTests(unittest.TestCase):
         self.assertIn('id="pageSize"', page)
         self.assertIn('id="pageJumpInput"', page)
         self.assertIn("var currentPage=1", page)
-        self.assertIn("var pageSize=24", page)
+        self.assertIn("var pageSize=25", page)
         self.assertIn("page='+currentPage", page)
         self.assertIn("per_page='+pageSize", page)
         self.assertIn("function renderPagination", page)

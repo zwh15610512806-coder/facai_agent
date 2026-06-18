@@ -625,7 +625,7 @@ class AiConfigPageTests(unittest.TestCase):
         self.assertNotIn("latestStatus", response.text)
         self.assertIn("usageRecordTable", response.text)
 
-    def test_all_main_templates_link_to_ai_config_after_inspiration(self):
+    def test_all_main_templates_link_to_ai_config_after_search(self):
         pages = [
             "index.html",
             "rewrite.html",
@@ -642,7 +642,7 @@ class AiConfigPageTests(unittest.TestCase):
             self.assertIn('href="/app/ai-config"', page, name)
             self.assertRegex(
                 page,
-                r'href="/app/inspiration"[^>]*>.*?</a>\s*<a href="/app/ai-config"',
+                r'href="/app/search"[^>]*>.*?</a>\s*<a href="/app/ai-config"',
                 name,
             )
 

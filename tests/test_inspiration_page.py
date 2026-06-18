@@ -13,12 +13,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InspirationPageTests(unittest.TestCase):
-    def test_inspiration_route_renders_page(self):
-        response = TestClient(app).get("/app/inspiration")
+    def test_ai_work_route_renders_default_home_page(self):
+        response = TestClient(app).get("/app")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("灵感", response.text)
+        self.assertIn("AI工作", response.text)
         self.assertIn("inspiration-shell", response.text)
+
+    def test_legacy_inspiration_route_redirects_to_ai_work(self):
+        response = TestClient(app).get("/app/inspiration", follow_redirects=False)
+
+        self.assertIn(response.status_code, {302, 303, 307})
+        self.assertEqual(response.headers["location"], "/app")
+
+    def test_generate_route_renders_script_page(self):
+        response = TestClient(app).get("/app/generate")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("生成脚本", response.text)
+        self.assertIn("btnGenerate", response.text)
 
     def test_inspiration_template_has_chat_experience(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
@@ -161,7 +174,7 @@ class InspirationPageTests(unittest.TestCase):
 
 
 class InspirationNavigationTests(unittest.TestCase):
-    def test_all_main_templates_link_to_inspiration_after_search(self):
+    def test_all_main_templates_show_ai_work_before_generate(self):
         pages = [
             "index.html",
             "rewrite.html",
@@ -174,17 +187,19 @@ class InspirationNavigationTests(unittest.TestCase):
         ]
         for name in pages:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
-            self.assertIn('href="/app/inspiration"', page, name)
+            self.assertIn('href="/app"', page, name)
+            self.assertIn('href="/app/generate"', page, name)
+            self.assertNotIn('>灵感</a>', page, name)
             self.assertRegex(
                 page,
-                re.compile(r'href="/app/search"[^>]*>.*?</a>\s*<a href="/app/inspiration"', re.S),
+                re.compile(r'href="/app"[^>]*>AI工作</a>\s*<a href="/app/generate"[^>]*>生成脚本</a>', re.S),
                 name,
             )
 
-    def test_inspiration_nav_is_active_only_on_inspiration_page(self):
+    def test_ai_work_nav_is_active_only_on_ai_work_page(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
-        self.assertIn('<a href="/app/inspiration" class="nav-link on">灵感</a>', page)
+        self.assertIn('<a href="/app" class="nav-link on">AI工作</a>', page)
 
 
 if __name__ == "__main__":
