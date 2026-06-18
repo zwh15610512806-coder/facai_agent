@@ -58,7 +58,7 @@
     if (!response) return fallback;
     try {
       var data = await response.clone().json();
-      return data.detail || data.message || fallback;
+      return formatApiErrorMessage(data.detail || data.message || data, fallback);
     } catch (error) {
       try {
         var text = await response.clone().text();
@@ -67,6 +67,34 @@
         return fallback;
       }
     }
+  }
+
+  function formatApiErrorMessage(value, fallback) {
+    fallback = fallback === undefined ? "操作失败" : fallback;
+    if (value == null || value === "") return fallback;
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) {
+      var parts = value.map(function (item) {
+        return formatApiErrorMessage(item, "");
+      }).filter(Boolean);
+      return parts.join("；") || fallback;
+    }
+    if (typeof value === "object") {
+      if (value.msg) return String(value.msg);
+      if (value.message) return formatApiErrorMessage(value.message, fallback);
+      if (value.detail) return formatApiErrorMessage(value.detail, fallback);
+      if (value.loc || value.type) {
+        var loc = Array.isArray(value.loc) ? value.loc.join(".") : (value.loc || "");
+        var label = value.msg || value.type || fallback;
+        return loc ? loc + "：" + label : String(label);
+      }
+      try {
+        return JSON.stringify(value);
+      } catch (error) {
+        return fallback;
+      }
+    }
+    return String(value);
   }
 
   async function withBusyButton(button, busyText, task) {
@@ -112,6 +140,7 @@
     toast: toast,
     copyText: copyText,
     getApiErrorMessage: getApiErrorMessage,
+    formatApiErrorMessage: formatApiErrorMessage,
     withBusyButton: withBusyButton,
     renderPager: renderPager
   };

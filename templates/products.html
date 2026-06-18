@@ -49,6 +49,7 @@ body{overflow:hidden}
 .chat-avatar{width:28px;height:28px;border-radius:var(--r-pill);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;background:var(--facai-soft);color:var(--facai)}
 .chat-avatar svg,.chat-avatar i{width:14px;height:14px}
 .chat-bubble{max-width:min(760px,86%);border:1px solid var(--border-soft);border-radius:14px;background:var(--surface);padding:10px 12px;font-size:14px;line-height:1.75;color:var(--text);box-shadow:var(--s-1);white-space:pre-wrap;overflow-wrap:anywhere}
+.answer-summary{display:block;font-size:16px;line-height:1.65;color:var(--text);margin-bottom:8px}
 .chat-message.user .chat-bubble{background:var(--facai);border-color:var(--facai);color:#fff;box-shadow:var(--s-brand)}
 .chat-empty{max-width:660px;margin:auto;text-align:center;color:var(--text-2);display:grid;gap:12px}
 .chat-empty-icon{width:44px;height:44px;border-radius:var(--r);margin:0 auto;background:var(--facai-soft);color:var(--facai);display:flex;align-items:center;justify-content:center}
@@ -57,18 +58,14 @@ body{overflow:hidden}
 .prompt-grid{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
 .prompt-chip{border:1px solid var(--border);background:var(--surface);border-radius:var(--r-pill);height:32px;padding:0 12px;font-size:12px;font-weight:700;color:var(--text-2);cursor:pointer}
 .prompt-chip:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
-.rag-results{display:grid;gap:10px;white-space:normal}
-.rag-result-row{border-bottom:1px solid var(--border-soft);padding:2px 0 10px;display:grid;gap:5px}
-.rag-result-row:last-child{border-bottom:0;padding-bottom:0}
-.rag-result-sources{display:flex;flex-wrap:wrap;gap:5px}
-.rag-source-chip{max-width:100%;border:0;border-radius:var(--r-pill);background:var(--facai-soft);color:var(--facai);padding:3px 8px;font-family:var(--font-ui);font-size:12px;font-weight:800;line-height:1.4;cursor:pointer;overflow-wrap:anywhere;text-align:left}
-.rag-source-chip:hover{background:var(--facai-ghost);box-shadow:inset 0 0 0 1px var(--facai-subtle)}
-.rag-result-main{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
-.rag-result-name{border:0;background:transparent;padding:0;color:var(--text);font-family:var(--font-ui);font-size:15px;font-weight:900;text-align:left;cursor:pointer;overflow-wrap:anywhere}
+.rag-results{display:grid;gap:6px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-soft);white-space:normal}
+.rag-results-title{font-size:12px;color:var(--text-3);font-weight:800}
+.rag-result-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.rag-result-name{border:0;background:transparent;padding:0;color:var(--facai);font-family:var(--font-ui);font-size:13px;font-weight:900;text-align:left;cursor:pointer;overflow-wrap:anywhere}
 .rag-result-name:hover{color:var(--facai)}
 .rag-result-name.is-static{cursor:default}
 .rag-result-name.is-static:hover{color:var(--text)}
-.rag-result-meta{font-size:13px;color:var(--text-2);white-space:nowrap}
+.rag-result-meta{font-size:12px;color:var(--text-2);white-space:nowrap}
 .source-modal-box{width:min(820px,calc(100vw - 32px));max-width:min(820px,calc(100vw - 32px));max-height:calc(100dvh - 64px);display:flex;flex-direction:column}
 .source-modal-heading{min-width:0}
 .source-modal-title{margin:0;font-family:var(--font-display);font-size:1.25rem;color:var(--text)}
@@ -222,7 +219,7 @@ body{overflow:hidden}
         <div>
           <div class="chat-empty-icon"><i data-lucide="panel-right-open"></i></div>
           <h2>还没有选择产品</h2>
-          <p class="empty-copy">左侧按品类展开产品列表，点击产品后可查看卖点、SKU 售价和活动机制价格，并在下方只检索该产品资料。</p>
+          <p class="empty-copy">左侧按品类展开产品列表，点击产品后可查看卖点、SKU 售价和活动机制价格，并用右侧主对话框只检索该产品资料。</p>
         </div>
       </div>
     </div>
@@ -265,13 +262,14 @@ body{overflow:hidden}
 </div>
 </div>
 
-<script src="/static/js/common.js?v=20260616"></script>
+<script src="/static/js/common.js?v=20260618"></script>
 <script>
 let products=[],categories=[],expandedCategories={},selectedProductId=null,selectedProductDetail=null,uploadProductId=null,selectedFile=null,skuPricesExpanded=false,editingProfileSections={};
 
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function jsq(v){return String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
 function getApiErrorMessage(response,fallback){return FacaiUI.getApiErrorMessage(response,fallback);}
+function formatApiErrorMessage(value,fallback){return FacaiUI.formatApiErrorMessage(value,fallback);}
 function withBusyButton(button,busyText,task){return FacaiUI.withBusyButton(button,busyText,task);}
 function formatPrice(v){const n=Number(v);return Number.isFinite(n)?(Math.round(n*100)/100).toString():'';}
 function hasPending(p,field){return Array.isArray(p&&p.pending_fields)&&p.pending_fields.indexOf(field)>=0;}
@@ -386,14 +384,24 @@ function useGlobalPrompt(text){
  document.querySelector('#globalChatInput').closest('form').requestSubmit();
 }
 
-function hasRagResults(data){return !!(data&&Array.isArray(data.results)&&data.results.length);}
+function stripAnswerSources(text){
+ return String(text||'').replace(/\r\n/g,'\n').replace(/(^|\n)\s*来源：[\s\S]*$/,'').trim();
+}
+
+function formatAssistantAnswer(text){
+ const clean=stripAnswerSources(text);
+ if(!clean)return '';
+ const safe=esc(clean).replace(/\n/g,'<br>');
+ return safe.replace(/^简要回答：([^<]*)/,'<span class="answer-summary">简要回答：$1</span>');
+}
 
 function appendMessage(threadId,role,text,data){
  const thread=document.getElementById(threadId);
  if(thread.querySelector('.chat-empty'))thread.innerHTML='';
  const msg=document.createElement('div');
  msg.className='chat-message '+(role==='user'?'user':'assistant');
- const body=hasRagResults(data)?renderRagResults(data):esc(text||'').replace(/\n/g,'<br>')+(data?renderRagResults(data):'');
+ const answerText=formatApiErrorMessage(text||(data&&data.answer)||'','');
+ const body=(role==='assistant'?formatAssistantAnswer(answerText):esc(answerText).replace(/\n/g,'<br>'))+(data?renderRagResults(data):'');
  msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')
   +'<div class="chat-bubble">'+body+'</div>'
   +(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
@@ -405,7 +413,7 @@ function appendMessage(threadId,role,text,data){
 function renderRagResults(data){
  const results=(data&&data.results)||[];
  if(!results.length)return '';
- return '<div class="rag-results">'+results.slice(0,5).map(function(result){const sources=(result.sources||[]).slice(0,4);const sourceChips=sources.length?'<div class="rag-result-sources">'+sources.map(function(source){return '<button type="button" class="rag-source-chip" onclick="openSourceViewer(\''+jsq(source)+'\','+(result.product_id||'null')+')">'+esc(source)+'</button>';}).join('')+'</div>':'';const meta=esc(result.category||'未分类')+(result.price!=null?' · ¥'+formatPrice(result.price):'');const name=result.product_id?'<button type="button" class="rag-result-name" onclick="selectProduct('+result.product_id+')">'+esc(result.name||'相关产品')+'</button>':'<span class="rag-result-name is-static">'+esc(result.name||'相关产品')+'</span>';return '<div class="rag-result-row">'+sourceChips+'<div class="rag-result-main">'+name+'<span class="rag-result-meta">'+meta+'</span></div></div>';}).join('')+'</div>';
+ return '<div class="rag-results"><div class="rag-results-title">参考产品</div>'+results.map(function(result){const meta=esc(result.category||'未分类')+(result.price!=null?' · ¥'+formatPrice(result.price):'');const name=result.product_id?'<button type="button" class="rag-result-name" onclick="selectProduct('+result.product_id+')">'+esc(result.name||'相关产品')+'</button>':'<span class="rag-result-name is-static">'+esc(result.name||'相关产品')+'</span>';return '<div class="rag-result-row">'+name+'<span class="rag-result-meta">'+meta+'</span></div>';}).join('')+'</div>';
 }
 
 function sourceViewerUrl(path,source,productId){
@@ -426,7 +434,7 @@ async function openSourceViewer(source,productId){
  try{
   const r=await fetch(sourceViewerUrl('/api/products/source-preview',source,productId));
   const data=await r.json().catch(function(){return {};});
-  if(!r.ok)throw new Error(data.detail||'资料来源打开失败');
+  if(!r.ok)throw new Error(formatApiErrorMessage(data.detail||data.message||data,'资料来源打开失败'));
   title.textContent=data.name||source||'资料来源';
   subtitle.textContent=data.preview_kind==='text'?'文本预览':'原文件查看';
   const download=data.download_url||sourceViewerUrl('/api/products/source-download',source,productId);
@@ -458,12 +466,12 @@ async function sendGlobalChat(event){
  const loading=document.querySelector('#globalChatThread .chat-message:last-child');
  try{
   const url=scoped?'/api/products/'+productId+'/rag-chat':'/api/products/rag-chat';
-  const payload=scoped?{query:query}:{query:query,limit:5};
+  const payload=scoped?{query:query}:{query:query,limit:30};
   const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const data=await r.json();
   loading.remove();
   if((selectedProductId||null)!==(productId||null))return;
-  if(!r.ok){appendMessage('globalChatThread','assistant',data.detail||'检索失败');return;}
+  if(!r.ok){appendMessage('globalChatThread','assistant',formatApiErrorMessage(data.detail||data.message||data,'检索失败'));return;}
  appendMessage('globalChatThread','assistant',data.answer||'没有找到相关资料',data);
 }catch(e){
   loading.remove();

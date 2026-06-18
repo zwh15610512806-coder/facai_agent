@@ -217,7 +217,7 @@ class MaterialsImportParsingTests(unittest.TestCase):
         source = (ROOT / "vector_store" / "__init__.py").read_text(encoding="utf-8-sig")
 
         self.assertIn("class NoopChromaTelemetry(ProductTelemetryClient):", source)
-        self.assertIn("def capture(self, event: ProductTelemetryEvent) -> None:", source)
+        self.assertIn("def capture(self, *args: Any, **kwargs: Any) -> None:", source)
         self.assertIn("anonymized_telemetry=False", source)
         self.assertIn('chroma_product_telemetry_impl="vector_store.NoopChromaTelemetry"', source)
         self.assertIn("settings=_make_chroma_settings()", source)

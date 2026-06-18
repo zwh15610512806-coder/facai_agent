@@ -174,7 +174,7 @@ def _read_source_preview(path: Path) -> tuple[str, bool]:
 class ProductRagRequest(BaseModel):
     query: str = Field(..., min_length=1)
     category: Optional[str] = None
-    limit: int = Field(default=5, ge=1, le=10)
+    limit: int = Field(default=5, ge=1, le=30)
 
 
 class ProductScopedRagRequest(BaseModel):

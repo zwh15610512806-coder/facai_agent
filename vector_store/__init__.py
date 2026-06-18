@@ -1,9 +1,10 @@
 """ChromaDB vector store — singleton client + collection management."""
 import os
 import logging
+from typing import Any
 import chromadb
 from chromadb.config import Settings
-from chromadb.telemetry.product import ProductTelemetryClient, ProductTelemetryEvent
+from chromadb.telemetry.product import ProductTelemetryClient
 from overrides import override
 
 from config import (
@@ -22,7 +23,7 @@ class NoopChromaTelemetry(ProductTelemetryClient):
     """Chroma telemetry client that intentionally drops all events."""
 
     @override
-    def capture(self, event: ProductTelemetryEvent) -> None:
+    def capture(self, *args: Any, **kwargs: Any) -> None:
         return None
 
 
