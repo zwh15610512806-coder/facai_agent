@@ -1,4 +1,6 @@
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -46,6 +48,28 @@ class InspirationPageTests(unittest.TestCase):
         test_file = (ROOT / "tests" / "test_frontend_common_js.py").read_text(encoding="utf-8-sig")
 
         self.assertIn('"inspiration.html"', test_file)
+
+    def test_inspiration_inline_script_has_valid_syntax(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        scripts = re.findall(r"<script>\s*(.*?)</script>", page, re.S)
+        self.assertEqual(1, len(scripts))
+
+        with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as handle:
+            handle.write(scripts[0])
+            script_path = Path(handle.name)
+
+        try:
+            result = subprocess.run(
+                ["node", "--check", str(script_path)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+        finally:
+            script_path.unlink(missing_ok=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class InspirationNavigationTests(unittest.TestCase):

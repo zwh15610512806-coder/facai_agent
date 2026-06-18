@@ -25,6 +25,7 @@ body{overflow:hidden}
 .inspiration-hd{flex:0 0 auto;padding:14px 18px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between;gap:12px}
 .inspiration-title{font-family:var(--font-display);font-size:1.25rem;margin:0}
 .model-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--facai-subtle);background:var(--facai-ghost);color:var(--facai);border-radius:var(--r-pill);padding:4px 10px;font-size:12px;font-weight:800}
+.model-pill svg,.model-pill i,.inspiration-new svg,.inspiration-new i{width:14px;height:14px}
 .inspiration-thread{flex:1;min-height:0;overflow:auto;padding:22px 18px 14px;display:flex;flex-direction:column;gap:14px}
 .inspiration-empty{max-width:680px;margin:auto;text-align:center;color:var(--text-2);display:grid;gap:14px}
 .inspiration-empty-icon{width:46px;height:46px;border-radius:var(--r);margin:0 auto;background:var(--facai-soft);color:var(--facai);display:flex;align-items:center;justify-content:center}
@@ -113,10 +114,37 @@ const escHtml=ui.escHtml||function(v){return String(v==null?'':v).replace(/[&<>"
 const toast=ui.toast||function(message){alert(message);};
 const copyText=ui.copyText||function(text){return navigator.clipboard.writeText(text);};
 let chatHistory=[];
-function renderIcons(){if(window.lucide)window.lucide.createIcons();}
+const fallbackIconPaths={
+ 'bot':'<path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path>',
+ 'plus':'<path d="M5 12h14"></path><path d="M12 5v14"></path>',
+ 'send-horizontal':'<path d="m3 3 3 9-3 9 19-9Z"></path><path d="M6 12h16"></path>',
+ 'sparkles':'<path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"></path><path d="M20 3v4"></path><path d="M22 5h-4"></path><path d="M4 17v2"></path><path d="M5 18H3"></path>',
+ 'trash-2':'<path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>',
+ 'user':'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>'
+};
+function fallbackIconSvg(name){
+ const paths=fallbackIconPaths[name];
+ return paths?'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths+'</svg>':'';
+}
+function renderIcons(){
+ if(window.lucide){window.lucide.createIcons();return;}
+ document.querySelectorAll('i[data-lucide]').forEach(function(icon){
+  const svg=fallbackIconSvg(icon.getAttribute('data-lucide'));
+  if(svg)icon.outerHTML=svg;
+ });
+}
 function renderWelcome(){
  const thread=document.getElementById('inspirationThread');
- thread.innerHTML='<div class="inspiration-empty"><div class="inspiration-empty-icon"><i data-lucide="sparkles"></i></div><h1>今天想聊点什么？</h1><p>可以直接问选题、脚本、标题、活动文案或拍摄方向。</p><div class="inspiration-empty-prompts"><button class="prompt-chip" type="button" onclick="usePrompt(\\'帮我想 5 个烘焙新品短视频开头\\')">新品开头</button><button class="prompt-chip" type="button" onclick="usePrompt(\\'给我 3 个低成本拍摄选题\\')">低成本选题</button><button class="prompt-chip" type="button" onclick="usePrompt(\\'把卖点改成更口语的直播话术\\')">直播话术</button><button class="prompt-chip" type="button" onclick="usePrompt(\\'帮我做一版活动促单文案\\')">促单文案</button></div></div>';
+ const prompts=[
+  ['新品开头','帮我想 5 个烘焙新品短视频开头'],
+  ['低成本选题','给我 3 个低成本拍摄选题'],
+  ['直播话术','把卖点改成更口语的直播话术'],
+  ['促单文案','帮我做一版活动促单文案']
+ ];
+ thread.innerHTML='<div class="inspiration-empty"><div class="inspiration-empty-icon"><i data-lucide="sparkles"></i></div><h1>今天想聊点什么？</h1><p>可以直接问选题、脚本、标题、活动文案或拍摄方向。</p><div class="inspiration-empty-prompts">'+prompts.map(function(item){return '<button class="prompt-chip" type="button" data-prompt="'+escHtml(item[1])+'">'+escHtml(item[0])+'</button>';}).join('')+'</div></div>';
+ thread.querySelectorAll('[data-prompt]').forEach(function(button){
+  button.addEventListener('click',function(){usePrompt(button.getAttribute('data-prompt')||'');});
+ });
  renderIcons();
 }
 function appendMessage(role,content,options){
