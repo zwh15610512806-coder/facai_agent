@@ -12,10 +12,20 @@ class SearchPageTests(unittest.TestCase):
 
     def test_search_page_uses_library_style_workspace(self):
         self.assertIn('class="page-main search-page"', self.page)
+        self.assertIn('class="search-workbench"', self.page)
         self.assertIn('class="search-command"', self.page)
-        self.assertIn('class="search-results search-board"', self.page)
+        self.assertIn('class="search-sidebar search-panel"', self.page)
+        self.assertIn('class="search-results search-board search-panel"', self.page)
+        self.assertIn('class="search-panel-hd search-board-hd"', self.page)
         self.assertIn('id="topPagination"', self.page)
         self.assertIn('id="bottomPagination"', self.page)
+
+    def test_search_page_matches_workbench_typography_and_spacing(self):
+        self.assertIn("body{overflow:hidden}", self.page)
+        self.assertIn(".search-page{max-width:min(1680px,calc(100vw - 32px));height:calc(100dvh - 68px)", self.page)
+        self.assertIn(".search-workbench{flex:1;min-height:0;display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px}", self.page)
+        self.assertIn(".search-panel{min-width:0;min-height:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--s-2);display:flex;flex-direction:column;overflow:hidden}", self.page)
+        self.assertIn(".search-panel-title{font-family:var(--font-ui);font-size:15px;font-weight:800", self.page)
 
     def test_search_pagination_supports_page_size_and_jump(self):
         self.assertIn("let currentPage = 1, totalPages = 1, pageSize = 15, totalResults = 0", self.page)
