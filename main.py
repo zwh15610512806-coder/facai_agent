@@ -41,7 +41,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-from routers import products, templates as tpl_routes, scripts, import_data, reference_scripts
+from routers import products, templates as tpl_routes, scripts, import_data, reference_scripts, inspiration
 
 import importlib.util
 spec = importlib.util.spec_from_file_location("search_local", os.path.join(LOCAL, "routers", "search_local.py"))
@@ -54,6 +54,7 @@ app.include_router(tpl_routes.router, prefix="/api/templates", tags=["templates"
 app.include_router(scripts.router, prefix="/api/scripts", tags=["scripts"])
 app.include_router(import_data.router, prefix="/api/import", tags=["import"])
 app.include_router(reference_scripts.router, prefix="/api/reference", tags=["reference"])
+app.include_router(inspiration.router, prefix="/api/inspiration", tags=["inspiration"])
 app.include_router(search_router, prefix="/api/search-proxy", tags=["search"])
 
 @app.middleware("http")
@@ -80,6 +81,8 @@ def history_page(request: Request): return templates.TemplateResponse(request, "
 def rewrite_page(request: Request): return templates.TemplateResponse(request, "rewrite.html", {"request": request})
 @app.get("/app/search")
 def search_page(request: Request): return templates.TemplateResponse(request, "search.html", {"request": request})
+@app.get("/app/inspiration")
+def inspiration_page(request: Request): return templates.TemplateResponse(request, "inspiration.html", {"request": request})
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)

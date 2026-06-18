@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>灵感 · 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="/static/js/common.js?v=20260618"></script>
+<style>
+body{overflow:hidden}
+.inspiration-page{max-width:min(1440px,calc(100vw - 32px));height:calc(100dvh - 68px);margin:0 auto;padding:16px;display:flex;flex-direction:column}
+.inspiration-shell{flex:1;min-height:0;display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px}
+.inspiration-panel{min-width:0;min-height:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--s-2);display:flex;flex-direction:column;overflow:hidden}
+.inspiration-side{padding:14px;gap:12px}
+.inspiration-new{width:100%;height:40px}
+.inspiration-side-title{font-family:var(--font-ui);font-size:13px;font-weight:900;color:var(--text);margin:8px 0 4px}
+.prompt-list{display:grid;gap:8px}
+.prompt-chip{border:1px solid var(--border);background:var(--surface);border-radius:var(--r-sm);padding:9px 10px;text-align:left;font-family:var(--font-ui);font-size:13px;font-weight:700;line-height:1.5;color:var(--text-2);cursor:pointer}
+.prompt-chip:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.inspiration-note{margin-top:auto;padding:12px;border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--surface-darker);font-size:12px;line-height:1.65;color:var(--text-2)}
+.inspiration-main{background:linear-gradient(180deg,#fff 0%,#fff 62%,#fbfaf8 100%)}
+.inspiration-hd{flex:0 0 auto;padding:14px 18px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.inspiration-title{font-family:var(--font-display);font-size:1.25rem;margin:0}
+.model-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--facai-subtle);background:var(--facai-ghost);color:var(--facai);border-radius:var(--r-pill);padding:4px 10px;font-size:12px;font-weight:800}
+.inspiration-thread{flex:1;min-height:0;overflow:auto;padding:22px 18px 14px;display:flex;flex-direction:column;gap:14px}
+.inspiration-empty{max-width:680px;margin:auto;text-align:center;color:var(--text-2);display:grid;gap:14px}
+.inspiration-empty-icon{width:46px;height:46px;border-radius:var(--r);margin:0 auto;background:var(--facai-soft);color:var(--facai);display:flex;align-items:center;justify-content:center}
+.inspiration-empty-icon svg,.inspiration-empty-icon i{width:21px;height:21px}
+.inspiration-empty h1{font-size:1.7rem;margin:0}
+.inspiration-empty-prompts{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.chat-message{display:flex;gap:10px;align-items:flex-start;max-width:100%}
+.chat-message.user{justify-content:flex-end}
+.chat-avatar{width:30px;height:30px;border-radius:var(--r-pill);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;background:var(--facai-soft);color:var(--facai)}
+.chat-avatar svg,.chat-avatar i{width:15px;height:15px}
+.chat-bubble{max-width:min(780px,84%);border:1px solid var(--border-soft);border-radius:14px;background:var(--surface);padding:11px 13px;font-size:14px;line-height:1.78;color:var(--text);box-shadow:var(--s-1);white-space:pre-wrap;overflow-wrap:anywhere}
+.chat-message.user .chat-bubble{background:var(--facai);border-color:var(--facai);color:#fff;box-shadow:var(--s-brand)}
+.message-tools{margin-top:8px;display:flex;gap:6px}
+.message-tool{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);height:28px;padding:0 9px;font-size:12px;font-weight:800;color:var(--text-2);cursor:pointer}
+.message-tool:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.thinking{color:var(--text-3)}
+.inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px;background:rgba(255,255,255,.96)}
+.composer-form{display:flex;gap:8px;align-items:flex-end}
+.inspiration-input{flex:1;min-height:44px;max-height:132px;resize:none;border:1.5px solid var(--border);border-radius:var(--r);padding:10px 12px;font:inherit;font-size:14px;line-height:1.55;background:var(--surface)}
+.inspiration-input:focus{outline:none;border-color:var(--facai);box-shadow:0 0 0 3px var(--facai-subtle)}
+.icon-button{width:44px;height:44px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
+.icon-button:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.send-button{border:0;background:var(--facai);color:#fff}
+.send-button:disabled{background:var(--border);cursor:not-allowed}
+.icon-button svg,.icon-button i{width:16px;height:16px}
+@media (max-width: 900px){
+  body{overflow:auto}
+  .inspiration-page{height:auto;max-width:100%;padding:12px}
+  .inspiration-shell{grid-template-columns:1fr}
+  .inspiration-side{min-height:0}
+  .prompt-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .inspiration-main{min-height:calc(100dvh - 220px)}
+}
+@media (max-width: 640px){
+  .inspiration-page{height:auto;padding:10px}
+  .inspiration-hd{align-items:flex-start;flex-direction:column}
+  .prompt-list{grid-template-columns:1fr}
+  .inspiration-thread{padding:16px 12px 10px}
+  .chat-bubble{max-width:92%}
+  .composer-form{gap:6px}
+  .icon-button{width:40px;height:40px}
+}
+</style>
+</head>
+<body>
+<nav class="nav">
+<div class="nav-inner">
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<div class="nav-links">
+<a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link">模板库</a><a href="/app/history" class="nav-link">历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/inspiration" class="nav-link on">灵感</a>
+</div></div></nav>
+<main class="inspiration-page">
+<section class="inspiration-shell" aria-label="灵感 AI 对话工作台">
+  <aside class="inspiration-panel inspiration-side">
+    <button class="btn btn-pri inspiration-new" type="button" onclick="clearChat()"><i data-lucide="plus"></i>新对话</button>
+    <div>
+      <div class="inspiration-side-title">常用提示</div>
+      <div class="prompt-list">
+        <button class="prompt-chip" type="button" onclick="usePrompt('帮我想 5 个烘焙新品短视频开头')">新品短视频开头</button>
+        <button class="prompt-chip" type="button" onclick="usePrompt('把这个卖点改成更适合抖音口播的表达')">卖点口播改写</button>
+        <button class="prompt-chip" type="button" onclick="usePrompt('给我一组直播间促单话术')">直播促单话术</button>
+        <button class="prompt-chip" type="button" onclick="usePrompt('根据这个活动设计 3 个内容选题')">活动内容选题</button>
+      </div>
+    </div>
+    <div class="inspiration-note">适合头脑风暴、脚本方向、标题、口播、拍摄思路和活动表达。产品资料精确问答仍建议去「产品」页。</div>
+  </aside>
+  <section class="inspiration-panel inspiration-main">
+    <div class="inspiration-hd">
+      <div><h1 class="inspiration-title">灵感</h1><div class="text-2" style="font-size:13px">和 AI 聊创意、脚本、选题与运营表达</div></div>
+      <span id="modelPill" class="model-pill"><i data-lucide="sparkles"></i><span>AI 对话</span></span>
+    </div>
+    <div id="inspirationThread" class="inspiration-thread"></div>
+    <div class="inspiration-composer">
+      <form class="composer-form" onsubmit="sendInspirationChat(event)">
+        <button id="clearChatBtn" class="icon-button" type="button" onclick="clearChat()" aria-label="清空对话" title="清空对话"><i data-lucide="trash-2"></i></button>
+        <textarea id="inspirationInput" class="inspiration-input" rows="1" placeholder="问点什么，例如：帮我想一个奶冻粉的短视频脚本方向..." onkeydown="submitOnEnter(event)"></textarea>
+        <button id="inspirationSend" class="icon-button send-button" type="submit" aria-label="发送"><i data-lucide="send-horizontal"></i></button>
+      </form>
+    </div>
+  </section>
+</section>
+</main>
+<script>
+const ui=window.FacaiUI||{};
+const escHtml=ui.escHtml||function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});};
+const toast=ui.toast||function(message){alert(message);};
+const copyText=ui.copyText||function(text){return navigator.clipboard.writeText(text);};
+let chatHistory=[];
+function renderIcons(){if(window.lucide)window.lucide.createIcons();}
+function renderWelcome(){
+ const thread=document.getElementById('inspirationThread');
+ thread.innerHTML='<div class="inspiration-empty"><div class="inspiration-empty-icon"><i data-lucide="sparkles"></i></div><h1>今天想聊点什么？</h1><p>可以直接问选题、脚本、标题、活动文案或拍摄方向。</p><div class="inspiration-empty-prompts"><button class="prompt-chip" type="button" onclick="usePrompt(\\'帮我想 5 个烘焙新品短视频开头\\')">新品开头</button><button class="prompt-chip" type="button" onclick="usePrompt(\\'给我 3 个低成本拍摄选题\\')">低成本选题</button><button class="prompt-chip" type="button" onclick="usePrompt(\\'把卖点改成更口语的直播话术\\')">直播话术</button><button class="prompt-chip" type="button" onclick="usePrompt(\\'帮我做一版活动促单文案\\')">促单文案</button></div></div>';
+ renderIcons();
+}
+function appendMessage(role,content,options){
+ const thread=document.getElementById('inspirationThread');
+ if(thread.querySelector('.inspiration-empty'))thread.innerHTML='';
+ const msg=document.createElement('div');
+ msg.className='chat-message '+(role==='user'?'user':'assistant');
+ const safe=escHtml(content);
+ const tools=role==='assistant'&&!(options&&options.thinking)?'<div class="message-tools"><button class="message-tool" type="button" onclick="copyAssistantMessage(this)">复制</button></div>':'';
+ msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')+'<div class="chat-bubble '+(options&&options.thinking?'thinking':'')+'">'+safe+tools+'</div>'+(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
+ thread.appendChild(msg);
+ thread.scrollTop=thread.scrollHeight;
+ renderIcons();
+ return msg;
+}
+function copyAssistantMessage(button){
+ const bubble=button.closest('.chat-bubble');
+ const text=bubble?bubble.childNodes[0].textContent:'';
+ copyText(text).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});
+}
+function usePrompt(text){
+ const input=document.getElementById('inspirationInput');
+ input.value=text;
+ input.focus();
+}
+function submitOnEnter(event){
+ if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();document.getElementById('inspirationSend').click();}
+}
+function setBusy(isBusy){
+ document.getElementById('inspirationSend').disabled=isBusy;
+ document.getElementById('inspirationInput').disabled=isBusy;
+}
+async function sendInspirationChat(event){
+ event.preventDefault();
+ const input=document.getElementById('inspirationInput');
+ const message=input.value.trim();
+ if(!message)return;
+ input.value='';
+ appendMessage('user',message);
+ const loading=appendMessage('assistant','正在思考...', {thinking:true});
+ setBusy(true);
+ try{
+  const response=await fetch('/api/inspiration/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:message,history:chatHistory})});
+  const data=await response.json();
+  loading.remove();
+  if(!response.ok)throw new Error(data.detail||data.message||'发送失败');
+  chatHistory.push({role:'user',content:message},{role:'assistant',content:data.answer||''});
+  chatHistory=chatHistory.slice(-12);
+  document.querySelector('#modelPill span').textContent=data.mode==='fallback'?'离线提示':(data.model||'AI 对话');
+  appendMessage('assistant',data.answer||'没有收到回复');
+ }catch(error){
+  loading.remove();
+  appendMessage('assistant','发送失败：'+(error&&error.message?error.message:'网络错误'));
+ }finally{
+  setBusy(false);
+  input.focus();
+ }
+}
+function clearChat(){
+ chatHistory=[];
+ document.getElementById('inspirationInput').value='';
+ document.querySelector('#modelPill span').textContent='AI 对话';
+ renderWelcome();
+}
+renderWelcome();
+document.addEventListener('DOMContentLoaded',renderIcons);
+</script>
+</body>
+</html>
