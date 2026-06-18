@@ -2,6 +2,7 @@ import re
 import unittest
 from pathlib import Path
 
+from schemas import ScriptRewriteRequest
 from services.script_rewriter import ScriptRewriter
 
 
@@ -26,6 +27,16 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn(".style.display='none'", body)
         self.assertIn("btnRewrite", body)
 
+    def test_target_product_can_be_reselected_after_selection(self):
+        self.assertIn('id="selectedProductText"', self.page)
+        self.assertIn('id="btnReselectProduct"', self.page)
+        self.assertIn("hint.style.display='flex'", self.page)
+        self.assertIn("document.getElementById('selectedProductText').textContent='目标产品：'", self.page)
+        self.assertIn("function reselectProduct()", self.page)
+        self.assertIn("document.getElementById('productPicker').style.display=''", self.page)
+        self.assertIn("renderProducts(document.getElementById('productSearch').value)", self.page)
+        self.assertIn("btnReselectProduct').addEventListener('click',reselectProduct)", self.page)
+
     def test_selected_product_and_preview_use_plain_text_symbols(self):
         self.assertNotIn("+ '&yen;'", self.page)
         self.assertNotIn("+ '&hellip;'", self.page)
@@ -45,6 +56,18 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("填写你对改写脚本的限制、方向、活动卖点或语气要求", self.page)
         self.assertIn("document.getElementById('rewriteReqPreFill').value.trim()", self.page)
         self.assertIn("reqs.push('用户需求：'+preFill)", self.page)
+
+    def test_rewrite_page_has_optional_shot_design_toggle(self):
+        self.assertIn("需要设计画面", self.page)
+        self.assertIn('id="includeShotDesign" type="checkbox" checked', self.page)
+        self.assertIn("取消勾选后只输出一段口播文案", self.page)
+        self.assertIn("var includeShotDesign=document.getElementById('includeShotDesign').checked", self.page)
+        self.assertIn("include_shot_design:includeShotDesign", self.page)
+
+    def test_rewrite_request_defaults_to_existing_shot_design_format(self):
+        request = ScriptRewriteRequest(original_script="老板们看过来", product_id=1)
+
+        self.assertTrue(request.include_shot_design)
 
     def test_rewriter_extracts_timestamped_reference_structure(self):
         original = """00:00 头些年我还是当记者的时候
@@ -108,6 +131,20 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("奶冻粉包装正面近景", output)
         self.assertIn("俯拍操作台", output)
 
+    def test_rewriter_plain_cleanup_removes_shot_design(self):
+        cleaned = ScriptRewriter()._cleanup_plain_rewrite_output(
+            "【开场钩子】\n00:00 （主播半身站在烘焙台前开场，手边摆放产品包装）老板们看过来。\n"
+            "00:02 （产品包装正面近景，手拿转动展示规格）这款奶冻粉很适合门店用。"
+        )
+
+        self.assertNotIn("【开场钩子】", cleaned)
+        self.assertNotIn("00:00", cleaned)
+        self.assertNotIn("主播半身", cleaned)
+        self.assertNotIn("产品包装正面近景", cleaned)
+        self.assertNotIn("\n", cleaned)
+        self.assertIn("老板们看过来", cleaned)
+        self.assertIn("这款奶冻粉很适合门店用", cleaned)
+
     def test_rewrite_copy_button_has_fallback_and_error_feedback(self):
         self.assertIn("function fallbackCopyText", self.page)
         self.assertIn("function copyText", self.page)
@@ -127,7 +164,7 @@ class RewritePageTests(unittest.TestCase):
             flags=re.S,
         )
         script_actions = re.search(
-            r'id="scriptOutput" class="so".*?id="resultActions" class="result-actions"',
+            r'id="scriptOutput" class="so editable-output".*?id="resultActions" class="result-actions"',
             self.page,
             flags=re.S,
         )
@@ -138,6 +175,14 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("btnBackToStep2FromResult", self.page)
         self.assertIn("document.getElementById('resultActions').style.display='none'", self.page)
         self.assertIn("document.getElementById('resultActions').style.display='flex'", self.page)
+
+    def test_rewrite_output_is_editable(self):
+        self.assertIn('id="scriptOutput" class="so editable-output" contenteditable="true"', self.page)
+        self.assertIn('role="textbox" aria-multiline="true"', self.page)
+        self.assertIn("function getEditedScript()", self.page)
+        self.assertIn("document.getElementById('scriptOutput').addEventListener('input'", self.page)
+        self.assertIn("document.getElementById('compareRewritten').textContent=currentRewritten", self.page)
+        self.assertIn("var t=getEditedScript()", self.page)
 
     def test_redo_directly_submits_rewrite_without_returning_to_step2(self):
         self.assertIn("async function submitRewrite", self.page)
@@ -162,13 +207,19 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("Seedance 2.0", self.page)
         self.assertIn("id=\"seedancePromptList\"", self.page)
         self.assertIn("id=\"btnCopySeedanceAll\"", self.page)
+        self.assertIn("id=\"btnGenerateSeedance\"", self.page)
         self.assertIn("function getSeedancePrompts", self.page)
         self.assertIn("function buildSeedancePrompt", self.page)
         self.assertIn("function renderSeedancePrompts", self.page)
 
-    def test_seedance_prompts_are_rendered_after_rewrite(self):
-        self.assertIn("renderSeedancePrompts(currentRewritten)", self.page)
-        self.assertIn("renderSeedancePrompts('')", self.page)
+    def test_seedance_prompts_are_generated_manually_from_edited_script(self):
+        self.assertNotIn("renderSeedancePrompts(currentRewritten)", self.page)
+        self.assertIn("resetSeedancePrompts('可先直接编辑左侧改写脚本", self.page)
+        self.assertIn("btnGenerateSeedance').addEventListener('click'", self.page)
+        self.assertIn("var script=getEditedScript()", self.page)
+        self.assertIn("renderSeedancePrompts(script)", self.page)
+        self.assertIn("currentSeedancePrompts", self.page)
+        self.assertIn("请先点击生成提示词", self.page)
         self.assertIn("seedance-copy", self.page)
         self.assertIn("竖屏9:16，真实商业烘焙短视频", self.page)
 
@@ -177,6 +228,8 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn(".rewrite-main{max-width:1540px}", self.page)
         self.assertIn("grid-template-columns:minmax(480px,1fr) minmax(620px,720px)", self.page)
         self.assertIn("align-items:stretch", self.page)
+        self.assertIn(".rewrite-result-hd{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)", self.page)
+        self.assertIn(".editable-output{cursor:text}", self.page)
         self.assertIn(".script-output-frame{position:relative;min-width:0}", self.page)
         self.assertIn(".rewrite-script-col .so{height:520px;max-height:520px;overflow:auto;padding-bottom:86px}", self.page)
         self.assertIn(".result-actions{position:absolute;left:18px;right:18px;bottom:12px;display:flex;justify-content:flex-end;gap:6px", self.page)

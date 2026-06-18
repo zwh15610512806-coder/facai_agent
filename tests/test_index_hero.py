@@ -43,20 +43,36 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         self.assertIn("Seedance 2.0", self.page)
         self.assertIn('id="seedancePromptList"', self.page)
         self.assertIn('id="btnCopySeedanceAll"', self.page)
+        self.assertIn('id="btnGenerateSeedance"', self.page)
         self.assertIn("function getSeedancePrompts", self.page)
         self.assertIn("function buildSeedancePrompt", self.page)
         self.assertIn("function renderSeedancePrompts", self.page)
 
-    def test_seedance_prompts_are_rendered_after_generation(self):
-        self.assertIn("renderSeedancePrompts(currentScript)", self.page)
-        self.assertIn("renderSeedancePrompts('')", self.page)
+    def test_seedance_prompts_are_generated_manually_from_edited_script(self):
+        self.assertNotIn("renderSeedancePrompts(currentScript)", self.page)
+        self.assertIn("btnGenerateSeedance').addEventListener('click'", self.page)
+        self.assertIn("var script=getEditedScript()", self.page)
+        self.assertIn("renderSeedancePrompts(script)", self.page)
+        self.assertIn("currentSeedancePrompts", self.page)
+        self.assertIn("请先点击生成提示词", self.page)
         self.assertIn("seedance-copy", self.page)
-        self.assertIn("currentScript='';currentScriptId=null;renderSeedancePrompts('')", self.page)
+        self.assertIn("resetSeedancePrompts('可先直接编辑左侧生成脚本", self.page)
+
+    def test_seedance_cards_label_uses_spoken_copy_not_camera_note(self):
+        self.assertIn("function getSeedanceCardLabel", self.page)
+        self.assertIn("getSeedanceCardLabel(item)", self.page)
+        self.assertIn("画面'+(i+1)+' · '+escHtml(getSeedanceCardLabel(item))", self.page)
+        self.assertIn("return (item.line||item.scene||'口播画面').slice(0,54)", self.page)
+        self.assertIn("'画面'+(i+1)+'：'+getSeedanceCardLabel(x)", self.page)
+        self.assertNotIn("画面'+(i+1)+' · '+escHtml(item.scene)", self.page)
+        self.assertNotIn("'画面'+(i+1)+'：'+x.scene", self.page)
 
     def test_seedance_panel_uses_rewrite_layout_pattern(self):
         self.assertIn("<main class=\"page-main generate-main\">", self.page)
         self.assertIn(".generate-main{max-width:1540px}", self.page)
         self.assertIn("grid-template-columns:minmax(480px,1fr) minmax(620px,720px)", self.page)
+        self.assertIn(".generate-result-hd{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)", self.page)
+        self.assertIn(".editable-output{cursor:text}", self.page)
         self.assertIn(".generate-result-layout", self.page)
         self.assertIn(".seedance-panel", self.page)
         self.assertIn("@media (max-width: 1240px)", self.page)
@@ -65,13 +81,14 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
 
     def test_result_buttons_match_rewrite_module_positions(self):
         header = re.search(
-            r'<section id="step3".*?<div class="section-hd" style="justify-content:space-between">(?P<body>.*?)<div class="generate-result-layout">',
+            r'<section id="step3".*?<div class="section-hd generate-result-hd">(?P<body>.*?)<div class="generate-result-layout">',
             self.page,
             flags=re.S,
         )
         self.assertIsNotNone(header)
         header_body = header.group("body")
         self.assertIn('id="btnBack"', header_body)
+        self.assertIn('id="btnGenerateSeedance"', header_body)
         self.assertNotIn('id="btnCopy"', header_body)
         self.assertNotIn('id="btnSave"', header_body)
         self.assertNotIn('id="btnRedo"', header_body)
@@ -85,15 +102,38 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         frame_body = frame.group("body")
         self.assertRegex(
             frame_body,
-            r'(?s)id="scriptOutput" class="so".*?id="resultActions" class="result-actions".*?id="btnCopy".*?id="btnSave".*?id="btnRedo"',
+            r'(?s)id="scriptOutput" class="so editable-output".*?id="resultActions" class="result-actions".*?id="btnMatchShots".*?id="btnCopy".*?id="btnSave".*?id="btnRedo"',
         )
 
-        self.assertIn(".script-output-frame{position:relative;min-width:0}", self.page)
+        self.assertIn('id="scriptOutput" class="so editable-output" contenteditable="true"', self.page)
+        self.assertIn("function getEditedScript()", self.page)
+        self.assertIn("document.getElementById('scriptOutput').addEventListener('input'", self.page)
+        self.assertIn(".script-output-frame{position:relative;min-width:0;border-radius:var(--r);overflow:hidden}", self.page)
         self.assertIn(".generate-script-col .so{height:520px;max-height:520px;overflow:auto;padding-bottom:86px}", self.page)
-        self.assertIn(".result-actions{position:absolute;left:18px;right:18px;bottom:12px;display:flex;justify-content:flex-end;gap:6px", self.page)
+        self.assertIn(".result-actions{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:flex-end;gap:6px", self.page)
+        self.assertIn("padding:10px 18px 12px", self.page)
         self.assertIn(".result-actions { position: static; margin-top: 8px; flex-wrap: wrap; background: transparent; }", self.page)
         self.assertIn("document.getElementById('resultActions').style.display='none'", self.page)
         self.assertIn("document.getElementById('resultActions').style.display='flex'", self.page)
+
+    def test_result_actions_can_match_shots_to_existing_copy(self):
+        self.assertIn('id="btnMatchShots"', self.page)
+        self.assertIn("为文案匹配画面", self.page)
+        self.assertIn("async function matchShotsForScript()", self.page)
+        self.assertIn("fetch('/api/scripts/match-shots'", self.page)
+        self.assertIn("script_content:script", self.page)
+        self.assertIn("script_id:currentScriptId", self.page)
+        self.assertIn("currentScript=d.script_content;document.getElementById('scriptOutput').textContent=currentScript", self.page)
+        self.assertIn("document.getElementById('btnMatchShots').addEventListener('click',matchShotsForScript)", self.page)
+
+    def test_result_action_bar_masks_scrolled_script_content(self):
+        match = re.search(r"\.result-actions\{(?P<body>.*?)\}", self.page, flags=re.S)
+
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("background:var(--surface-darker)", body)
+        self.assertNotIn("rgba(245,243,240,0)", body)
+        self.assertNotIn("linear-gradient(to bottom,rgba", body)
 
     def test_generate_can_run_without_video_type_using_template_library(self):
         self.assertIn("不选类型时自动用高成交模板库生成", self.page)
@@ -102,6 +142,23 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         self.assertIn("if(selectedType)body.video_type=selectedType", self.page)
         self.assertIn("document.getElementById('btnGenerate').disabled=false", self.page)
         self.assertNotIn("document.getElementById('btnGenerate').disabled=!state.selectedType", self.page)
+
+    def test_generate_page_has_optional_shot_design_toggle(self):
+        engine_block = re.search(
+            r'<select id="aiEngine".*?</select>(?P<body>.*?)<p style="font-size:12px;color:var\(--text-3\);margin-top:6px" id="engineHint">',
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(engine_block)
+        body = engine_block.group("body")
+        self.assertIn('id="includeShotDesign"', body)
+        self.assertIn('type="checkbox"', body)
+        self.assertNotIn("checked", body)
+        self.assertIn("需要设计画面", body)
+        self.assertIn("未勾选只生成一段口播文案", self.page)
+        self.assertIn("勾选会按每句话生成镜头说明", self.page)
+        self.assertIn("include_shot_design:document.getElementById('includeShotDesign').checked", self.page)
 
     def test_custom_video_type_can_be_added_and_reused(self):
         self.assertIn('id="customVideoTypeInput"', self.page)
@@ -134,6 +191,33 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         self.assertIn("opacity:.82;pointer-events:auto", self.page)
         self.assertIn(".type-delete::before{content:\"\";width:8px;height:2px;background:#fff", self.page)
         self.assertIn("if(!window.confirm(", self.page)
+
+    def test_generate_page_has_product_style_scroll_top_button(self):
+        self.assertIn('id="scrollTopBtn"', self.page)
+        self.assertIn('class="scroll-top-btn"', self.page)
+        self.assertIn('aria-label="回到顶部"', self.page)
+        self.assertIn('data-lucide="arrow-up"', self.page)
+        self.assertIn(".scroll-top-btn{position:fixed;right:24px;bottom:96px", self.page)
+        self.assertIn(".scroll-top-btn.show{opacity:1;pointer-events:auto;transform:translateY(0)}", self.page)
+        self.assertIn("function scrollGenerateToTop(){window.scrollTo({top:0,behavior:'smooth'});}", self.page)
+        self.assertIn("function toggleScrollTopButton(){const btn=document.getElementById('scrollTopBtn')", self.page)
+        self.assertIn("window.addEventListener('scroll',toggleScrollTopButton,{passive:true});", self.page)
+        self.assertIn("toggleScrollTopButton();", self.page)
+
+    def test_product_tooltip_escapes_summary_parts_before_innerhtml(self):
+        match = re.search(
+            r"function showTip\(e,summary\)\{(?P<body>.*?)function hideTip",
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("esc(m[1])", body)
+        self.assertIn("esc(m[2])", body)
+        self.assertIn("esc(s)", body)
+        self.assertNotIn("'+m[1]+'", body)
+        self.assertNotIn("'+m[2]+'", body)
 
 
 if __name__ == "__main__":

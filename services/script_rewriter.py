@@ -38,6 +38,15 @@ class ScriptRewriter:
 
 """ + MATERIAL_SCRIPT_FORMAT
 
+    PLAIN_SYSTEM_PROMPT = """你是法采食品店的脚本改写专家。你的任务是把一段现有带货脚本改写为法采目标产品版本。
+核心要求：
+1. 保留用户参考文案的信息顺序和表达节奏，不重排、不另起一套新结构。
+2. 替换所有产品相关信息：产品名、品类名、卖点、价格、规格都换成目标产品信息。
+3. 输出纯口播文案：只输出一段连续自然的短视频口播，不要镜头说明、画面说明、分镜标题、时间戳、Markdown、编号或解释。
+4. 如果参考文案里有画面括号或时间戳，只吸收节奏和信息，不保留这些格式。
+5. 口播保持资料表里的抖音烘焙带货口吻：自然、直接、接地气，能开拍即用。
+输出：直接输出改写后的完整口播文案。"""
+
     def __init__(self):
         self.ai = ai_service
 
@@ -194,6 +203,7 @@ class ScriptRewriter:
         target_product: dict,
         video_type: str = None,
         extra_requirements: str = None,
+        include_shot_design: bool = True,
         db: Session = None,
     ) -> str:
         """改写脚本"""
@@ -279,11 +289,19 @@ class ScriptRewriter:
         if extra_requirements:
             instructions += f"\n\n额外要求：{extra_requirements}"
 
+        if not include_shot_design:
+            instructions += (
+                "\n\n【输出格式覆盖】用户未勾选“需要设计画面”："
+                "最终只输出一段连续自然口播文案，禁止输出任何中文括号画面说明、镜头说明、分镜标题、时间戳、换行、列表或解释。"
+                "保留参考文案的信息顺序和表达节奏，但把画面括号全部转化为自然口播。"
+            )
+
         instructions += f"\n\n【原始脚本】\n{original_script}\n\n请输出改写后的脚本："
 
         if self.ai.is_available:
+            system_prompt = self.SYSTEM_PROMPT if include_shot_design else self.PLAIN_SYSTEM_PROMPT
             messages = [
-                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": instructions},
             ]
             try:
@@ -295,15 +313,23 @@ class ScriptRewriter:
                     top_p=0.85,
                 )
                 result = response.choices[0].message.content
-                return self._cleanup_rewrite_output(result)
+                if include_shot_design:
+                    return self._cleanup_rewrite_output(result)
+                return self._cleanup_plain_rewrite_output(result)
             except Exception:
-                return self._offline_material_rewrite(
+                fallback = self._offline_material_rewrite(
                     name, category, price_text, selling_points, original_script=original_script
                 )
+                if include_shot_design:
+                    return fallback
+                return self._cleanup_plain_rewrite_output(fallback)
 
-        return self._offline_material_rewrite(
+        fallback = self._offline_material_rewrite(
             name, category, price_text, selling_points, original_script=original_script
         )
+        if include_shot_design:
+            return fallback
+        return self._cleanup_plain_rewrite_output(fallback)
 
     def _enrich_scene_label(
         self,
@@ -483,6 +509,44 @@ class ScriptRewriter:
         cleaned = re.sub(r"\n(?=（)", "", cleaned)
         cleaned = re.sub(r"\n+", " ", cleaned)
         cleaned = self._enrich_scene_labels(cleaned)
+        return cleaned.strip()
+
+    def _cleanup_plain_rewrite_output(self, text: str) -> str:
+        """Remove shot notes and formatting when the user only wants spoken copy."""
+        if not text:
+            return ""
+
+        cleaned = text.strip()
+        cleaned = re.sub(r"^```(?:\w+)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        cleaned = cleaned.replace("**", "")
+        cleaned = re.sub(r"^\s*(改写后脚本|改写后的脚本|脚本|输出)\s*[:：]\s*", "", cleaned)
+        cleaned = re.sub(r"【[^】]{1,80}】", "", cleaned)
+        cleaned = re.sub(
+            r"^\s*(?:[-*#>]+|\d+[.、])\s*",
+            "",
+            cleaned,
+            flags=re.M,
+        )
+        cleaned = re.sub(
+            r"^\s*(?:\d{1,2}[:：]\d{2}(?::\d{2})?|\d{1,2})\s*[-—–到至]\s*(?:\d{1,2}[:：]\d{2}(?::\d{2})?|\d{1,2})\s*[s秒]?\s*[:：]?\s*",
+            "",
+            cleaned,
+            flags=re.M,
+        )
+        cleaned = re.sub(r"^\s*\d{1,2}[:：]\d{2}(?::\d{2})?\s*", "", cleaned, flags=re.M)
+
+        shot_keywords = (
+            "镜头|画面|分镜|字幕|口播|场景|特写|手部|俯拍|近景|远景|拍摄|对准|切换|展示|"
+            "主播|包装|操作台|小黄车|成品|对比|指向|推近|转动|倒入|搅拌|切开|烘焙台|手拿|定格|空镜"
+        )
+        cleaned = re.sub(
+            rf"[（(][^（）()\n]{{0,160}}(?:{shot_keywords})[^（）()\n]{{0,160}}[）)]",
+            "",
+            cleaned,
+        )
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        cleaned = re.sub(r"\s+([，。！？；、])", r"\1", cleaned)
         return cleaned.strip()
 
 

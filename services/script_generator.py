@@ -6,6 +6,7 @@ from sqlalchemy import or_
 from typing import List, Dict, Optional, Any
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,131 @@ class ScriptGenerator:
 
     def get_model_name(self) -> str:
         return self.ai.get_model_name()
+
+    def _format_shot_design_requirement(self, include_shot_design: bool) -> str:
+        if include_shot_design:
+            return (
+                "\n【画面设计要求】\n"
+                "- 参考模板库脚本的画面节奏和镜头功能。\n"
+                "- 每句话添加镜头说明，让口播文案和画面动作一一对应。\n"
+                "- 可使用格式：（镜头/画面说明）口播文案，并保留适度段落结构。"
+            )
+        return (
+            "\n【输出格式要求】\n"
+            "- 本节格式要求优先级最高。\n"
+            "- 只输出一段连续视频文案，适合直接作为口播稿使用，格式要像自然达人带货口播的一整段话。\n"
+            "- 禁止镜头说明、画面说明、分镜标题、字幕提示、口播标签和场景说明。\n"
+            "- 禁止时间码、【】段落标签、项目符号、Markdown 标题和“改写自”说明；禁止换行。\n"
+            "- 可以使用“啊、姐妹们、关键、如果”等口语连接词，让文案读起来顺滑自然。\n"
+            "- 仍参考模板库的成交逻辑和表达节奏，但不保留模板里的镜头格式。"
+        )
+
+    def _post_process_script_output(self, script: str, include_shot_design: bool) -> str:
+        text = (script or "").strip()
+        if include_shot_design:
+            return text
+
+        text = self._strip_plain_script_preamble(text)
+        text = re.sub(r"(?m)^\s*-{3,}\s*$", " ", text)
+        text = re.sub(r"(?m)^\s*\*\*[^*\n]*(?:改写自|爆款脚本|脚本)[^*\n]*\*\*\s*$", " ", text)
+        text = re.sub(r"(?m)^\s*(?:改写自|参考|爆款脚本)[^\n]{0,100}\s*$", " ", text)
+        text = re.sub(r"\*\*", "", text)
+        text = re.sub(r"【[^】]{1,40}】", " ", text)
+        text = re.sub(r"(?m)^\s*(?:\d+\s*[-~—到]\s*\d+\s*(?:s|秒)?|第?\d+\s*秒)\s*[:：、-]?\s*", " ", text)
+        text = re.sub(r"(?:前|第)\s*\d+\s*秒", " ", text)
+        text = re.sub(
+            r"[（(][^（）()]{0,120}(?:镜头|画面|分镜|字幕|口播|场景|特写|手部|俯拍|近景|远景|拍摄|对准|切换|展示)[^（）()]{0,120}[）)]",
+            " ",
+            text,
+        )
+        text = re.sub(r"(?m)^\s*[-*•·]\s*", " ", text)
+        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r"(?<=[\u4e00-\u9fff0-9，。！？、；：])\s+(?=[\u4e00-\u9fff0-9“”])", "", text)
+        text = re.sub(r"\s+([，。！？、；：,.!?;:])", r"\1", text)
+        return text.strip()
+
+    def _strip_plain_script_preamble(self, text: str) -> str:
+        """Keep only the actual spoken script when the model adds analysis or intro text."""
+        if not text:
+            return ""
+
+        start_patterns = [
+            r"以下是[^\n：:]{0,80}(?:脚本|文案)[^\n：:]*[：:]",
+            r"请看[^\n：:]{0,80}(?:脚本|文案)[^\n：:]*[：:]",
+            r"最终(?:脚本|文案)[^\n：:]*[：:]",
+        ]
+        starts = []
+        for pattern in start_patterns:
+            for match in re.finditer(pattern, text):
+                starts.append(match.end())
+
+        if starts:
+            return text[max(starts):].strip()
+
+        marker_match = re.search(r"(?m)^\s*(?:\*\*)?改写自[^\n]*\n+", text)
+        if marker_match:
+            return text[marker_match.end():].strip()
+
+        heading_match = re.search(r"(?m)^\s*【[^】]{1,40}】", text)
+        if heading_match and re.search(r"(?:好的|没问题|脚本改写专家|我选择|根据你提供|完全理解)", text[:heading_match.start()]):
+            return text[heading_match.start():].strip()
+
+        return text
+
+    async def match_shots_to_copy(self, script_content: str, product: Dict) -> str:
+        """Add camera/shot notes to existing copy without changing the spoken text."""
+        clean_copy = self._extract_spoken_copy(script_content)
+        sentences = self._split_spoken_sentences(clean_copy)
+        if not sentences:
+            return ""
+
+        lines = []
+        for index, sentence in enumerate(sentences):
+            shot = self._infer_shot_for_sentence(sentence, product, index)
+            lines.append(f"（{shot}）{sentence}")
+        return "\n".join(lines)
+
+    def _extract_spoken_copy(self, script_content: str) -> str:
+        text = self._strip_plain_script_preamble(script_content or "")
+        text = re.sub(r"(?m)^\s*-{3,}\s*$", " ", text)
+        text = re.sub(r"(?m)^\s*\*\*[^*\n]*(?:改写自|爆款脚本|脚本)[^*\n]*\*\*\s*$", " ", text)
+        text = re.sub(r"(?m)^\s*(?:改写自|参考|爆款脚本)[^\n]{0,100}\s*$", " ", text)
+        text = re.sub(r"【[^】]{1,40}】", " ", text)
+        text = re.sub(
+            r"[（(][^（）()]{0,120}(?:镜头|画面|分镜|字幕|口播|场景|特写|手部|俯拍|近景|远景|拍摄|对准|切换|展示)[^（）()]{0,120}[）)]",
+            " ",
+            text,
+        )
+        text = re.sub(r"\*\*", "", text)
+        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r"(?<=[\u4e00-\u9fff0-9，。！？、；：])\s+(?=[\u4e00-\u9fff0-9“”])", "", text)
+        return text.strip()
+
+    def _split_spoken_sentences(self, script_content: str) -> List[str]:
+        text = (script_content or "").strip()
+        if not text:
+            return []
+        sentences = re.findall(r"[^。！？!?；;]+[。！？!?；;]?", text)
+        return [sentence.strip() for sentence in sentences if sentence.strip()]
+
+    def _infer_shot_for_sentence(self, sentence: str, product: Dict, index: int) -> str:
+        product_name = product.get("name") or "目标产品"
+        category = product.get("category") or "烘焙产品"
+        base_product = f"法采{product_name}"
+
+        if index == 0:
+            return f"主播半身口播，手拿{base_product}开场，桌面摆放产品和烘焙成品，语气直接有吸引力"
+        if re.search(r"左下角|小黄车|下单|拍下|直接拍|库存|抓紧|囤|活动|福利|促销|优惠|省|元|价格|划算|便宜|成本", sentence):
+            return f"价格牌和{base_product}同框展示，手指向左下角下单位置，突出活动力度和数量感"
+        if re.search(r"蛋糕|生日|顾客|烘焙店|店里|配送|包装|纸袋|精美|卫生|干净", sentence):
+            return f"烘焙工作台或蛋糕店实拍，展示{base_product}搭配{category}成品使用的真实场景"
+        if re.search(r"切|拿|用|加|倒|搅|凝固|冷藏|制作|操作|搭配|放上|打开|装", sentence):
+            return f"手部操作近景，完整展示{base_product}的使用动作和成品状态，画面干净明亮"
+        if re.search(r"对比|廉价|传统|以前|之前|麻烦|费时|粗糙|断|不稳|不锈钢|加固", sentence):
+            return f"左右对比镜头，左侧展示普通替代品问题，右侧展示{base_product}的细节和优势"
+        if product_name in sentence or re.search(r"产品|刀叉|袋装|包装|盘|叉|粉|酱|膏|夹心|奶冻", sentence):
+            return f"产品包装和细节特写，镜头缓慢推进，清楚展示{base_product}的规格、质地或卖点"
+        return f"主播结合{base_product}进行自然口播，中景切近景，画面围绕产品和{category}使用场景"
 
     def _extract_keywords(self, product_name: str) -> list:
         """从产品名提取多个候选关键词（从长到短），用于模糊匹配 ViralScript.category"""
@@ -257,6 +383,7 @@ class ScriptGenerator:
         tone: str = "活泼",
         extra_requirements: Optional[str] = None,
         reference_scripts: Optional[List[Dict]] = None,
+        include_shot_design: bool = False,
     ) -> str:
         """
         生成短视频脚本
@@ -272,10 +399,17 @@ class ScriptGenerator:
         """
         # 如果 AI 不可用，直接用法采模板引擎
         if not self.ai.is_available:
-            return build_faicai_script(product, tone)
+            return self._post_process_script_output(
+                build_faicai_script(product, tone),
+                include_shot_design,
+            )
 
         # 构建系统提示
-        system_prompt = self._build_system_prompt(video_type, tone)
+        system_prompt = self._build_system_prompt(
+            video_type,
+            tone,
+            include_shot_design=include_shot_design,
+        )
 
         # 构建用户提示
         user_prompt = self._build_user_prompt(
@@ -285,6 +419,7 @@ class ScriptGenerator:
             tone=tone,
             extra_requirements=extra_requirements,
             reference_scripts=reference_scripts,
+            include_shot_design=include_shot_design,
         )
 
         # 调用 AI
@@ -294,14 +429,34 @@ class ScriptGenerator:
         ]
 
         response = await self.ai.chat(messages, temperature=0.85)
-        return response.strip()
+        return self._post_process_script_output(response, include_shot_design)
 
-    def _build_system_prompt(self, video_type: str, tone: str) -> str:
+    def _build_system_prompt(self, video_type: str, tone: str, include_shot_design: bool = False) -> str:
         """构建系统提示词"""
         strategy = self.TYPE_STRATEGIES.get(
             video_type,
             self.TYPE_STRATEGIES["机制类"]
         )
+        if not include_shot_design:
+            return f"""你是法采食品店的短视频带货纯口播文案专家，擅长把烘焙产品卖点写成一段自然达人口播。
+
+当前输出模式：纯口播一段话。
+
+硬性输出规则：
+- 只输出最终视频文案本身，不输出解释、标题、编号或 Markdown。
+- 只输出一段连续自然口播文案，不换行，不分段。
+- 禁止【】段落标签、时间码、分镜标题、镜头说明、画面说明、字幕提示、口播标签和场景说明。
+- 可以借鉴爆款脚本的成交逻辑、痛点推进、卖点顺序和口语节奏，但不能保留模板脚本的格式。
+- 语言要像真实带货达人顺口说出来，可以使用“啊、姐妹们、关键、如果、直接”这类自然连接词。
+- 必须包含产品卖点、价格或促销信息，并有明确左下角下单引导。
+
+当前任务：
+- 视频类型：{video_type}
+- 创作策略：{strategy}
+- 语言风格：{tone}
+
+请严格按纯口播一段话输出。"""
+
         # 随机创意变体，避免每次生成相同的开场套路
         import random
         variations = [
@@ -334,6 +489,7 @@ class ScriptGenerator:
         tone: str,
         extra_requirements: Optional[str] = None,
         reference_scripts: Optional[List[Dict]] = None,
+        include_shot_design: bool = False,
     ) -> str:
         """构建用户提示词"""
         parts = []
@@ -392,11 +548,17 @@ class ScriptGenerator:
         parts.append(f"\n【创作要求】")
         parts.append(f"1. 视频类型：{video_type}")
         parts.append(f"2. 语言风格：{tone}")
-        parts.append(f"4. 时间标记：每个段落标注时间范围（如 0-3s）")
-        parts.append(f"5. 段落标记：用【钩子】【痛点】【卖点】【价格】【CTA】等标记功能")
+        if include_shot_design:
+            parts.append(f"3. 时间标记：每个段落标注时间范围（如 0-3s）")
+            parts.append(f"4. 段落标记：用【钩子】【痛点】【卖点】【价格】【CTA】等标记功能")
+            parts.append(f"5. 开头3秒内必须有一个强钩子")
+        else:
+            parts.append(f"3. 开头要有强钩子，但不要用标题、时间码或段落标签标出来")
+            parts.append(f"4. 输出风格参考自然达人带货口播，像一口气说完的一段话，不要解释创作过程")
         parts.append(f"6. 必须包含价格信息和明确的左下角下单引导")
         parts.append(f"7. 融入具体的产品卖点，不要空泛")
-        parts.append(f"8. 开头3秒内必须有一个强钩子")
+
+        parts.append(self._format_shot_design_requirement(include_shot_design))
 
         if extra_requirements:
             parts.append(f"\n【额外要求】{extra_requirements}")
@@ -412,6 +574,7 @@ class ScriptGenerator:
         reference_scripts: List[Dict],
         tone: str = "活泼",
         extra_requirements: Optional[str] = None,
+        include_shot_design: bool = False,
     ) -> str:
         """模板库改写模式：将匹配到的高成交脚本改写为目标产品版本
 
@@ -422,7 +585,10 @@ class ScriptGenerator:
         4. Prompt 指令是"改写"而非"创作"
         """
         if not self.ai.is_available:
-            return build_faicai_script(product, tone)
+            return self._post_process_script_output(
+                build_faicai_script(product, tone),
+                include_shot_design,
+            )
 
         # 构建改写专用 Prompt
         product_name = product.get("name", "")
@@ -458,6 +624,25 @@ class ScriptGenerator:
 
         scripts_text = "\n".join(scripts_block)
 
+        if include_shot_design:
+            rewrite_rules = f"""1. 从以上 {len(selected)} 条中选出最适合改写的一条脚本进行改写
+2. **替换**所有产品名、卖点、价格、规格为目标产品内容
+3. **保持**原脚本的结构、段落划分、时间标注、情绪节奏
+4. **保持**原脚本的语气和口语化风格（感叹号、紧迫感、姐妹称呼等）
+5. 镜头指令微调适配新产品，但保留原镜头的功能时机
+6. 所有品牌名统一为"法采"
+7. CTA 保持原结构，根据新产品价格微调
+8. 必须在开头标注你改写了第几条脚本"""
+        else:
+            rewrite_rules = f"""1. 从以上 {len(selected)} 条中选出最适合改写的一条脚本进行改写
+2. **替换**所有产品名、卖点、价格、规格为目标产品内容
+3. 只借鉴原脚本的成交逻辑、痛点推进、卖点顺序和口语节奏，不保留原脚本格式
+4. 严禁输出“改写自”、爆款脚本编号、时间码、【】段落标题、镜头/画面/字幕/口播/场景说明
+5. 最终只输出一段连续口播文案，不换行，不用列表，不用 Markdown
+6. 口吻参考达人自然带货口播，多用顺滑连接词，让内容像用户给的例子一样是一整段话
+7. 所有品牌名统一为"法采"
+8. CTA 按原脚本的成交意图改写，但不要保留原脚本的段落结构"""
+
         user_prompt = f"""你是脚本改写专家。以下是 {len(selected)} 条爆款脚本库中的高成交脚本。
 
 你的任务：选择其中最合适的一条，**改写**为以下目标产品的带货脚本。
@@ -481,14 +666,9 @@ class ScriptGenerator:
 ====================================
 改写要求
 ====================================
-1. 从以上 {len(selected)} 条中选出最适合改写的一条脚本进行改写
-2. **替换**所有产品名、卖点、价格、规格为目标产品内容
-3. **保持**原脚本的结构、段落划分、时间标注、情绪节奏
-4. **保持**原脚本的语气和口语化风格（感叹号、紧迫感、姐妹称呼等）
-5. 镜头指令微调适配新产品，但保留原镜头的功能时机
-6. 所有品牌名统一为"法采"
-7. CTA 保持原结构，根据新产品价格微调
-8. 必须在开头标注你改写了第几条脚本"""
+{rewrite_rules}"""
+
+        user_prompt += self._format_shot_design_requirement(include_shot_design)
 
         if extra_requirements:
             user_prompt += f"\n\n【额外要求】{extra_requirements}"
@@ -496,12 +676,28 @@ class ScriptGenerator:
         user_prompt += "\n\n请开始改写脚本："
 
         messages = [
-            {"role": "system", "content": AIService.TEMPLATE_REWRITE_SYSTEM_PROMPT},
+            {"role": "system", "content": self._build_library_system_prompt(include_shot_design)},
             {"role": "user", "content": user_prompt},
         ]
 
         response = await self.ai.chat(messages, temperature=0.75)
-        return response.strip()
+        return self._post_process_script_output(response, include_shot_design)
+
+    def _build_library_system_prompt(self, include_shot_design: bool) -> str:
+        if include_shot_design:
+            return AIService.TEMPLATE_REWRITE_SYSTEM_PROMPT
+
+        return """你是法采食品店的高成交模板库口播改写专家，擅长把已验证的爆款结构改写成一段可直接拍摄的自然带货口播。
+
+当前输出模式：纯口播一段话。
+
+改写原则：
+1. 参考脚本只作为成交逻辑、痛点推进、卖点顺序和口语节奏的依据。
+2. 必须替换为目标产品的名称、卖点、价格、规格和法采品牌表达。
+3. 不保留参考脚本的结构化格式，不保留段落标题，不保留时间标注，不保留镜头或画面说明。
+4. 只输出一段连续自然口播文案，不换行，不用列表，不用 Markdown，不写“改写自”或脚本编号。
+5. 口吻要接近真实达人带货，一口气讲完，逻辑顺序是痛点/需求、产品解决、卖点证明、促销下单。
+6. CTA 必须有明确左下角下单引导。"""
 
 
 # 全局单例

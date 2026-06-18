@@ -15,6 +15,7 @@ class FakeTemplateLibraryGenerator:
     def __init__(self):
         self.high_only_called = False
         self.library_called = False
+        self.include_shot_design = None
 
     def get_model_name(self):
         return "fake-model"
@@ -45,6 +46,22 @@ class FakeTemplateLibraryGenerator:
 
     async def generate(self, *args, **kwargs):
         raise AssertionError("empty video type should not fall back to free generation")
+
+    async def generate_from_library(
+        self,
+        product,
+        video_type,
+        reference_scripts,
+        tone="活泼",
+        extra_requirements=None,
+        include_shot_design=None,
+    ):
+        self.library_called = True
+        self.include_shot_design = include_shot_design
+        assert video_type == "高成交模板库"
+        assert reference_scripts
+        assert all(script["is_high_conversion"] for script in reference_scripts)
+        return "根据高成交模板库生成的脚本"
 
 
 class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
@@ -77,6 +94,26 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertTrue(fake.library_called)
         self.assertEqual(response.video_type, "高成交模板库")
         self.assertIn("高成交模板库", self.db.query(scripts_router.GeneratedScript).first().video_type)
+
+
+    def test_generate_request_defaults_to_no_shot_design(self):
+        request = ScriptGenerateRequest(product_id=self.product.id)
+
+        self.assertFalse(request.include_shot_design)
+
+    def test_generate_passes_shot_design_choice_to_template_library(self):
+        fake = FakeTemplateLibraryGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(
+            product_id=self.product.id,
+            engine="template",
+            video_type=None,
+            include_shot_design=True,
+        )
+
+        asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertTrue(fake.include_shot_design)
 
 
 class ScriptGeneratorHighConversionSearchTests(unittest.TestCase):

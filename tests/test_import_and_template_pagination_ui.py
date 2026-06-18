@@ -28,11 +28,13 @@ class TemplatePaginationUiTests(unittest.TestCase):
         self.assertIn('id="pageSize"', page)
         self.assertIn('id="pageJumpInput"', page)
         self.assertIn("var currentPage=1", page)
-        self.assertIn("var pageSize=15", page)
+        self.assertIn("var pageSize=24", page)
+        self.assertIn("page='+currentPage", page)
+        self.assertIn("per_page='+pageSize", page)
         self.assertIn("function renderPagination", page)
         self.assertIn("function setPage", page)
         self.assertIn("function jumpToPage", page)
-        self.assertIn("function getPagedItems", page)
+        self.assertNotIn("function getPagedItems", page)
 
 
 if __name__ == "__main__":

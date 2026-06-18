@@ -6,7 +6,8 @@ from models import Product, ScriptTemplate, ViralScript, GeneratedScript
 from schemas import (
     ScriptGenerateRequest, ScriptGenerateResponse,
     ScriptRewriteRequest, ScriptRewriteResponse,
-    GeneratedScriptOut, ApiResponse
+    ScriptShotMatchRequest, ScriptShotMatchResponse,
+    GeneratedScriptOut, GeneratedScriptPageOut, ApiResponse
 )
 from services.script_generator import ScriptGenerator
 from services.script_rewriter import script_rewriter
@@ -107,6 +108,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             reference_scripts=reference_scripts,
             tone=request.tone,
             extra_requirements=request.extra_requirements,
+            include_shot_design=request.include_shot_design,
         )
     else:
         # DeepSeek AI 模式：全新创作，参考脚本仅作灵感
@@ -117,6 +119,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             tone=request.tone,
             extra_requirements=request.extra_requirements,
             reference_scripts=reference_scripts,
+            include_shot_design=request.include_shot_design,
         )
 
     # 保存生成记录
@@ -141,18 +144,25 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
     )
 
 
-@router.get("/history", response_model=List[GeneratedScriptOut])
+@router.get("/history", response_model=GeneratedScriptPageOut)
 def list_history(
     product_id: Optional[int] = Query(None),
+    page: int = 1,
+    per_page: int = 20,
     db: Session = Depends(get_db),
 ):
     """获取生成历史"""
-    query = db.query(GeneratedScript).order_by(GeneratedScript.created_at.desc())
+    page = max(1, int(page or 1))
+    per_page = max(1, min(int(per_page or 20), 100))
+    query = db.query(GeneratedScript)
 
     if product_id:
         query = query.filter(GeneratedScript.product_id == product_id)
 
-    records = query.limit(50).all()
+    total = query.count()
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    records = query.order_by(GeneratedScript.created_at.desc(), GeneratedScript.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
     result = []
     for r in records:
         item = GeneratedScriptOut(
@@ -168,7 +178,13 @@ def list_history(
         )
         result.append(item)
 
-    return result
+    return GeneratedScriptPageOut(
+        items=result,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+    )
 
 
 @router.get("/history/{script_id}", response_model=GeneratedScriptOut)
@@ -248,6 +264,52 @@ def toggle_high_generated(script_id: int, db: Session = Depends(get_db)):
     return ApiResponse(message=f"已{'标记为' if record.is_high_conversion else '取消'}高成交", data={"is_high": bool(record.is_high_conversion)})
 
 
+# ========== 文案配镜头 ==========
+@router.post("/match-shots", response_model=ScriptShotMatchResponse)
+async def match_script_shots(request: ScriptShotMatchRequest, db: Session = Depends(get_db)):
+    """保持现有口播文案不变，为每句话匹配拍摄镜头"""
+    product = db.query(Product).filter(Product.id == request.product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="产品不存在")
+
+    record = None
+    if request.script_id:
+        record = db.query(GeneratedScript).filter(GeneratedScript.id == request.script_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="脚本记录不存在")
+        if record.product_id and record.product_id != product.id:
+            raise HTTPException(status_code=400, detail="脚本记录与当前产品不匹配")
+
+    selling_points = [
+        {"type": sp.point_type, "content": sp.content, "priority": sp.priority}
+        for sp in sorted(product.selling_points, key=lambda x: x.priority)
+    ]
+
+    matched_script = await generator.match_shots_to_copy(
+        script_content=request.script_content,
+        product={
+            "name": product.name,
+            "category": product.category,
+            "price": product.price,
+            "original_price": product.original_price,
+            "pending_fields": product.pending_fields or [],
+            "brand": product.brand,
+            "description": product.description,
+            "selling_points": selling_points,
+        },
+    )
+
+    if record:
+        record.script_content = matched_script
+        db.commit()
+
+    return ScriptShotMatchResponse(
+        product_name=product.name,
+        original_script=request.script_content,
+        script_content=matched_script,
+    )
+
+
 # ========== 脚本改写 ==========
 @router.post("/rewrite", response_model=ScriptRewriteResponse)
 async def rewrite_script(request: ScriptRewriteRequest, db: Session = Depends(get_db)):
@@ -276,6 +338,7 @@ async def rewrite_script(request: ScriptRewriteRequest, db: Session = Depends(ge
         },
         video_type=request.video_type,
         extra_requirements=request.extra_requirements,
+        include_shot_design=request.include_shot_design,
         db=db,
     )
 

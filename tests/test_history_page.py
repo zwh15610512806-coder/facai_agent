@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from database import Base
 from models import GeneratedScript, Product
 from routers.scripts import get_history, list_history
-from schemas import GeneratedScriptOut
+from schemas import GeneratedScriptOut, GeneratedScriptPageOut
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,13 +74,37 @@ class HistoryApiTests(unittest.TestCase):
     def test_generated_script_output_exposes_high_conversion_flag(self):
         self.assertIn("is_high_conversion", GeneratedScriptOut.model_fields)
 
+    def test_generated_script_page_output_exposes_pagination_fields(self):
+        for field in ["items", "total", "page", "per_page", "total_pages"]:
+            self.assertIn(field, GeneratedScriptPageOut.model_fields)
+
+    def test_history_list_returns_paginated_records_in_desc_order(self):
+        first = self._add_history_record(is_high_conversion=0)
+        second = self._add_history_record(is_high_conversion=1)
+
+        page = list_history(product_id=None, page=1, per_page=1, db=self.db)
+
+        self.assertEqual(page.total, 2)
+        self.assertEqual(page.page, 1)
+        self.assertEqual(page.per_page, 1)
+        self.assertEqual(page.total_pages, 2)
+        self.assertEqual([item.id for item in page.items], [second.id])
+        self.assertNotEqual(page.items[0].id, first.id)
+
+    def test_history_list_empty_page_is_valid(self):
+        page = list_history(product_id=None, page=3, per_page=20, db=self.db)
+
+        self.assertEqual(page.total, 0)
+        self.assertEqual(page.total_pages, 1)
+        self.assertEqual(page.items, [])
+
     def test_history_list_returns_high_conversion_flag(self):
         self._add_history_record(is_high_conversion=1)
 
         scripts = list_history(product_id=None, db=self.db)
 
-        self.assertEqual(len(scripts), 1)
-        self.assertTrue(scripts[0].is_high_conversion)
+        self.assertEqual(len(scripts.items), 1)
+        self.assertTrue(scripts.items[0].is_high_conversion)
 
     def test_history_detail_returns_high_conversion_flag(self):
         record = self._add_history_record(is_high_conversion=0)

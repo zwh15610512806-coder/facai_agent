@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>视频脚本库 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260612">
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
@@ -111,10 +111,13 @@
   .pager-jump { width:100%; }
   .script-grid { grid-template-columns:1fr; min-height:0; }
   .mo-wide { max-width: calc(100vw - 24px); }
+  .script-detail-modal { width: 100%; max-width: calc(100vw - 24px); }
   .script-detail-shell { grid-template-columns:1fr; min-height:0; max-height:calc(100dvh - 96px); overflow-y:auto; }
   .script-preview-panel { border-right:0; border-bottom:1px solid var(--border-soft); padding:16px; }
+  .script-preview-actions .btn { flex: 1 1 auto; }
   .rewrite-product-panel { padding:16px; }
   .modal-product-toolbar { grid-template-columns:1fr; }
+  .modal-product-toolbar .btn { width: 100%; }
   .modal-product-list { grid-template-columns:1fr; max-height:none; min-height:0; overflow:visible; }
 }
 </style>
@@ -171,7 +174,7 @@
 <div id="topPagination" class="pagination"></div>
 </div>
 <div id="scriptList" class="script-grid"><div class="empty-state">加载中&hellip;</div></div>
-<div id="bottomPagination" class="pagination pagination-bottom"><div id="paginationBar" class="pagination"><button id="pagePrev" class="pager-btn" disabled>‹</button><span id="pageInfo" class="list-range">第 1 页</span><select id="pageSize" class="input" style="width:auto;font-size:13px"><option value="15">15 条/页</option><option value="30">30 条/页</option><option value="60">60 条/页</option></select><span class="pager-jump"><span>跳至</span><input id="pageJumpInput" type="number" min="1" value="1" class="input pager-input" onkeydown="if(event.key==='Enter')jumpToPage()"><span>页</span><button class="pager-btn" onclick="jumpToPage()">跳转</button></span><button id="pageNext" class="pager-btn" disabled>›</button></div></div>
+<div id="bottomPagination" class="pagination pagination-bottom"><div id="paginationBar" class="pagination"><button id="pagePrev" class="pager-btn" disabled>‹</button><span id="pageInfo" class="list-range">第 1 页</span><select id="pageSize" class="input" style="width:auto;font-size:13px"><option value="24">24 条/页</option><option value="48">48 条/页</option><option value="96">96 条/页</option></select><span class="pager-jump"><span>跳至</span><input id="pageJumpInput" type="number" min="1" value="1" class="input pager-input" onkeydown="if(event.key==='Enter')jumpToPage()"><span>页</span><button class="pager-btn" onclick="jumpToPage()">跳转</button></span><button id="pageNext" class="pager-btn" disabled>›</button></div></div>
 </section>
 </main>
 
@@ -204,14 +207,15 @@
 <!-- 上传弹窗 -->
 <div id="uploadModal" class="mo" style="display:none" onclick="if(event.target===this)closeUploadModal()"><div class="mo-box"><div class="mo-hd"><h3 style="margin:0;font-family:var(--font-serif);font-size:1.1rem" id="uploadModalTitle"></h3><button onclick="closeUploadModal()" style="background:none;border:none;font-size:22px;color:var(--text-3);cursor:pointer">&times;</button></div><div class="mo-body" id="uploadFormBody"></div></div></div>
 
+<script src="/static/js/common.js?v=20260616"></script>
 <script>
 var facaiList=[],otherList=[],src='all',cat='',type='',highOnly=false,newestFirst=true;
 var currentScript=null,currentType='',products=[],modalProduct=null;
 var modalProductCategory='';
 var selectedIds=new Set(),batchMode=false;
 var currentPage=1;
-var pageSize=15;
-var currentResults=[],resultMode='normal';
+var pageSize=24;
+var currentResults=[],resultMode='normal',listTotal=0,totalPages=1,facaiTotal=0,otherTotal=0;
 var CATS=['烘焙调色','烘焙装饰','烘焙调味','烘焙夹心','烘焙配件'];
 var TYPES=['机制类','痛点类','需求类','认知类','达人分享类','制作方便','成本低','对比类','情绪类','场景类'];
 
@@ -237,39 +241,62 @@ document.querySelectorAll('#srcTabs .fpill').forEach(function(b){b.classList.tog
 document.querySelectorAll('#catTabs .fpill').forEach(function(b){b.classList.toggle('on',(b.textContent==='全部'&&!cat)||b.textContent===cat);});
 document.querySelectorAll('#typeTabs .fpill').forEach(function(b){b.classList.toggle('on',(b.textContent==='全部'&&!type)||b.textContent===type);});
 syncHighFilter();
-renderAll();
+loadAll();
 }
 function syncHighFilter(){var box=document.getElementById('highOnlyFilter');var label=document.getElementById('highFilterLabel');if(box)box.checked=highOnly;if(label)label.classList.toggle('on',highOnly);}
-function buildListUrl(base){return highOnly?base+'?high_only=1':base;}
+function buildListUrl(base){var params='page='+currentPage+'&per_page='+pageSize;if(cat)params+='&category='+encodeURIComponent(cat);if(type)params+='&video_type='+encodeURIComponent(type);if(highOnly)params+='&high_only=1';if(!newestFirst)params+='&sort=oldest';return base+(base.indexOf('?')>=0?'&':'?')+params;}
+function buildReferenceUrl(){var params=[];if(type)params.push('video_type='+encodeURIComponent(type));if(highOnly)params.push('high_only=1');return '/api/reference/list'+(params.length?'?'+params.join('&'):'');}
 function toggleHigh(){currentPage=1;highOnly=document.getElementById('highOnlyFilter').checked;syncHighFilter();if(document.getElementById('semSearch').value.trim())doSemSearch();else loadAll();}
-function toggleSort(){currentPage=1;newestFirst=!newestFirst;document.getElementById('sortBtn').textContent=newestFirst?'最新优先':'最早优先';renderAll();}
+function toggleSort(){currentPage=1;newestFirst=!newestFirst;document.getElementById('sortBtn').textContent=newestFirst?'最新优先':'最早优先';loadAll();}
 
 async function loadAll(){
-try{var r=await fetch(buildListUrl('/api/templates/viral/list'));facaiList=await r.json();}catch(e){}
-try{var r2=await fetch(buildListUrl('/api/reference/list'));otherList=await r2.json();}catch(e){}
-document.getElementById('countHint').textContent='法采 '+facaiList.length+' 条 + 其他 '+otherList.length+' 条';
-renderAll();
+resultMode='normal';
+document.getElementById('scriptList').innerHTML='<div class="empty-state">加载中&hellip;</div>';
+try{
+ if(src!=='other'){
+  var r=await fetch(buildListUrl('/api/templates/viral/list'));
+  var data=await r.json();
+  facaiList=(data.items||data||[]).map(function(s){s._source='facai';return s;});
+  facaiTotal=data.total!=null?data.total:facaiList.length;
+  currentPage=data.page||currentPage;
+  totalPages=data.total_pages||Math.max(1,Math.ceil(facaiTotal/pageSize));
+ }else{facaiList=[];facaiTotal=0;}
+ if(src!=='facai'){
+  var r2=await fetch(buildReferenceUrl());
+  otherList=await r2.json();
+  otherList=(otherList||[]).map(function(s){s._source='other';return s;});
+  if(cat)otherList=otherList.filter(function(s){return s.category===cat;});
+  if(type)otherList=otherList.filter(function(s){return s.video_type===type;});
+  if(highOnly)otherList=otherList.filter(function(s){return s.is_high_conversion;});
+  otherList.sort(function(a,b){return newestFirst?(b.created_at||'').localeCompare(a.created_at||''):(a.created_at||'').localeCompare(b.created_at||'');});
+  otherTotal=otherList.length;
+ }else{otherList=[];otherTotal=0;}
+ document.getElementById('countHint').textContent='法采 '+facaiTotal+' 条 + 其他 '+otherTotal+' 条';
+ renderAll();
+}catch(e){
+ currentResults=[];listTotal=0;totalPages=1;renderCurrentPage();toast('加载失败','error');
+}
 }
 
 function renderAll(){
 resultMode='normal';
 var all=[];
-if(src==='all'||src==='facai'){facaiList.forEach(function(s){s._source='facai';all.push(s);});}
-if(src==='all'||src==='other'){otherList.forEach(function(s){s._source='other';all.push(s);});}
-if(cat)all=all.filter(function(s){return s.category===cat;});
-if(type)all=all.filter(function(s){return s.video_type===type;});
-if(highOnly)all=all.filter(function(s){return s.is_high_conversion;});
-if(newestFirst)all.sort(function(a,b){return(b.created_at||'').localeCompare(a.created_at||'');});
-else all.sort(function(a,b){return(a.created_at||'').localeCompare(b.created_at||'');});
+if(src==='all'||src==='facai'){facaiList.forEach(function(s){all.push(s);});}
+if(src==='all'&&currentPage===1){otherList.slice(0,pageSize).forEach(function(s){all.push(s);});}
+if(src==='other'){otherList.forEach(function(s){all.push(s);});}
 currentResults=all;
+listTotal=src==='other'?all.length:(facaiTotal+(src==='all'?otherTotal:0));
+totalPages=src==='other'?Math.max(1,Math.ceil(listTotal/pageSize)):Math.max(1,Math.ceil(listTotal/pageSize));
 renderCurrentPage();
 }
 
 function renderCurrentPage(){
 var c=document.getElementById('scriptList');
-var total=currentResults.length;
-var totalPages=Math.max(1,Math.ceil(total/pageSize));
-if(currentPage>totalPages)currentPage=totalPages;
+var total=resultMode==='normal'?listTotal:currentResults.length;
+var pages=resultMode==='normal'?totalPages:Math.max(1,Math.ceil(total/pageSize));
+var clientPaged=(resultMode==='search'||src==='other');
+if(resultMode==='normal'&&src!=='other')pages=Math.max(1,Math.ceil(total/pageSize));
+if(currentPage>pages)currentPage=pages;
 if(currentPage<1)currentPage=1;
 if(!total){
  c.innerHTML='<div class="empty-state">'+(resultMode==='search'?'无匹配结果':'暂无匹配脚本')+'</div>';
@@ -278,16 +305,11 @@ if(!total){
  return;
 }
 var start=(currentPage-1)*pageSize;
-var items=getPagedItems();
+var items=clientPaged?currentResults.slice(start,start+pageSize):currentResults;
 c.innerHTML=items.map(function(s){return buildScriptCard(s);}).join('');
 if(window.lucide)lucide.createIcons();
 updateResultMeta(start+1,Math.min(start+items.length,total),total);
 renderPagination();
-}
-
-function getPagedItems(){
-var start=(currentPage-1)*pageSize;
-return currentResults.slice(start,start+pageSize);
 }
 
 function cleanCardCategory(category){
@@ -328,40 +350,40 @@ document.getElementById('listRangeHint').textContent=total?('第 '+start+'-'+end
 }
 
 function renderPagination(){
-var total=currentResults.length;
-var totalPages=Math.max(1,Math.ceil(total/pageSize));
+var total=resultMode==='normal'?listTotal:currentResults.length;
+var pages=resultMode==='normal'?totalPages:Math.max(1,Math.ceil(total/pageSize));
 var html='';
 html+='<button class="pager-btn" '+(currentPage<=1?'disabled':'')+' onclick="setPage('+(currentPage-1)+')">‹</button>';
 var last=0;
-for(var i=1;i<=totalPages;i++){
- if(i===1||i===totalPages||Math.abs(i-currentPage)<=1){
+for(var i=1;i<=pages;i++){
+ if(i===1||i===pages||Math.abs(i-currentPage)<=1){
   if(i-last>1)html+='<span class="pager-ellipsis">...</span>';
   html+='<button class="pager-btn'+(i===currentPage?' on':'')+'" onclick="setPage('+i+')">'+i+'</button>';
   last=i;
  }
 }
-html+='<button class="pager-btn" '+(currentPage>=totalPages?'disabled':'')+' onclick="setPage('+(currentPage+1)+')">›</button>';
+html+='<button class="pager-btn" '+(currentPage>=pages?'disabled':'')+' onclick="setPage('+(currentPage+1)+')">›</button>';
 html+='<span class="list-range">每页 '+pageSize+' 条</span>';
 var bottomHtml='<div id="paginationBar" class="pagination">';
 bottomHtml+='<button id="pagePrev" class="pager-btn" '+(currentPage<=1?'disabled':'')+' onclick="setPage('+(currentPage-1)+')">‹</button>';
-bottomHtml+='<span id="pageInfo" class="list-range">第 '+currentPage+' / '+totalPages+' 页，共 '+total+' 条</span>';
-bottomHtml+='<select id="pageSize" class="input" style="width:auto;font-size:13px" onchange="changePageSize(this.value)"><option value="15" '+(pageSize===15?'selected':'')+'>15 条/页</option><option value="30" '+(pageSize===30?'selected':'')+'>30 条/页</option><option value="60" '+(pageSize===60?'selected':'')+'>60 条/页</option></select>';
-bottomHtml+='<span class="pager-jump"><span>跳至</span><input id="pageJumpInput" type="number" min="1" max="'+totalPages+'" value="'+currentPage+'" class="input pager-input" onkeydown="if(event.key===\'Enter\')jumpToPage()"><span>页</span><button class="pager-btn" onclick="jumpToPage()">跳转</button></span>';
-bottomHtml+='<button id="pageNext" class="pager-btn" '+(currentPage>=totalPages?'disabled':'')+' onclick="setPage('+(currentPage+1)+')">›</button>';
+bottomHtml+='<span id="pageInfo" class="list-range">第 '+currentPage+' / '+pages+' 页，共 '+total+' 条</span>';
+bottomHtml+='<select id="pageSize" class="input" style="width:auto;font-size:13px" onchange="changePageSize(this.value)"><option value="24" '+(pageSize===24?'selected':'')+'>24 条/页</option><option value="48" '+(pageSize===48?'selected':'')+'>48 条/页</option><option value="96" '+(pageSize===96?'selected':'')+'>96 条/页</option></select>';
+bottomHtml+='<span class="pager-jump"><span>跳至</span><input id="pageJumpInput" type="number" min="1" max="'+pages+'" value="'+currentPage+'" class="input pager-input" onkeydown="if(event.key===\'Enter\')jumpToPage()"><span>页</span><button class="pager-btn" onclick="jumpToPage()">跳转</button></span>';
+bottomHtml+='<button id="pageNext" class="pager-btn" '+(currentPage>=pages?'disabled':'')+' onclick="setPage('+(currentPage+1)+')">›</button>';
 bottomHtml+='</div>';
 document.getElementById('topPagination').innerHTML=html;
 document.getElementById('bottomPagination').innerHTML=bottomHtml;
 }
 
 function setPage(page){
-var totalPages=Math.max(1,Math.ceil(currentResults.length/pageSize));
-currentPage=Math.max(1,Math.min(page,totalPages));
-renderCurrentPage();
+var pages=resultMode==='normal'?totalPages:Math.max(1,Math.ceil(currentResults.length/pageSize));
+currentPage=Math.max(1,Math.min(page,pages));
+if(resultMode==='normal'&&src!=='other')loadAll();else renderCurrentPage();
 var board=document.querySelector('.script-board');
 if(board)window.scrollTo({top:Math.max(0,board.offsetTop-80),behavior:'smooth'});
 }
 
-function changePageSize(value){pageSize=parseInt(value,10)||15;currentPage=1;renderCurrentPage();}
+function changePageSize(value){pageSize=parseInt(value,10)||24;currentPage=1;if(resultMode==='normal'&&src!=='other')loadAll();else renderCurrentPage();}
 function jumpToPage(){var input=document.getElementById('pageJumpInput');if(!input)return;var target=parseInt(input.value,10);if(!target)return;setPage(target);}
 function changePage(page){setPage(page);}
 
@@ -427,7 +449,7 @@ function clearSemSearch(){
 currentPage=1;
 document.getElementById('semSearch').value='';
 document.getElementById('semSearchBtn').style.display='none';
-renderAll();
+loadAll();
 }
 
 loadAll();

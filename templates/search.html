@@ -4,9 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>文件检索 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260612">
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 <style>
 /* -- 检索页专用样式 -- */
 .search-hero { padding: 28px 0 0; }
@@ -200,21 +201,6 @@
 .act-btn.pri { background: var(--facai); border-color: var(--facai); color: #fff; }
 .act-btn.pri:hover { background: var(--facai-hover); }
 
-/* 分页 */
-.pagination {
-  display: flex; justify-content: center; align-items: center; gap: 4px; margin-top: 24px;
-}
-.page-btn {
-  min-width: 34px; height: 34px; padding: 0 10px; border: 1px solid var(--border);
-  border-radius: var(--r-sm); background: var(--surface); font-family: var(--font-ui);
-  font-size: 13px; cursor: pointer; transition: all var(--fast) var(--ease);
-  display: flex; align-items: center; justify-content: center; color: var(--text-2);
-}
-.page-btn:hover:not(:disabled) { border-color: var(--facai); color: var(--facai); }
-.page-btn.on { background: var(--facai); border-color: var(--facai); color: #fff; }
-.page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.page-dots { padding: 0 6px; color: var(--text-3); }
-
 /* 空状态 */
 .empty-state {
   text-align: center; padding: 60px 40px; background: var(--surface);
@@ -323,6 +309,9 @@
   .ai-banner { margin: 12px 14px 0; padding: 12px; }
   .search-main { padding: 14px; gap: 14px; }
   .filter-card { padding: 16px; }
+  .filter-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .filter-chips::-webkit-scrollbar { display: none; }
+  .fchip { flex: 0 0 auto; }
   .index-bar { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
   .index-refresh { width: 100%; margin-left: 0; }
   #totalFiles { width: 100%; margin-left: 0 !important; }
@@ -346,6 +335,69 @@
   .summary-body { padding: 16px; }
   .pagination { flex-wrap: wrap; }
 }
+
+/* 2026 search workspace refresh: align with template library layout */
+.search-page{max-width:1680px;padding:32px 32px 56px}
+.search-header{margin-bottom:18px}
+.search-title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
+.search-title-row p{max-width:620px}
+.search-command{max-width:920px;margin:0 auto 20px;padding:16px 18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--s-2)}
+.search-command .search-bar-wrap{display:flex;gap:8px;max-width:none;width:100%;margin:0;background:var(--bg);border-radius:var(--r);box-shadow:none;border:1px solid var(--border);padding:4px}
+.search-command .search-bar-btn{margin:0}
+.search-command .search-bar-btn svg,.index-refresh svg,.summary-btn svg,.act-btn svg,.clear-filters svg{width:13px;height:13px;flex:0 0 13px}
+.search-command .btn-search svg{width:15px;height:15px;flex-basis:15px}
+.search-command .ai-banner{max-width:none;margin:12px 0 0;padding:12px 14px}
+.search-main{max-width:none;margin:0;padding:0;display:grid;grid-template-columns:230px minmax(0,1fr);gap:22px;align-items:start}
+.search-sidebar{position:sticky;top:90px;flex:initial}
+.filter-card{border-radius:var(--r-lg);box-shadow:var(--s-2);padding:18px 20px}
+.search-results{min-width:0;flex:initial}
+.search-board{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--s-2);padding:18px 20px 20px;min-height:calc(100vh - 300px)}
+.search-board .index-bar{background:var(--surface-darker);border-color:var(--border-soft);margin-bottom:16px}
+.search-board-hd{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-soft)}
+.list-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.list-title h2{font-size:1.2rem;margin:0}
+.list-range{font-size:13px;color:var(--text-3)}
+.search-board-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.search-board-actions .pagination{margin:0}
+.search-board-actions #topPagination{order:1}
+.search-board-actions .summary-btn{order:2}
+.file-list{min-height:480px}
+.file-item{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:16px;padding:15px 18px}
+.file-item.folder{border-left:1px solid var(--facai-subtle);border-color:var(--facai-subtle);background:var(--facai-ghost)}
+.file-actions{align-items:center}
+.act-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px}
+.pagination{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin-top:18px}
+.pagination-bottom{justify-content:center;margin-top:18px;padding-top:16px;border-top:1px solid var(--border-soft)}
+.pager-btn{min-width:34px;height:34px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all var(--fast) var(--ease)}
+.pager-btn:hover:not(:disabled){border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.pager-btn.on{background:var(--facai);border-color:var(--facai);color:#fff}
+.pager-btn:disabled{opacity:.45;cursor:not-allowed}
+.pager-ellipsis{height:34px;display:inline-flex;align-items:center;padding:0 4px;color:var(--text-3)}
+.pager-jump{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-3)}
+.pager-input{width:64px!important;height:34px;padding:0 8px;text-align:center;font-size:13px!important}
+@media (max-width:900px){
+  .search-main{grid-template-columns:1fr;padding:0}
+  .search-sidebar{position:static;width:100%}
+}
+@media (max-width:768px){
+  .search-page{max-width:100%;padding:18px 14px calc(72px + env(safe-area-inset-bottom))}
+  .search-title-row{flex-direction:column;align-items:stretch;gap:8px}
+  .search-command{padding:12px;margin-bottom:14px;border-radius:var(--r)}
+  .search-command .search-bar-wrap{max-width:none;width:100%;flex-direction:column;gap:6px;padding:6px}
+  .search-command .search-input-main{width:100%;padding:12px 14px;font-size:16px}
+  .search-command .search-bar-btn{width:100%;justify-content:center;padding:11px 14px}
+  .search-command .ai-banner{padding:12px}
+  .search-main{gap:14px}
+  .search-board{border-radius:var(--r);padding:16px}
+  .search-board-hd{flex-direction:column;align-items:stretch;gap:10px}
+  .search-board-actions{align-items:stretch;justify-content:flex-start}
+  .search-board-actions #topPagination{width:100%;justify-content:flex-start}
+  .file-list{min-height:0}
+  .file-item{grid-template-columns:38px minmax(0,1fr);align-items:flex-start;gap:10px;padding:14px}
+  .file-actions{grid-column:1/-1;width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .pagination{justify-content:flex-start}
+  .pager-jump{width:100%}
+}
 </style>
 </head>
 <body>
@@ -357,27 +409,34 @@
 <a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link">模板库</a><a href="/app/history" class="nav-link">历史</a><a href="/app/search" class="nav-link on">检索</a>
 </div></div></nav>
 
-<!-- 搜索栏 -->
-<section class="search-hero">
-<div class="search-bar-wrap">
-  <input type="text" class="search-input-main" id="searchInput"
-         placeholder="用自然语言描述你要找的文件，如：上周的蛋糕视频" autofocus>
-  <button class="search-bar-btn btn-search" id="searchBtn">✨ AI 搜索</button>
-  <button class="search-bar-btn btn-keyword" id="keywordBtn">🔍 关键词</button>
-</div>
+<main class="page-main search-page">
+<header class="page-hd search-header">
+  <div class="search-title-row">
+    <div>
+      <h1>文件检索</h1>
+      <p>按自然语言、关键词、类型、日期快速定位共享盘文件。</p>
+    </div>
+  </div>
+</header>
+
+<section class="search-command">
+  <div class="search-bar-wrap">
+    <input type="text" class="search-input-main" id="searchInput"
+           placeholder="用自然语言描述你要找的文件，如：上周的蛋糕视频" autofocus>
+    <button class="search-bar-btn btn-search" id="searchBtn"><i data-lucide="sparkles"></i>AI 搜索</button>
+    <button class="search-bar-btn btn-keyword" id="keywordBtn"><i data-lucide="search"></i>关键词</button>
+  </div>
+  <div class="ai-banner" id="aiBanner">
+    <div class="ai-banner-icon">🤖</div>
+    <div>
+      <div class="ai-banner-summary" id="aiBannerSummary"></div>
+      <div class="ai-banner-tags" id="aiBannerTags"></div>
+    </div>
+  </div>
 </section>
 
-<!-- AI 理解 Banner -->
-<div class="ai-banner" id="aiBanner">
-  <div class="ai-banner-icon">🤖</div>
-  <div>
-    <div class="ai-banner-summary" id="aiBannerSummary"></div>
-    <div class="ai-banner-tags" id="aiBannerTags"></div>
-  </div>
-</div>
-
 <!-- 主布局 -->
-<main class="search-main">
+<div class="search-main">
   <!-- 侧边栏 -->
   <aside class="search-sidebar">
     <div class="filter-card">
@@ -409,25 +468,32 @@
         <div class="filter-label">扩展名</div>
         <input type="text" class="ext-input" id="extensionFilter" placeholder="如：pdf、xlsx、mp4">
       </div>
-      <button class="clear-filters" id="clearFiltersBtn">↺ 清除筛选</button>
+      <button class="clear-filters" id="clearFiltersBtn"><i data-lucide="rotate-ccw"></i>清除筛选</button>
     </div>
   </aside>
 
   <!-- 结果区 -->
-  <section class="search-results">
+  <section class="search-results search-board">
     <!-- 索引状态 -->
     <div class="index-bar">
       <span class="index-badge" id="indexBadge">
         <span>📡</span><span id="indexBadgeText">加载中...</span>
       </span>
       <span id="indexInfo">索引更新时间：--</span>
-      <button class="index-refresh" id="refreshIndexBtn" onclick="triggerIndex()">🔄 手动更新索引</button>
+      <button class="index-refresh" id="refreshIndexBtn" onclick="triggerIndex()"><i data-lucide="refresh-cw"></i>手动更新索引</button>
       <span style="font-size:12px;color:var(--text-3);margin-left:auto" id="totalFiles">--</span>
     </div>
 
-    <div class="results-hd">
-      <div class="results-count" id="resultsCount">找到 <strong>0</strong> 个文件</div>
-      <button class="summary-btn" id="summaryBtn" onclick="generateSummary()">🤖 AI 整理汇总</button>
+    <div class="search-board-hd">
+      <div class="list-title">
+        <h2>搜索结果</h2>
+        <div class="results-count" id="resultsCount">找到 <strong>0</strong> 个文件</div>
+        <span class="list-range" id="resultRangeHint">等待搜索</span>
+      </div>
+      <div class="search-board-actions">
+        <div id="topPagination" class="pagination"></div>
+        <button class="summary-btn" id="summaryBtn" onclick="generateSummary()"><i data-lucide="bot"></i>AI 整理汇总</button>
+      </div>
     </div>
 
     <div class="folder-crumb" id="folderBreadcrumb">
@@ -447,8 +513,9 @@
       </div>
     </div>
 
-    <div class="pagination" id="pagination"></div>
+    <div class="pagination pagination-bottom" id="bottomPagination"></div>
   </section>
+</div>
 </main>
 
 <!-- 预览模态 -->
@@ -481,9 +548,10 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<script src="/static/js/common.js?v=20260616"></script>
 <script>
 // ====== State ======
-let currentPage = 1, totalPages = 1, aiSearchQuery = '';
+let currentPage = 1, totalPages = 1, pageSize = 15, totalResults = 0, aiSearchQuery = '';
 let currentFilters = { q:'', type:'', ext:'', date_from:'', date_to:'', folder:'' };
 let _prevFilters = null, _prevAiQuery = '', _prevPage = 1;
 
@@ -498,6 +566,7 @@ function toast(msg, ok) {
 }
 function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
 function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
+function renderIcons(){ if(window.lucide) lucide.createIcons(); }
 
 // ====== Index ======
 async function fetchIndexStatus() {
@@ -510,12 +579,13 @@ async function fetchIndexStatus() {
         $('indexInfo').textContent = d.message || '正在更新文件索引';
         $('indexBadge').classList.add('updating');
         $('refreshIndexBtn').disabled = true;
-        $('refreshIndexBtn').textContent = '⏳ 索引中...';
+        $('refreshIndexBtn').innerHTML = '<i data-lucide="loader-circle"></i>索引中...';
         $('totalFiles').textContent = d.total_files ? '已发现 ' + d.total_files.toLocaleString() + ' 文件' : '--';
+        renderIcons();
         return;
       }
       $('refreshIndexBtn').disabled = false;
-      $('refreshIndexBtn').textContent = '🔄 手动更新索引';
+      $('refreshIndexBtn').innerHTML = '<i data-lucide="refresh-cw"></i>手动更新索引';
       const last = d.last_indexed;
       if (last) {
         const diff = (Date.now() - new Date(last).getTime()) / 36e5;
@@ -537,15 +607,15 @@ async function fetchIndexStatus() {
 
 async function triggerIndex() {
   const btn = $('refreshIndexBtn');
-  btn.disabled = true; btn.textContent = '⏳ 索引中...';
+  btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-circle"></i>索引中...'; renderIcons();
   $('indexBadge').classList.add('updating');
   $('indexBadgeText').textContent = '正在更新...';
   try {
     const r = await fetch('/api/search-proxy/index/start', { method: 'POST' });
     const d = await r.json();
     toast(d.success ? '索引已在后台启动' : (d.message || '启动失败'), d.success);
-    setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 手动更新索引'; fetchIndexStatus(); }, 3000);
-  } catch(e) { toast('网络错误', false); btn.disabled = false; btn.textContent = '🔄 手动更新索引'; }
+    setTimeout(() => { btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw"></i>手动更新索引'; renderIcons(); fetchIndexStatus(); }, 3000);
+  } catch(e) { toast('网络错误', false); btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw"></i>手动更新索引'; renderIcons(); }
 }
 
 fetchIndexStatus();
@@ -595,42 +665,82 @@ function renderFiles(files) {
       </div>
       <div class="file-actions">
         ${isF
-          ? `<button class="act-btn pri" onclick="event.stopPropagation();filterByFolder('${ep}')">📂 查看</button>`
-          : `<button class="act-btn pri" onclick="event.stopPropagation();previewFile(${f.id},'${f.file_type}','${f.file_extension||''}')">👁 预览</button>
-             <button class="act-btn" onclick="event.stopPropagation();downloadFile(${f.id})">⬇ 下载</button>`}
+          ? `<button class="act-btn pri" onclick="event.stopPropagation();filterByFolder('${ep}')"><i data-lucide="folder-open"></i>查看</button>`
+          : `<button class="act-btn pri" onclick="event.stopPropagation();previewFile(${f.id},'${escAttr(f.file_type)}','${escAttr(f.file_extension||'')}')"><i data-lucide="eye"></i>预览</button>
+             <button class="act-btn" onclick="event.stopPropagation();downloadFile(${f.id})"><i data-lucide="download"></i>下载</button>`}
       </div>
     </div>`;
   }).join('');
   $('summaryBtn').style.display = files.length > 0 ? 'flex' : 'none';
+  renderIcons();
 }
 
 function renderPagination() {
-  if (totalPages <= 1) { $('pagination').innerHTML = ''; return; }
-  let h = `<button class="page-btn"${currentPage === 1 ? ' disabled' : ''} onclick="goToPage(${currentPage - 1})">‹</button>`;
-  const mv = 5, s = Math.max(1, currentPage - Math.floor(mv / 2));
-  let e = Math.min(totalPages, s + mv - 1);
-  if (e - s + 1 < mv) e = s + mv - 1;
-  if (s > 1) { h += `<button class="page-btn" onclick="goToPage(1)">1</button>`; if (s > 2) h += '<span class="page-dots">...</span>'; }
-  for (let i = Math.max(2, s); i <= Math.min(totalPages - 1, e); i++) h += `<button class="page-btn${i === currentPage ? ' on' : ''}" onclick="goToPage(${i})">${i}</button>`;
-  if (e < totalPages) {
-    if (e < totalPages - 1) h += '<span class="page-dots">...</span>';
-    h += `<button class="page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+  if (!totalResults) {
+    $('topPagination').innerHTML = '';
+    $('bottomPagination').innerHTML = '';
+    updateResultMeta(0, 0, 0);
+    return;
   }
-  h += `<button class="page-btn"${currentPage === totalPages ? ' disabled' : ''} onclick="goToPage(${currentPage + 1})">›</button>`;
-  $('pagination').innerHTML = h;
+  totalPages = Math.max(1, totalPages);
+  const start = (currentPage - 1) * pageSize + 1;
+  const end = Math.min(totalResults, currentPage * pageSize);
+  updateResultMeta(start, end, totalResults);
+
+  let top = '';
+  top += `<button class="pager-btn"${currentPage <= 1 ? ' disabled' : ''} onclick="goToPage(${currentPage - 1})">‹</button>`;
+  let last = 0;
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1) {
+      if (i - last > 1) top += '<span class="pager-ellipsis">...</span>';
+      top += `<button class="pager-btn${i === currentPage ? ' on' : ''}" onclick="goToPage(${i})">${i}</button>`;
+      last = i;
+    }
+  }
+  top += `<button class="pager-btn"${currentPage >= totalPages ? ' disabled' : ''} onclick="goToPage(${currentPage + 1})">›</button>`;
+  top += `<span class="list-range">每页 ${pageSize} 条</span>`;
+
+  let bottom = '<div class="pagination">';
+  bottom += `<button class="pager-btn"${currentPage <= 1 ? ' disabled' : ''} onclick="goToPage(${currentPage - 1})">‹</button>`;
+  bottom += `<span class="list-range">第 ${currentPage} / ${totalPages} 页，共 ${totalResults.toLocaleString()} 条</span>`;
+  bottom += `<select id="pageSize" class="input" style="width:auto;font-size:13px" onchange="changePageSize(this.value)"><option value="15" ${pageSize===15?'selected':''}>15 条/页</option><option value="30" ${pageSize===30?'selected':''}>30 条/页</option><option value="60" ${pageSize===60?'selected':''}>60 条/页</option></select>`;
+  bottom += `<span class="pager-jump"><span>跳至</span><input id="pageJumpInput" type="number" min="1" max="${totalPages}" value="${currentPage}" class="input pager-input" onkeydown="if(event.key==='Enter')jumpToPage()"><span>页</span><button class="pager-btn" onclick="jumpToPage()">跳转</button></span>`;
+  bottom += `<button class="pager-btn"${currentPage >= totalPages ? ' disabled' : ''} onclick="goToPage(${currentPage + 1})">›</button>`;
+  bottom += '</div>';
+
+  $('topPagination').innerHTML = top;
+  $('bottomPagination').innerHTML = bottom;
+}
+
+function updateResultMeta(start, end, total) {
+  $('resultRangeHint').textContent = total ? `第 ${start}-${end} 条 / 共 ${total.toLocaleString()} 条` : '当前没有结果';
+}
+
+function changePageSize(value) {
+  pageSize = parseInt(value, 10) || 15;
+  currentPage = 1;
+  aiSearchQuery ? aiSearchPage(1) : searchFiles();
+}
+
+function jumpToPage() {
+  const input = $('pageJumpInput');
+  if (!input) return;
+  const target = parseInt(input.value, 10);
+  if (!target) return;
+  goToPage(target);
 }
 
 // ====== Search ======
 async function searchFiles() {
   aiSearchQuery = ''; $('aiBanner').classList.remove('show');
-  const p = new URLSearchParams({ page: currentPage });
+  const p = new URLSearchParams({ page: currentPage, per_page: pageSize });
   for (const [k, v] of Object.entries(currentFilters)) { if (v) p.set(k, v); }
   $('fileList').innerHTML = '<div class="loading-wrap"><div class="spin"></div></div>';
   try {
     const r = await fetch('/api/search-proxy/search?' + p);
     const d = await r.json();
     if (d.success) {
-      renderFiles(d.files); totalPages = d.total_pages;
+      renderFiles(d.files); totalPages = d.total_pages; totalResults = d.total || 0;
       $('resultsCount').innerHTML = `找到 <strong>${d.total}</strong> 个文件`;
       renderPagination();
     } else { toast(d.message || '搜索失败', false); }
@@ -640,13 +750,13 @@ async function searchFiles() {
 async function aiSearch() {
   const q = $('searchInput').value.trim();
   if (!q) { toast('请先输入搜索内容', false); return; }
-  $('searchBtn').disabled = true; $('searchBtn').textContent = '⏳ 理解中...';
+  $('searchBtn').disabled = true; $('searchBtn').innerHTML = '<i data-lucide="loader-circle"></i>理解中...'; renderIcons();
   $('aiBanner').classList.remove('show');
   $('fileList').innerHTML = '<div class="loading-wrap"><div class="spin"></div></div>';
   try {
     const r = await fetch('/api/search-proxy/ai-search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: q, page: 1, per_page: 20 })
+      body: JSON.stringify({ query: q, page: 1, per_page: pageSize })
     });
     const d = await r.json();
     if (d.success) {
@@ -654,17 +764,17 @@ async function aiSearch() {
       const ai = d.ai_understanding || {};
       $('aiBannerSummary').textContent = ai.summary || '搜索: ' + q;
       const tags = [];
-      if (ai.keywords) ai.keywords.forEach(k => tags.push('<span class="ai-tag">🔑 ' + k + '</span>'));
-      if (ai.file_type) tags.push('<span class="ai-tag">📂 ' + ai.file_type + '</span>');
-      if (ai.extension) tags.push('<span class="ai-tag">📄 .' + ai.extension + '</span>');
-      if (ai.date_from) tags.push('<span class="ai-tag">📅 ' + ai.date_from + ' ~ ' + (ai.date_to || '今天') + '</span>');
+      if (ai.keywords) tags.push('<span class="ai-tag">🔑 ' + escHtml(ai.keywords.join('、')) + '</span>');
+      if (ai.file_type) tags.push('<span class="ai-tag">📂 ' + escHtml(ai.file_type) + '</span>');
+      if (ai.extension) tags.push('<span class="ai-tag">📄 .' + escHtml(ai.extension) + '</span>');
+      if (ai.date_from) tags.push('<span class="ai-tag">📅 ' + escHtml(ai.date_from) + ' ~ ' + escHtml(ai.date_to || '今天') + '</span>');
       $('aiBannerTags').innerHTML = tags.join(''); $('aiBanner').classList.add('show');
-      renderFiles(d.files); totalPages = d.total_pages;
+      renderFiles(d.files); totalPages = d.total_pages; totalResults = d.total || 0;
       $('resultsCount').innerHTML = 'AI 找到 <strong>' + d.total + '</strong> 个匹配文件';
       renderPagination();
     } else { toast(d.message || 'AI 搜索失败', false); }
   } catch(e) { toast('网络错误', false); }
-  finally { $('searchBtn').disabled = false; $('searchBtn').textContent = '✨ AI 搜索'; }
+  finally { $('searchBtn').disabled = false; $('searchBtn').innerHTML = '<i data-lucide="sparkles"></i>AI 搜索'; renderIcons(); }
 }
 
 async function aiSearchPage(page) {
@@ -672,19 +782,19 @@ async function aiSearchPage(page) {
   try {
     const r = await fetch('/api/search-proxy/ai-search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: aiSearchQuery, page, per_page: 20 })
+      body: JSON.stringify({ query: aiSearchQuery, page, per_page: pageSize })
     });
     const d = await r.json();
     if (d.success) {
       const ai = d.ai_understanding || {};
       $('aiBannerSummary').textContent = ai.summary || '搜索: ' + aiSearchQuery;
       const tags = [];
-      if (ai.keywords) ai.keywords.forEach(k => tags.push('<span class="ai-tag">🔑 ' + k + '</span>'));
-      if (ai.file_type) tags.push('<span class="ai-tag">📂 ' + ai.file_type + '</span>');
-      if (ai.extension) tags.push('<span class="ai-tag">📄 .' + ai.extension + '</span>');
-      if (ai.date_from) tags.push('<span class="ai-tag">📅 ' + ai.date_from + ' ~ ' + (ai.date_to || '今天') + '</span>');
+      if (ai.keywords) tags.push('<span class="ai-tag">🔑 ' + escHtml(ai.keywords.join('、')) + '</span>');
+      if (ai.file_type) tags.push('<span class="ai-tag">📂 ' + escHtml(ai.file_type) + '</span>');
+      if (ai.extension) tags.push('<span class="ai-tag">📄 .' + escHtml(ai.extension) + '</span>');
+      if (ai.date_from) tags.push('<span class="ai-tag">📅 ' + escHtml(ai.date_from) + ' ~ ' + escHtml(ai.date_to || '今天') + '</span>');
       $('aiBannerTags').innerHTML = tags.join(''); $('aiBanner').classList.add('show');
-      renderFiles(d.files); totalPages = d.total_pages;
+      renderFiles(d.files); totalPages = d.total_pages; totalResults = d.total || 0;
       $('resultsCount').innerHTML = 'AI 找到 <strong>' + d.total + '</strong> 个匹配文件';
       renderPagination();
     }
@@ -695,6 +805,8 @@ function goToPage(p) {
   if (p < 1 || p > totalPages) return;
   currentPage = p;
   aiSearchQuery ? aiSearchPage(p) : searchFiles();
+  const board = document.querySelector('.search-board');
+  if (board) window.scrollTo({ top: Math.max(0, board.offsetTop - 84), behavior: 'smooth' });
 }
 
 // ====== Folder nav ======
@@ -720,7 +832,7 @@ function closeFolderView() {
   _prevFilters = null;
   if (aiSearchQuery) aiSearchPage(currentPage);
   else if (currentFilters.q || currentFilters.type || currentFilters.ext || currentFilters.date_from || currentFilters.date_to) searchFiles();
-  else { $('fileList').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">开始搜索文件</div><div class="empty-text">在搜索框中输入关键词，即可查找局域网内的文件</div></div>'; $('resultsCount').innerHTML = '找到 <strong>0</strong> 个文件'; $('pagination').innerHTML = ''; $('summaryBtn').style.display = 'none'; }
+  else { $('fileList').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">开始搜索文件</div><div class="empty-text">在搜索框中输入关键词，即可查找局域网内的文件</div></div>'; $('resultsCount').innerHTML = '找到 <strong>0</strong> 个文件'; totalResults = 0; renderPagination(); $('summaryBtn').style.display = 'none'; }
 }
 
 // ====== Preview ======
@@ -736,8 +848,9 @@ async function previewFile(id, ft, ext) {
     else if (ft === 'video') $('modalBody').innerHTML = '<video class="vid-preview" controls><source src="' + pu + '" type="video/mp4"></video>';
     else if (ft === 'audio') $('modalBody').innerHTML = '<audio controls style="width:100%;margin:20px"><source src="' + pu + '" type="audio/mpeg"></audio>';
     else if (ft === 'document' && ext === 'pdf') $('modalBody').innerHTML = '<iframe src="' + pu + '" class="pdf-preview"></iframe>';
-    else $('modalBody').innerHTML = '<div style="text-align:center;padding:40px"><p style="margin-bottom:12px;color:var(--text-2)">该文件类型不支持在线预览</p><button class="act-btn pri" onclick="downloadFile(' + id + ')">⬇ 下载文件</button></div>';
+    else $('modalBody').innerHTML = '<div style="text-align:center;padding:40px"><p style="margin-bottom:12px;color:var(--text-2)">该文件类型不支持在线预览</p><button class="act-btn pri" onclick="downloadFile(' + id + ')"><i data-lucide="download"></i>下载文件</button></div>';
     $('previewModal').classList.add('show');
+    renderIcons();
   } catch(e) { toast('预览失败', false); }
 }
 
@@ -746,7 +859,7 @@ function downloadFile(id) { window.open('/api/search-proxy/files/' + id + '/down
 // ====== Summary ======
 async function generateSummary() {
   const btn = $('summaryBtn');
-  btn.disabled = true; btn.innerHTML = '⏳ 正在整理...';
+  btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-circle"></i>正在整理...'; renderIcons();
   $('summaryModal').classList.add('show');
   $('summaryBody').innerHTML = '<div class="loading-wrap"><div class="spin"></div><p style="margin-top:8px;color:var(--text-3)">AI 正在分析搜索结果...</p></div>';
   try {
@@ -755,10 +868,10 @@ async function generateSummary() {
       body: JSON.stringify({ query: currentFilters.q, file_type: currentFilters.type, extension: currentFilters.ext, date_from: currentFilters.date_from, date_to: currentFilters.date_to })
     });
     const d = await r.json();
-    if (d.success) $('summaryBody').innerHTML = simpleMD(d.summary);
-    else $('summaryBody').innerHTML = '<div class="empty-state"><div class="empty-title">' + (d.message || '生成失败') + '</div></div>';
+    if (d.success) $('summaryBody').innerHTML = simpleMD(escHtml(d.summary));
+    else $('summaryBody').innerHTML = '<div class="empty-state"><div class="empty-title">' + escHtml(d.message||'生成失败') + '</div></div>';
   } catch(e) { $('summaryBody').innerHTML = '<div class="empty-state"><div class="empty-title">网络错误</div></div>'; }
-  finally { btn.disabled = false; btn.textContent = '🤖 AI 整理汇总'; }
+  finally { btn.disabled = false; btn.innerHTML = '<i data-lucide="bot"></i>AI 整理汇总'; renderIcons(); }
 }
 
 function closeSummary() { $('summaryModal').classList.remove('show'); }
@@ -821,11 +934,12 @@ $('clearFiltersBtn').addEventListener('click', () => {
   currentPage = 1;
   $('fileList').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">开始搜索文件</div><div class="empty-text">在搜索框中输入关键词，即可查找局域网内的文件</div></div>';
   $('resultsCount').innerHTML = '找到 <strong>0</strong> 个文件';
-  $('pagination').innerHTML = ''; $('summaryBtn').style.display = 'none';
+  totalResults = 0; renderPagination(); $('summaryBtn').style.display = 'none';
 });
 
 // 摘要模态背景点击关闭
 $('summaryModal').addEventListener('click', e => { if (e.target === $('summaryModal')) closeSummary(); });
+document.addEventListener('DOMContentLoaded', renderIcons);
 </script>
 
 </body>

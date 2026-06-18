@@ -1,11 +1,12 @@
 """脚本模板 & 爆款脚本 API"""
 from fastapi import APIRouter, Depends, HTTPException, Query, Form, UploadFile, File
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from database import get_db
 from models import ScriptTemplate, ViralScript
 from schemas import (
     ScriptTemplateCreate, ScriptTemplateOut,
-    ViralScriptCreate, ViralScriptOut, ApiResponse
+    ViralScriptCreate, ViralScriptOut, ViralScriptPageOut, ApiResponse
 )
 from typing import List, Optional
 import re
@@ -139,22 +140,49 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
 
 
 # ========== 爆款脚本库 ==========
-@router.get("/viral/list", response_model=List[ViralScriptOut])
+@router.get("/viral/list", response_model=ViralScriptPageOut)
 def list_viral_scripts(
     category: Optional[str] = Query(None, description="品类筛选"),
     video_type: Optional[str] = Query(None, description="视频类型筛选"),
+    q: Optional[str] = None,
+    page: int = 1,
+    per_page: int = 24,
+    sort: str = "desc",
     high_only: bool = Query(False, description="仅返回高成交脚本"),
     db: Session = Depends(get_db),
 ):
     """获取爆款脚本列表"""
+    page = max(1, int(page or 1))
+    per_page = max(1, min(int(per_page or 24), 200))
     query = db.query(ViralScript)
     if category:
         query = query.filter(ViralScript.category == category)
     if video_type:
         query = query.filter(ViralScript.video_type == video_type)
+    if q:
+        needle = f"%{q.strip()}%"
+        if needle != "%%":
+            query = query.filter(or_(
+                ViralScript.title.ilike(needle),
+                ViralScript.script_content.ilike(needle),
+                ViralScript.tags.ilike(needle),
+                ViralScript.category.ilike(needle),
+                ViralScript.video_type.ilike(needle),
+            ))
     if high_only:
         query = query.filter(ViralScript.is_high_conversion == 1)
-    return query.order_by(ViralScript.created_at.desc()).all()
+    total = query.count()
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    order_by = (ViralScript.created_at.asc(), ViralScript.id.asc()) if sort == "oldest" else (ViralScript.created_at.desc(), ViralScript.id.desc())
+    scripts = query.order_by(*order_by).offset((page - 1) * per_page).limit(per_page).all()
+    return ViralScriptPageOut(
+        items=[ViralScriptOut.model_validate(script) for script in scripts],
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+    )
 
 
 # ========== RAG: 语义搜索 + 索引管理 ==========

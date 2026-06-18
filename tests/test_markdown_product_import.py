@@ -208,6 +208,16 @@ class MarkdownProductImportUiTests(unittest.TestCase):
         self.assertIn("/api/import/csv", page)
         self.assertIn("/api/import/excel", page)
 
+    def test_import_page_renders_detailed_product_import_results(self):
+        page = (ROOT / "templates" / "import.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("function renderProductImportResult", page)
+        self.assertIn("renderResultList('products'", page)
+        self.assertIn("renderResultList('warnings'", page)
+        self.assertIn("renderResultList('errors'", page)
+        self.assertIn("result-detail-list", page)
+        self.assertIn("escHtml", page)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>生成脚本库 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260612">
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
@@ -19,6 +19,13 @@
   outline: 2px solid var(--facai-subtle);
   outline-offset: 2px;
 }
+.history-pagination{display:flex;justify-content:center;margin-top:18px}
+.history-pagination .pagination{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
+.pager-btn{min-width:34px;height:34px;padding:0 10px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface);color:var(--text-2);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer}
+.pager-btn:hover:not(:disabled){border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.pager-btn:disabled{opacity:.45;cursor:not-allowed}
+.pager-jump{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-3)}
+.pager-input{width:64px!important;height:34px;padding:0 8px;text-align:center;font-size:13px!important}
 @media (max-width: 768px) {
   #historyList .card > div:first-child { flex-direction: column; gap: 8px; }
   #historyList .card > div:first-child > span { align-self: flex-start; }
@@ -44,17 +51,19 @@
 </div></header>
 
 <div id="historyList"><div class="empty">加载中&hellip;</div></div>
+<div id="historyPagination" class="history-pagination"></div>
 </main>
 
+<script src="/static/js/common.js?v=20260616"></script>
 <script>
-var scripts=[];
+var scripts=[],currentPage=1,pageSize=20,totalRecords=0,totalPages=1;
 var expandedScripts={};
 function toast(msg,type){var e=document.createElement('div');e.className='toast toast-'+(type==='success'?'ok':'err');e.textContent=msg;document.body.appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(function(){e.remove()},300)},2000);}
 function escHtml(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
 function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
 function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
 
-async function loadHistory(){try{var r=await fetch('/api/scripts/history');scripts=await r.json();}catch(e){}document.getElementById('countHint').textContent='共 '+scripts.length+' 条记录';renderList();}
+async function loadHistory(){try{var r=await fetch('/api/scripts/history?page='+currentPage+'&per_page='+pageSize);var d=await r.json();scripts=d.items||d||[];totalRecords=d.total!=null?d.total:scripts.length;totalPages=d.total_pages||Math.max(1,Math.ceil(totalRecords/pageSize));currentPage=d.page||currentPage;}catch(e){scripts=[];totalRecords=0;totalPages=1;}document.getElementById('countHint').textContent='共 '+totalRecords+' 条记录';renderList();renderHistoryPagination();}
 
 function renderList(){
 var c=document.getElementById('historyList');
@@ -91,6 +100,10 @@ async function copyScript(id){var s=scripts.find(function(x){return String(x.id)
 async function saveToLibrary(id){var r=await fetch('/api/scripts/history/'+id+'/save-to-library',{method:'POST'});if(r.ok)toast('已保存到模板库','success');else toast('保存失败','error');}
 async function toggleHigh(id){await fetch('/api/scripts/history/'+id+'/toggle-high',{method:'POST'});loadHistory();}
 async function deleteScript(id){if(!confirm('确定删除？'))return;var r=await fetch('/api/scripts/history/'+id,{method:'DELETE'});if(r.ok){toast('已删除','success');loadHistory();}else toast('删除失败','error');}
+function renderHistoryPagination(){var box=document.getElementById('historyPagination');if(!box)return;box.innerHTML='<div class="pagination">'+FacaiUI.renderPager({page:currentPage,totalPages:totalPages,total:totalRecords,pageSize:pageSize,sizes:[20,40,80],setPage:'setPage',changePageSize:'changePageSize',jumpToPage:'jumpToPage'})+'</div>';}
+function setPage(page){currentPage=Math.max(1,Math.min(page,totalPages));loadHistory();}
+function changePageSize(value){pageSize=parseInt(value,10)||20;currentPage=1;loadHistory();}
+function jumpToPage(){var input=document.getElementById('pageJumpInput');if(!input)return;var target=parseInt(input.value,10);if(target)setPage(target);}
 
 loadHistory();
 document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});

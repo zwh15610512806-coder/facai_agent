@@ -20,25 +20,27 @@ class TemplatesPageTests(unittest.TestCase):
 
     def test_script_list_is_paginated(self):
         self.assertIn("var currentPage=1", self.page)
-        self.assertIn("var pageSize=15", self.page)
+        self.assertIn("var pageSize=24", self.page)
         self.assertIn("var currentResults=[]", self.page)
         self.assertIn('id="topPagination"', self.page)
         self.assertIn('id="bottomPagination"', self.page)
         self.assertIn("function renderPagination", self.page)
         self.assertIn("function changePage", self.page)
         self.assertIn("function renderCurrentPage", self.page)
+        self.assertIn("fetch(buildListUrl('/api/templates/viral/list'))", self.page)
+        self.assertIn("page='+currentPage", self.page)
+        self.assertIn("per_page='+pageSize", self.page)
 
         render_all = re.search(r"function renderAll\(\)\{(?P<body>.*?)\n\}", self.page, flags=re.S)
         self.assertIsNotNone(render_all)
-        self.assertIn("currentResults=all", render_all.group("body"))
         self.assertIn("renderCurrentPage()", render_all.group("body"))
 
     def test_pagination_uses_requested_page_sizes_and_page_jump(self):
-        self.assertIn('<option value="15">15 条/页</option>', self.page)
+        self.assertIn('<option value="24">24 条/页</option>', self.page)
         self.assertNotIn('<option value="16">16 条/页</option>', self.page)
-        self.assertIn('>15 条/页</option>', self.page)
-        self.assertIn('>30 条/页</option>', self.page)
-        self.assertIn('>60 条/页</option>', self.page)
+        self.assertIn('>24 条/页</option>', self.page)
+        self.assertIn('>48 条/页</option>', self.page)
+        self.assertIn('>96 条/页</option>', self.page)
         self.assertNotIn('>32 条/页</option>', self.page)
         self.assertNotIn('>64 条/页</option>', self.page)
         self.assertIn('id="pageJumpInput"', self.page)

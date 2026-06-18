@@ -3,13 +3,18 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>数据导入 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260612">
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 <style>
 .import-main{max-width:1680px}
 .import-workspace{display:grid;grid-template-columns:repeat(3,minmax(320px, 1fr));gap:22px;align-items:start}
+.result-card{padding:12px 16px;background:var(--facai-soft);border-radius:var(--r);font-size:13px;color:var(--facai)}
+.result-card.error{background:var(--danger-soft);color:var(--danger)}
+.result-detail-list{margin-top:10px;display:grid;gap:6px;color:var(--text-2)}
+.result-detail-list h4{margin:0;font-size:12px;color:var(--text-3)}
+.result-detail-list ul{margin:0;padding-left:18px;display:grid;gap:4px}
 @media (max-width: 768px) {
   main.page-main > div, .import-workspace { grid-template-columns: 1fr !important; gap: 14px !important; }
   main.page-main > div .card:nth-child(2) > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
@@ -75,8 +80,28 @@
 </div>
 </main>
 
+<script src="/static/js/common.js?v=20260616"></script>
 <script>
 function toast(msg,type){var e=document.createElement('div');e.className='toast toast-'+(type==='success'?'ok':'err');e.textContent=(type==='success'?'OK ':'!! ')+msg;document.body.appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(function(){e.remove()},300)},2000);}
+var escHtml=FacaiUI.escHtml;
+
+function renderResultList(key,title,items,formatter){
+ if(!items||!items.length)return '';
+ return '<div class="result-detail-list result-'+key+'"><h4>'+escHtml(title)+'（'+items.length+'）</h4><ul>'+items.map(function(item){return '<li>'+escHtml(formatter?formatter(item):item)+'</li>';}).join('')+'</ul></div>';
+}
+
+function renderProductImportResult(d,type){
+ d=d||{};
+ var summary=type==='markdown'
+  ? '总计 '+(d.total||0)+'，新增 '+(d.created||0)+'，更新 '+(d.updated||0)+'，跳过 '+(d.skipped||0)
+  : '总计 '+(d.total||0)+'，成功 '+(d.success||0)+'，跳过 '+(d.skipped||0);
+ var html='<div class="result-card'+((d.errors&&d.errors.length)?' error':'')+'"><strong>'+escHtml(summary)+'</strong>';
+ html+=renderResultList('products','产品明细',d.products||[],function(p){return (p.name||p.product_name||'未命名产品')+' - '+(p.action||p.status||'已处理');});
+ html+=renderResultList('warnings','待确认',d.warnings||[]);
+ html+=renderResultList('errors','错误',d.errors||[]);
+ html+='</div>';
+ document.getElementById('productResult').innerHTML=html;
+}
 
 var dz=document.getElementById('productDrop');dz.addEventListener('click',function(){document.getElementById('productFile').click();});
 dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.borderColor='var(--facai)';dz.style.background='var(--facai-ghost)';});
@@ -93,8 +118,8 @@ document.getElementById('txtScriptFiles').addEventListener('change',function(e){
 
 function isMarkdownProductFile(file){var name=(file&&file.name||'').toLowerCase();return name.endsWith('.md')||name.endsWith('.markdown');}
 async function uploadProductFiles(files){var list=Array.prototype.slice.call(files||[]);if(!list.length)return;var markdown=list.filter(isMarkdownProductFile);if(markdown.length){if(markdown.length!==list.length)return toast('Markdown 请单独批量上传','error');return uploadMarkdownProductFiles(markdown);}if(list.length>1)return toast('CSV/Excel 一次只能上传 1 个文件','error');return uploadProductFile(list[0]);}
-async function uploadProductFile(file){if(isMarkdownProductFile(file))return uploadMarkdownProductFiles([file]);var p=document.getElementById('productProgress');p.style.display='';p.textContent='导入中&hellip;';var fd=new FormData();fd.append('file',file);var name=file.name.toLowerCase();var url=(name.endsWith('.xlsx')||name.endsWith('.xls'))?'/api/import/excel':'/api/import/csv';try{var r=await fetch(url,{method:'POST',body:fd});var d=await r.json();if(r.ok){toast('导入成功','success');var msg='总计 '+(d.total||0)+'，成功 '+(d.success||0)+'，跳过 '+(d.skipped||0);if(d.errors&&d.errors.length)msg+='，错误 '+d.errors.length;document.getElementById('productResult').innerHTML='<div style="padding:12px 16px;background:var(--facai-soft);border-radius:var(--r);font-size:13px;color:var(--facai)">'+msg+'</div>';}else toast('失败','error');}catch(e){toast('失败','error');}p.style.display='none';}
-async function uploadMarkdownProductFiles(files){var p=document.getElementById('productProgress');p.style.display='';p.textContent='同步 Markdown 产品中&hellip;';var fd=new FormData();files.forEach(function(file){fd.append('files',file);});try{var r=await fetch('/api/import/markdown',{method:'POST',body:fd});var d=await r.json();if(r.ok){toast('同步完成','success');var msg='总计 '+(d.total||files.length)+'，新增 '+(d.created||0)+'，更新 '+(d.updated||0)+'，跳过 '+(d.skipped||0);if(d.warnings&&d.warnings.length)msg+='，待更新 '+d.warnings.length;if(d.errors&&d.errors.length)msg+='，错误 '+d.errors.length;document.getElementById('productResult').innerHTML='<div style="padding:12px 16px;background:var(--facai-soft);border-radius:var(--r);font-size:13px;color:var(--facai)">'+msg+'</div>';document.getElementById('productFile').value='';}else toast('失败','error');}catch(e){toast('失败','error');}p.style.display='none';}
+async function uploadProductFile(file){if(isMarkdownProductFile(file))return uploadMarkdownProductFiles([file]);var p=document.getElementById('productProgress');p.style.display='';p.textContent='导入中&hellip;';var fd=new FormData();fd.append('file',file);var name=file.name.toLowerCase();var url=(name.endsWith('.xlsx')||name.endsWith('.xls'))?'/api/import/excel':'/api/import/csv';try{var r=await fetch(url,{method:'POST',body:fd});var d=await r.json();if(r.ok){toast('导入成功','success');renderProductImportResult(d,'table');}else{var msg=d.detail||d.message||'导入失败';toast(msg,'error');renderProductImportResult({total:0,success:0,skipped:0,errors:[msg]},'table');}}catch(e){toast('失败','error');renderProductImportResult({total:0,success:0,skipped:0,errors:[e.message||'网络错误']},'table');}p.style.display='none';}
+async function uploadMarkdownProductFiles(files){var p=document.getElementById('productProgress');p.style.display='';p.textContent='同步 Markdown 产品中&hellip;';var fd=new FormData();files.forEach(function(file){fd.append('files',file);});try{var r=await fetch('/api/import/markdown',{method:'POST',body:fd});var d=await r.json();if(r.ok){toast('同步完成','success');renderProductImportResult(d,'markdown');document.getElementById('productFile').value='';}else{var msg=d.detail||d.message||'同步失败';toast(msg,'error');renderProductImportResult({total:files.length,created:0,updated:0,skipped:0,errors:[msg]},'markdown');}}catch(e){toast('失败','error');renderProductImportResult({total:files.length,created:0,updated:0,skipped:0,errors:[e.message||'网络错误']},'markdown');}p.style.display='none';}
 
 function showScriptImportResult(msg,type){var box=document.createElement('div');box.style.padding='12px 16px';box.style.background=type==='error'?'var(--danger-soft)':'var(--facai-soft)';box.style.borderRadius='var(--r)';box.style.fontSize='13px';box.style.color=type==='error'?'var(--danger)':'var(--accent)';box.textContent=msg;var target=document.getElementById('scriptResult');target.innerHTML='';target.appendChild(box);}
 
