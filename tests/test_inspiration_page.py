@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -45,6 +46,33 @@ class InspirationPageTests(unittest.TestCase):
         test_file = (ROOT / "tests" / "test_frontend_common_js.py").read_text(encoding="utf-8-sig")
 
         self.assertIn('"inspiration.html"', test_file)
+
+
+class InspirationNavigationTests(unittest.TestCase):
+    def test_all_main_templates_link_to_inspiration_after_search(self):
+        pages = [
+            "index.html",
+            "rewrite.html",
+            "products.html",
+            "import.html",
+            "templates.html",
+            "history.html",
+            "search.html",
+            "inspiration.html",
+        ]
+        for name in pages:
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+            self.assertIn('href="/app/inspiration"', page, name)
+            self.assertRegex(
+                page,
+                re.compile(r'href="/app/search"[^>]*>.*?</a>\s*<a href="/app/inspiration"', re.S),
+                name,
+            )
+
+    def test_inspiration_nav_is_active_only_on_inspiration_page(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn('<a href="/app/inspiration" class="nav-link on">灵感</a>', page)
 
 
 if __name__ == "__main__":
