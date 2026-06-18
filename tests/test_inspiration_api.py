@@ -1,6 +1,8 @@
 import asyncio
 import io
+import tempfile
 import unittest
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -20,6 +22,11 @@ class InspirationApiTests(unittest.TestCase):
         self.original_client = inspiration.ai_service.client
         self.original_chat = inspiration.ai_service.chat
         self.original_model = inspiration.ai_service.model
+        self.temp_documents = tempfile.TemporaryDirectory()
+        self.original_document_dir = None
+        if hasattr(inspiration, "inspiration_documents"):
+            self.original_document_dir = getattr(inspiration.inspiration_documents, "DOCUMENT_OUTPUT_DIR", None)
+            inspiration.inspiration_documents.DOCUMENT_OUTPUT_DIR = Path(self.temp_documents.name)
         self.had_ai_timeout = hasattr(inspiration, "INSPIRATION_AI_TIMEOUT_SECONDS")
         self.original_ai_timeout = getattr(inspiration, "INSPIRATION_AI_TIMEOUT_SECONDS", None)
         self.had_thinking_ai_timeout = hasattr(inspiration, "INSPIRATION_THINKING_AI_TIMEOUT_SECONDS")
@@ -49,6 +56,9 @@ class InspirationApiTests(unittest.TestCase):
         self.inspiration.ai_service.client = self.original_client
         self.inspiration.ai_service.chat = self.original_chat
         self.inspiration.ai_service.model = self.original_model
+        if self.original_document_dir is not None and hasattr(self.inspiration, "inspiration_documents"):
+            self.inspiration.inspiration_documents.DOCUMENT_OUTPUT_DIR = self.original_document_dir
+        self.temp_documents.cleanup()
         if self.had_ai_timeout:
             self.inspiration.INSPIRATION_AI_TIMEOUT_SECONDS = self.original_ai_timeout
         elif hasattr(self.inspiration, "INSPIRATION_AI_TIMEOUT_SECONDS"):
@@ -325,6 +335,109 @@ class InspirationApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 415)
         self.assertIn("图片", response.json()["detail"])
+
+    def test_attachment_upload_rejects_oversize_before_extracting(self):
+        original_limit = getattr(self.inspiration, "MAX_ATTACHMENT_BYTES", None)
+        original_extract = self.inspiration.extract_attachment_text
+        self.inspiration.MAX_ATTACHMENT_BYTES = 4
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("oversize uploads should be rejected before extraction")
+
+        self.inspiration.extract_attachment_text = fail_if_called
+        try:
+            response = self.client.post(
+                "/api/inspiration/attachments",
+                files={"file": ("too-large.txt", b"12345", "text/plain")},
+            )
+        finally:
+            self.inspiration.extract_attachment_text = original_extract
+            if original_limit is None:
+                delattr(self.inspiration, "MAX_ATTACHMENT_BYTES")
+            else:
+                self.inspiration.MAX_ATTACHMENT_BYTES = original_limit
+
+        self.assertEqual(response.status_code, 413)
+
+    def test_document_export_creates_downloadable_word_file(self):
+        self.inspiration.ai_service.client = None
+
+        response = self.client.post(
+            "/api/inspiration/documents",
+            json={
+                "message": "帮我整理一个奶冻粉活动方案",
+                "answer": "奶冻粉活动方案\n\n1. 主打低成本出片。\n2. 直播间强调稳定成型。",
+                "history": [
+                    {"role": "user", "content": "帮我整理一个奶冻粉活动方案"},
+                    {"role": "assistant", "content": "奶冻粉活动方案"},
+                ],
+                "attachments": [
+                    {
+                        "filename": "活动节奏.docx",
+                        "file_type": "docx",
+                        "text": "第一周预热，第二周直播转化。",
+                        "char_count": 16,
+                    }
+                ],
+                "products": [
+                    {
+                        "product_id": 12,
+                        "name": "奶冻粉",
+                        "category": "烘焙原料",
+                        "price": 18.8,
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["filename"].endswith(".docx"))
+        self.assertTrue(data["download_url"].startswith("/api/inspiration/documents/"))
+        self.assertIn("奶冻粉", data["title"])
+
+        download = self.client.get(data["download_url"])
+        self.assertEqual(download.status_code, 200)
+        self.assertIn(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            download.headers["content-type"],
+        )
+
+        from docx import Document
+
+        document = Document(io.BytesIO(download.content))
+        text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+        table_text = "\n".join(cell.text for table in document.tables for row in table.rows for cell in row.cells)
+        combined = text + "\n" + table_text
+        self.assertIn("奶冻粉活动方案", combined)
+        self.assertIn("参考产品", combined)
+        self.assertIn("奶冻粉", combined)
+        self.assertIn("活动节奏.docx", combined)
+
+    def test_document_export_accepts_long_answer_history(self):
+        self.inspiration.ai_service.client = None
+        long_answer = "战役流程优化建议\n" + ("监控计划执行、数据表现、风险状态和资源占用。\n" * 180)
+
+        response = self.client.post(
+            "/api/inspiration/documents",
+            json={
+                "message": "根据智能纪要优化战役运作流程",
+                "answer": long_answer,
+                "history": [
+                    {"role": "user", "content": "根据智能纪要优化战役运作流程"},
+                    {"role": "assistant", "content": long_answer},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["download_url"].endswith("/download"))
+
+    def test_document_download_rejects_unsafe_filename(self):
+        response = self.client.get("/api/inspiration/documents/..%2Fsecret.docx/download")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_chat_uses_product_context_when_message_mentions_product_intent(self):
         product = self._add_product(

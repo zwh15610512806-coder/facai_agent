@@ -2,6 +2,7 @@
 import sys, os
 sys.stdout.reconfigure(encoding='utf-8')
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -9,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from database import init_db
 from config import APP_TITLE, APP_VERSION, APP_DESCRIPTION, ALLOWED_ORIGINS
+from services.security import auth_configured, auth_enabled, is_admin_request
 LOCAL = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = LOCAL
 
@@ -41,7 +43,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-from routers import products, templates as tpl_routes, scripts, import_data, reference_scripts, inspiration, ai_config
+from routers import auth, products, templates as tpl_routes, scripts, import_data, reference_scripts, inspiration, ai_config
 
 import importlib.util
 spec = importlib.util.spec_from_file_location("search_local", os.path.join(LOCAL, "routers", "search_local.py"))
@@ -56,18 +58,43 @@ app.include_router(import_data.router, prefix="/api/import", tags=["import"])
 app.include_router(reference_scripts.router, prefix="/api/reference", tags=["reference"])
 app.include_router(inspiration.router, prefix="/api/inspiration", tags=["inspiration"])
 app.include_router(ai_config.router, prefix="/api/ai-config", tags=["ai-config"])
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(search_router, prefix="/api/search-proxy", tags=["search"])
 
 @app.middleware("http")
-async def block_cross_site_api_requests(request: Request, call_next):
-    if request.url.path.startswith("/api/"):
+async def protect_api_and_app_requests(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/"):
         fetch_site = request.headers.get("sec-fetch-site", "").lower()
         if fetch_site == "cross-site":
             return JSONResponse({"detail": "Cross-site API requests are not allowed"}, status_code=403)
+    if auth_enabled() and _requires_admin(path):
+        if not auth_configured():
+            return _auth_failure(path, "FACAI_ADMIN_TOKEN is not configured", status_code=503)
+        if not is_admin_request(request):
+            if path.startswith("/api/"):
+                return JSONResponse({"detail": "Authentication required"}, status_code=401)
+            next_url = path + (("?" + request.url.query) if request.url.query else "")
+            return RedirectResponse(url="/app/login?next=" + quote(next_url, safe=""), status_code=303)
     return await call_next(request)
+
+
+def _requires_admin(path: str) -> bool:
+    if path.startswith("/static/") or path.startswith("/api/auth/") or path == "/app/login":
+        return False
+    return path.startswith("/api/") or path.startswith("/app")
+
+
+def _auth_failure(path: str, detail: str, status_code: int):
+    if path.startswith("/api/"):
+        return JSONResponse({"detail": detail}, status_code=status_code)
+    return RedirectResponse(url="/app/login", status_code=303)
+
 
 @app.get("/")
 def home(): return RedirectResponse(url="/app")
+@app.get("/app/login")
+def login_page(request: Request): return templates.TemplateResponse(request, "login.html", {"request": request})
 @app.get("/app")
 def app_page(request: Request): return templates.TemplateResponse(request, "inspiration.html", {"request": request})
 @app.get("/app/generate")

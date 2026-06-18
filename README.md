@@ -61,6 +61,18 @@ DATABASE_URL=sqlite:///./data/script_agent.db
 CHROMA_PERSIST_DIR=./data/chroma_db
 ```
 
+局域网上线前必须设置管理员口令；设置后 `/app/*` 和 `/api/*` 会要求登录或携带 `Authorization: Bearer <口令>`：
+
+```env
+FACAI_ADMIN_TOKEN=请换成高强度随机口令
+```
+
+AI 配置里的自定义 Base URL 默认只允许已知供应商域名。确实需要新增供应商网关时，再显式加入允许列表：
+
+```env
+AI_BASE_URL_ALLOWLIST=api.deepseek.com,dashscope.aliyuncs.com,api.minimax.io,open.bigmodel.cn
+```
+
 启动服务：
 
 ```bash

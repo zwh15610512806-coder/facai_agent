@@ -188,7 +188,7 @@ class AiConfigApiTests(unittest.TestCase):
             "model": "qwen-plus",
             "max_tokens": 4096,
             "api_key": "tenant-secret-123456",
-            "base_url": "https://tenant.example.com/compatible/v1",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/tenant",
         }
 
         response = self.client.put("/api/ai-config/interfaces/inspiration_chat", json=update)
@@ -198,8 +198,8 @@ class AiConfigApiTests(unittest.TestCase):
         self.assertTrue(data["api_key_configured"])
         self.assertEqual(data["api_key_source"], "interface")
         self.assertEqual(data["api_key_mask"], "****3456")
-        self.assertEqual(data["custom_base_url"], "https://tenant.example.com/compatible/v1")
-        self.assertEqual(data["base_url"], "https://tenant.example.com/compatible/v1")
+        self.assertEqual(data["custom_base_url"], "https://dashscope.aliyuncs.com/compatible-mode/v1/tenant")
+        self.assertEqual(data["base_url"], "https://dashscope.aliyuncs.com/compatible-mode/v1/tenant")
         self.assertNotIn("tenant-secret-123456", response.text)
 
         get_response = self.client.get("/api/ai-config/interfaces")
@@ -233,7 +233,7 @@ class AiConfigApiTests(unittest.TestCase):
                 "model": "qwen-plus",
                 "max_tokens": 4096,
                 "api_key": "tenant-qwen-secret",
-                "base_url": "https://qwen.example.com/v1",
+                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             },
         )
         self.assertEqual(response.status_code, 200)
@@ -257,6 +257,21 @@ class AiConfigApiTests(unittest.TestCase):
         self.assertEqual(data["api_key_mask"], "")
         self.assertEqual(data["custom_base_url"], "")
         self.assertNotIn("tenant-qwen-secret", changed.text)
+
+    def test_interface_update_rejects_untrusted_custom_base_url(self):
+        response = self.client.put(
+            "/api/ai-config/interfaces/inspiration_chat",
+            json={
+                "provider": "qwen",
+                "model": "qwen-plus",
+                "max_tokens": 4096,
+                "api_key": "tenant-qwen-secret",
+                "base_url": "https://evil.example.com/compatible/v1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("base_url", response.json()["detail"])
 
     def test_usage_endpoint_returns_recent_records_and_totals(self):
         from models import AIUsageRecord

@@ -89,6 +89,26 @@ class ProductFileApiTests(unittest.TestCase):
         self.assertEqual(saved_path.read_bytes(), b"file body")
         self.assertEqual(self.sync_calls, [product.id])
 
+    def test_upload_rejects_files_over_configured_limit(self):
+        product = self._add_product()
+        had_limit = hasattr(products_router, "MAX_UPLOAD_SIZE")
+        original_limit = getattr(products_router, "MAX_UPLOAD_SIZE", None)
+        products_router.MAX_UPLOAD_SIZE = 4
+        try:
+            response = self.client.post(
+                f"/api/products/{product.id}/upload",
+                files={"file": ("too-large.md", b"12345", "text/markdown")},
+            )
+        finally:
+            if had_limit:
+                products_router.MAX_UPLOAD_SIZE = original_limit
+            else:
+                delattr(products_router, "MAX_UPLOAD_SIZE")
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(list(Path(self.tmp.name).glob("*")), [])
+        self.assertEqual(self.sync_calls, [])
+
     def test_extract_points_syncs_product_index(self):
         product = self._add_product()
         source = Path(self.tmp.name) / "product.md"
@@ -149,6 +169,29 @@ class ProductFileApiTests(unittest.TestCase):
         self.assertFalse(source.exists())
         points = self.db.query(SellingPoint).filter_by(product_id=product.id).all()
         self.assertEqual([point.content for point in points], ["Retained point"])
+
+    def test_download_and_delete_reject_unsafe_info_file_path(self):
+        product = self._add_product()
+        with tempfile.TemporaryDirectory() as outside_dir:
+            secret = Path(outside_dir) / "secret.txt"
+            secret.write_text("do not serve", encoding="utf-8")
+            product.info_file = str(secret)
+            self.db.commit()
+
+            async def fail_if_called(file_path, product_name, category):
+                raise AssertionError("unsafe product files should not be extracted")
+
+            selling_point_extractor.extract_selling_points = fail_if_called
+            download = self.client.get(f"/api/products/{product.id}/download")
+            extract = self.client.post(f"/api/products/{product.id}/extract-points")
+            delete = self.client.delete(f"/api/products/{product.id}/file")
+
+            self.assertEqual(download.status_code, 404)
+            self.assertEqual(extract.status_code, 400)
+            self.assertEqual(delete.status_code, 400)
+            self.assertTrue(secret.exists())
+            self.db.refresh(product)
+            self.assertEqual(product.info_file, str(secret))
 
     def test_source_preview_returns_text_material_and_download_url(self):
         response = self.client.get(

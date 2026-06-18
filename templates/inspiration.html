@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>AI工作 · 法采新媒体运营 Agent</title>
 <link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="/static/vendor/lucide.min.js"></script>
 <script src="/static/js/common.js?v=20260618"></script>
 <style>
 body{overflow:hidden}
@@ -50,6 +48,13 @@ body{overflow:hidden}
 .message-tools{margin-top:8px;display:flex;gap:6px}
 .message-tool{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);height:28px;padding:0 9px;font-size:12px;font-weight:800;color:var(--text-2);cursor:pointer}
 .message-tool:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.message-tool:disabled{opacity:.55;cursor:not-allowed}
+.generated-document-card{margin-top:10px;padding:10px 11px;border:1px solid var(--facai-subtle);border-radius:var(--r-sm);background:var(--facai-ghost);display:flex;align-items:center;justify-content:space-between;gap:10px;white-space:normal}
+.generated-document-title{min-width:0;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:900;color:var(--facai)}
+.generated-document-title span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.generated-document-title svg,.generated-document-title i{width:14px;height:14px;flex:0 0 auto}
+.generated-document-download{flex:0 0 auto;border:1px solid var(--facai-subtle);border-radius:var(--r-pill);background:var(--surface);color:var(--facai);padding:4px 9px;font-size:12px;font-weight:900;text-decoration:none}
+.generated-document-download:hover{background:var(--facai);color:#fff}
 .reference-products{margin-top:10px;padding-top:8px;border-top:1px solid var(--border-soft);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .reference-products-label{font-size:12px;font-weight:900;color:var(--text-3)}
 .reference-product-chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;border:1px solid var(--facai-subtle);border-radius:var(--r-pill);background:var(--facai-ghost);color:var(--facai);padding:3px 8px;font-size:12px;font-weight:800;line-height:1.4}
@@ -421,6 +426,10 @@ function renderSources(sources){
  if(!sources||!sources.length)return '';
  return '<div class="source-list"><span class="source-label">外网参考</span>'+sources.slice(0,6).map(function(source,index){return '<a class="source-chip" href="'+escHtml(source.url||'#')+'" target="_blank" rel="noopener noreferrer">'+escHtml((index+1)+'. '+(source.title||'资料来源'))+'</a>';}).join('')+'</div>';
 }
+function renderGeneratedDocument(document){
+ if(!document||!document.download_url)return '';
+ return '<div class="generated-document-card"><div class="generated-document-title"><i data-lucide="file-text"></i><span>'+escHtml(document.title||document.filename||'Word 文档')+'</span></div><a class="generated-document-download" href="'+escHtml(document.download_url)+'" target="_blank" rel="noopener">下载 Word 文档</a></div>';
+}
 function getActiveInspirationMode(){
  return activeInspirationMode;
 }
@@ -485,7 +494,7 @@ function appendMessage(role,content,options){
  const reasoningHtml=role==='assistant'&&options?renderReasoning(options.reasoning):'';
  const references=role==='assistant'&&options?(options.referenceProductsHtml||renderReferenceProducts(options.products)):'';
  const sourceHtml=role==='assistant'&&options?renderSources(options.sources):'';
- const tools=role==='assistant'&&!(options&&options.thinking)?'<div class="message-tools"><button class="message-tool" type="button" onclick="copyAssistantMessage(this)">复制</button></div>':'';
+ const tools=role==='assistant'&&!(options&&options.thinking)?'<div class="message-tools"><button class="message-tool" type="button" onclick="copyAssistantMessage(this)">复制</button><button class="message-tool" type="button" onclick="generateAssistantDocument(this)">生成文档</button></div>':'';
  msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')+'<div class="chat-bubble '+(options&&options.thinking?'thinking':'')+'">'+safe+attachmentHtml+reasoningHtml+references+sourceHtml+tools+'</div>'+(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
  thread.appendChild(msg);
  const scrollMode=(options&&options.scroll)||((role==='assistant'&&!(options&&options.thinking))?'top':'bottom');
@@ -497,6 +506,73 @@ function copyAssistantMessage(button){
  const bubble=button.closest('.chat-bubble');
  const text=bubble?bubble.childNodes[0].textContent:'';
  copyText(text).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});
+}
+function findAssistantDocumentContext(answer){
+ const conversation=currentConversation();
+ const toDocumentHistory=function(items){
+  return (items||[]).slice(-12).map(function(item){return {role:item.role,content:String(item.content||'').slice(0,4000)};});
+ };
+ const fallback={message:'',answer:answer,history:toDocumentHistory(chatHistory),attachments:[],products:[]};
+ if(!conversation||!conversation.messages)return fallback;
+ for(let index=conversation.messages.length-1;index>=0;index--){
+  const message=conversation.messages[index];
+  if(message.role==='assistant'&&message.content===answer){
+   let previousUser=null;
+   for(let cursor=index-1;cursor>=0;cursor--){
+    if(conversation.messages[cursor].role==='user'){previousUser=conversation.messages[cursor];break;}
+   }
+   return {
+    message:previousUser?previousUser.content:'',
+    answer:answer,
+    history:toDocumentHistory(conversation.messages.slice(Math.max(0,index-12),index+1)),
+    attachments:previousUser&&previousUser.attachments?previousUser.attachments:[],
+    products:message.products||[],
+    title:previousUser?previousUser.content:''
+   };
+  }
+ }
+ return fallback;
+}
+function formatInspirationApiError(data,fallback){
+ if(!data)return fallback||'请求失败';
+ if(typeof data.detail==='string')return data.detail;
+ if(Array.isArray(data.detail)){
+  const first=data.detail[0]||{};
+  if(first.msg)return first.msg;
+  if(first.message)return first.message;
+  return fallback||'请求参数有误，请检查内容后重试。';
+ }
+ if(data.detail&&typeof data.detail==='object'){
+  if(data.detail.msg)return data.detail.msg;
+  if(data.detail.message)return data.detail.message;
+  return fallback||'请求参数有误，请检查内容后重试。';
+ }
+ if(data.message)return String(data.message);
+ return fallback||'请求失败';
+}
+async function generateAssistantDocument(button){
+ const bubble=button.closest('.chat-bubble');
+ const answer=bubble?bubble.childNodes[0].textContent.trim():'';
+ if(!bubble||!answer)return toast('暂无可生成文档的内容','error');
+ const oldText=button.textContent;
+ button.disabled=true;
+ button.textContent='生成中...';
+ try{
+  const payload=findAssistantDocumentContext(answer);
+  const response=await fetch('/api/inspiration/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data=await response.json();
+  if(!response.ok)throw new Error(formatInspirationApiError(data,'文档生成失败'));
+  const existing=bubble.querySelector('.generated-document-card');
+  if(existing)existing.remove();
+  bubble.insertAdjacentHTML('beforeend',renderGeneratedDocument(data));
+  toast('Word 文档已生成','success');
+  renderIcons();
+ }catch(error){
+  toast(error&&error.message?error.message:'文档生成失败','error');
+ }finally{
+  button.disabled=false;
+  button.textContent=oldText;
+ }
 }
 function usePrompt(text){
  const input=document.getElementById('inspirationInput');

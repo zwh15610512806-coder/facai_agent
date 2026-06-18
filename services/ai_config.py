@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, time
 import os
 from typing import Iterable
+from urllib.parse import urlparse
 
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -39,6 +40,12 @@ PLACEHOLDER_SECRET_VALUES = {
     "placeholder",
     "changeme",
 }
+DEFAULT_AI_BASE_URL_HOSTS = (
+    "api.deepseek.com",
+    "dashscope.aliyuncs.com",
+    "api.minimax.io",
+    "open.bigmodel.cn",
+)
 
 
 @dataclass(frozen=True)
@@ -164,6 +171,34 @@ def format_cny(amount: float) -> str:
     if amount < 0.01 and amount > 0:
         return f"¥{amount:.4f}"
     return f"¥{amount:.2f}"
+
+
+def _host_from_url(value: str) -> str:
+    parsed = urlparse(value if "://" in value else f"https://{value}")
+    return (parsed.hostname or "").lower()
+
+
+def allowed_ai_base_url_hosts() -> set[str]:
+    raw = os.getenv("AI_BASE_URL_ALLOWLIST", "").strip()
+    if raw:
+        return {host for host in (_host_from_url(item.strip()) for item in raw.split(",")) if host}
+    configured = {
+        _host_from_url(value)
+        for value in (DEEPSEEK_BASE_URL, DOUBAO_BASE_URL, MINIMAX_BASE_URL, GLM_BASE_URL, QWEN_BASE_URL)
+        if value
+    }
+    return configured | set(DEFAULT_AI_BASE_URL_HOSTS)
+
+
+def validate_ai_base_url(base_url: str) -> None:
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status_code=422, detail="base_url must be an absolute http:// or https:// URL")
+    if parsed.hostname.lower() not in allowed_ai_base_url_hosts():
+        raise HTTPException(
+            status_code=422,
+            detail="base_url host is not allowed; set AI_BASE_URL_ALLOWLIST to permit it",
+        )
 
 
 AI_PROVIDERS: dict[str, AIProviderDefinition] = {
@@ -448,8 +483,8 @@ def update_interface_setting(
 
     if base_url is not None:
         base_url = base_url.strip()
-        if base_url and not (base_url.startswith("http://") or base_url.startswith("https://")):
-            raise HTTPException(status_code=422, detail="base_url must start with http:// or https://")
+        if base_url:
+            validate_ai_base_url(base_url)
         setting.base_url_override = base_url
     elif provider_changed:
         setting.base_url_override = ""

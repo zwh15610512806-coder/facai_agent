@@ -2,16 +2,20 @@
 import asyncio
 import logging
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from config import DEEPSEEK_V4_FLASH_MODEL, DEEPSEEK_V4_PRO_MODEL
 from database import get_db
 from services.ai_service import ai_service
-from services.inspiration_attachments import AttachmentExtractionError, extract_attachment_text
+from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
+from services import inspiration_documents
 from services.product_rag import find_product_context_for_inspiration
+from services.upload_limits import read_upload_bytes
 from services.web_research import search_web
 
 
@@ -26,6 +30,11 @@ class ChatTurn(BaseModel):
     content: str = Field(default="", max_length=4000)
 
 
+class DocumentChatTurn(BaseModel):
+    role: str
+    content: str = Field(default="", max_length=60000)
+
+
 class InspirationAttachment(BaseModel):
     filename: str = Field(default="", max_length=200)
     file_type: str = Field(default="", max_length=32)
@@ -37,6 +46,13 @@ class WebSource(BaseModel):
     title: str = ""
     url: str = ""
     snippet: str = ""
+
+
+class ProductReference(BaseModel):
+    product_id: int | None = None
+    name: str = ""
+    category: str = ""
+    price: float | None = None
 
 
 class InspirationChatRequest(BaseModel):
@@ -66,11 +82,19 @@ class InspirationChatResponse(BaseModel):
     products: list["ProductReference"] = Field(default_factory=list)
 
 
-class ProductReference(BaseModel):
-    product_id: int | None = None
-    name: str = ""
-    category: str = ""
-    price: float | None = None
+class InspirationDocumentRequest(BaseModel):
+    message: str = Field(default="", max_length=4000)
+    answer: str = Field(..., min_length=1, max_length=120000)
+    history: list[DocumentChatTurn] = Field(default_factory=list, max_length=40)
+    attachments: list[InspirationAttachment] = Field(default_factory=list, max_length=6)
+    products: list[ProductReference] = Field(default_factory=list, max_length=6)
+    title: str = Field(default="", max_length=120)
+
+
+class InspirationDocumentResponse(BaseModel):
+    title: str
+    filename: str
+    download_url: str
 
 
 SYSTEM_PROMPT = """你是法采新媒体运营AI工作助手。
@@ -241,9 +265,77 @@ async def _safe_web_search(message: str, tool_mode: str) -> list[dict]:
         return []
 
 
+def _document_user_payload(data: InspirationDocumentRequest) -> str:
+    sections = [
+        f"用户需求：{data.message.strip() or '未提供'}",
+        f"AI 原始回答：\n{data.answer.strip()}",
+    ]
+    recent_history = _recent_history(data.history)
+    if recent_history:
+        history_text = "\n".join(f"{item['role']}：{item['content']}" for item in recent_history[-8:])
+        sections.append(f"对话上下文：\n{history_text}")
+    if data.products:
+        products = []
+        for product in data.products[:6]:
+            meta = " / ".join(
+                part for part in [
+                    product.name,
+                    product.category,
+                    f"¥{product.price}" if product.price is not None else "",
+                ] if part
+            )
+            if meta:
+                products.append(meta)
+        if products:
+            sections.append("参考产品：\n" + "\n".join(f"- {item}" for item in products))
+    if data.attachments:
+        attachments = [
+            f"- {attachment.filename}：{(attachment.text or '').strip()[:800]}"
+            for attachment in data.attachments[:6]
+            if (attachment.filename or "").strip()
+        ]
+        if attachments:
+            sections.append("附件摘录：\n" + "\n".join(attachments))
+    sections.append(
+        "输出要求：请整理成一份可直接交付的 Word 文档正文。"
+        "保留可执行结构，可以使用一级/二级标题、编号清单和短段落；"
+        "不要输出寒暄语，不要编造未提供的产品信息。"
+    )
+    return "\n\n".join(sections)
+
+
+async def _build_document_content(data: InspirationDocumentRequest, db: Session) -> str:
+    fallback = data.answer.strip()
+    if not ai_service.is_available:
+        return fallback
+    try:
+        result = await asyncio.wait_for(
+            ai_service.chat(
+                [
+                    {
+                        "role": "system",
+                        "content": "你是法采新媒体运营文档整理助手，负责把 AI 对话结果整理成清晰的业务文档正文。",
+                    },
+                    {"role": "user", "content": _document_user_payload(data)},
+                ],
+                temperature=0.4,
+                allow_fallback=False,
+                model=DEEPSEEK_V4_FLASH_MODEL,
+                interface_key="inspiration_chat",
+                db=db,
+            ),
+            timeout=INSPIRATION_AI_TIMEOUT_SECONDS,
+        )
+        content, _, _ = _normalize_ai_result(result, DEEPSEEK_V4_FLASH_MODEL)
+        return content.strip() or fallback
+    except Exception as exc:
+        logger.warning("Inspiration document AI formatting failed: %s", exc)
+        return fallback
+
+
 @router.post("/attachments", response_model=InspirationAttachment)
 async def upload_inspiration_attachment(file: UploadFile = File(...)):
-    data = await file.read()
+    data = await read_upload_bytes(file, max_bytes=MAX_ATTACHMENT_BYTES)
     try:
         attachment = extract_attachment_text(file.filename or "attachment", file.content_type or "", data)
     except AttachmentExtractionError as exc:
@@ -253,6 +345,40 @@ async def upload_inspiration_attachment(file: UploadFile = File(...)):
         file_type=attachment.file_type,
         text=attachment.text,
         char_count=attachment.char_count,
+    )
+
+
+@router.post("/documents", response_model=InspirationDocumentResponse)
+async def create_inspiration_document(data: InspirationDocumentRequest, db: Session = Depends(get_db)):
+    content = await _build_document_content(data, db)
+    try:
+        generated = inspiration_documents.create_inspiration_document(
+            message=data.message,
+            content=content,
+            products=[product.model_dump() for product in data.products],
+            attachments=[attachment.model_dump() for attachment in data.attachments],
+            title=data.title,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    encoded = quote(generated.filename)
+    return InspirationDocumentResponse(
+        title=generated.title,
+        filename=generated.filename,
+        download_url=f"/api/inspiration/documents/{encoded}/download",
+    )
+
+
+@router.get("/documents/{filename}/download")
+def download_inspiration_document(filename: str):
+    try:
+        path = inspiration_documents.resolve_document_path(filename)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="文档不存在") from exc
+    return FileResponse(
+        str(path),
+        media_type=inspiration_documents.DOCX_MEDIA_TYPE,
+        filename=filename,
     )
 
 

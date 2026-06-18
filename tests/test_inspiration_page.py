@@ -99,6 +99,19 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("if(!products||!products.length)return ''", page)
         self.assertIn("产品资料 + AI 对话", page)
 
+    def test_inspiration_template_can_generate_word_document_from_answer(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("生成文档", page)
+        self.assertIn("function generateAssistantDocument(button)", page)
+        self.assertIn("function renderGeneratedDocument(document)", page)
+        self.assertIn("fetch('/api/inspiration/documents'", page)
+        self.assertIn("download_url", page)
+        self.assertIn("Word 文档", page)
+        self.assertIn("function formatInspirationApiError(data,fallback)", page)
+        self.assertIn("Array.isArray(data.detail)", page)
+        self.assertIn("new Error(formatInspirationApiError(data,'文档生成失败'))", page)
+
     def test_inspiration_composer_has_tool_modes_and_upload(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 

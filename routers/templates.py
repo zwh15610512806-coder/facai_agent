@@ -12,7 +12,9 @@ from typing import List, Optional
 import re
 import json
 
+from config import MAX_UPLOAD_SIZE
 from services.ai_service import ai_service
+from services.upload_limits import read_upload_bytes
 
 router = APIRouter()
 
@@ -363,7 +365,7 @@ async def upload_viral_txt_batch(
             continue
 
         try:
-            content = await upload.read()
+            content = await read_upload_bytes(upload, max_bytes=MAX_UPLOAD_SIZE)
             script_text = format_script(_decode_txt(content))
             if len(script_text) < 20:
                 raise ValueError("脚本内容太短")
@@ -388,6 +390,8 @@ async def upload_viral_txt_batch(
             _sync_viral_index(viral, db)
             result["success"] += 1
             result["ids"].append(viral.id)
+        except HTTPException:
+            raise
         except Exception as exc:
             db.rollback()
             result["skipped"] += 1

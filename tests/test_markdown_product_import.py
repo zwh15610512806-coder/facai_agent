@@ -123,6 +123,24 @@ class MarkdownProductImportApiTests(unittest.TestCase):
         self.assertTrue(product.info_file.endswith("new-product.md"))
         self.assertEqual(self.db.query(SellingPoint).count(), 1)
 
+    def test_markdown_upload_rejects_files_over_configured_limit(self):
+        had_limit = hasattr(import_router, "MAX_UPLOAD_SIZE")
+        original_limit = getattr(import_router, "MAX_UPLOAD_SIZE", None)
+        import_router.MAX_UPLOAD_SIZE = 4
+        try:
+            response = self.client.post(
+                "/api/import/markdown",
+                files=[("files", ("too-large.md", "12345", "text/markdown"))],
+            )
+        finally:
+            if had_limit:
+                import_router.MAX_UPLOAD_SIZE = original_limit
+            else:
+                delattr(import_router, "MAX_UPLOAD_SIZE")
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(self.db.query(Product).count(), 0)
+
     def test_same_name_markdown_updates_existing_without_clearing_blank_fields(self):
         product = Product(
             name="Existing Product",
