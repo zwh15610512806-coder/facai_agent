@@ -160,6 +160,16 @@ function renderReferenceProducts(products){
  if(!products||!products.length)return '';
  return '<div class="reference-products"><span class="reference-products-label">参考产品</span>'+products.slice(0,6).map(function(product){const meta=[product.category||'',formatReferencePrice(product.price)].filter(Boolean).join(' · ');return '<span class="reference-product-chip"><span>'+escHtml(product.name||'相关产品')+'</span>'+(meta?'<span class="reference-product-meta">'+escHtml(meta)+'</span>':'')+'</span>';}).join('')+'</div>';
 }
+function scrollChatToMessage(message,mode){
+ const thread=document.getElementById('inspirationThread');
+ if(!thread||!message||mode==='none')return;
+ if(mode==='top'){
+  const top=Math.max(0,message.offsetTop-thread.offsetTop-14);
+  thread.scrollTo({top:top,behavior:'smooth'});
+  return;
+ }
+ thread.scrollTop=thread.scrollHeight;
+}
 function appendMessage(role,content,options){
  const thread=document.getElementById('inspirationThread');
  if(thread.querySelector('.inspiration-empty'))thread.innerHTML='';
@@ -170,7 +180,8 @@ function appendMessage(role,content,options){
  const tools=role==='assistant'&&!(options&&options.thinking)?'<div class="message-tools"><button class="message-tool" type="button" onclick="copyAssistantMessage(this)">复制</button></div>':'';
  msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')+'<div class="chat-bubble '+(options&&options.thinking?'thinking':'')+'">'+safe+references+tools+'</div>'+(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
  thread.appendChild(msg);
- thread.scrollTop=thread.scrollHeight;
+ const scrollMode=(options&&options.scroll)||((role==='assistant'&&!(options&&options.thinking))?'top':'bottom');
+ scrollChatToMessage(msg,scrollMode);
  renderIcons();
  return msg;
 }

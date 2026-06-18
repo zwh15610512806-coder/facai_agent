@@ -53,6 +53,15 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("if(!products||!products.length)return ''", page)
         self.assertIn("产品资料 + AI 对话", page)
 
+    def test_inspiration_long_answers_scroll_to_answer_start(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("function scrollChatToMessage(message,mode)", page)
+        self.assertIn("mode==='top'", page)
+        self.assertIn("thread.scrollTo({top:top,behavior:'smooth'})", page)
+        self.assertIn("role==='assistant'&&!(options&&options.thinking)", page)
+        self.assertIn("?'top':'bottom'", page)
+
     def test_common_js_test_includes_inspiration_page(self):
         test_file = (ROOT / "tests" / "test_frontend_common_js.py").read_text(encoding="utf-8-sig")
 
