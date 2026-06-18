@@ -443,6 +443,43 @@ def _context_for_ai(results: list[dict[str, Any]]) -> str:
     return "\n\n".join(blocks)[:9000]
 
 
+def _reference_product(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "product_id": result.get("product_id"),
+        "name": result.get("name", ""),
+        "category": result.get("category", ""),
+        "price": result.get("price"),
+    }
+
+
+def find_product_context_for_inspiration(query: str, db: Session, *, limit: int = 6) -> dict[str, Any]:
+    """Return product context for creative chat without generating a product answer."""
+    clean = _clean_query(query)
+    if not clean:
+        return {"used": False, "context": "", "results": [], "products": []}
+
+    requested_limit = max(1, min(limit, 6))
+    policy = _product_query_policy(clean)
+    candidates = _candidate_products(clean, db, max(requested_limit, 12))
+    if not policy.broad:
+        candidates = [
+            product for product in candidates
+            if _scenario_relevance_score(product, clean, policy) > 0
+        ]
+    candidates = candidates[:requested_limit]
+    results = [
+        _detail_to_result(build_product_detail_payload(product), clean)
+        for product in candidates
+    ]
+    products = [_reference_product(result) for result in results]
+    return {
+        "used": bool(results),
+        "context": _context_for_ai(results) if results else "",
+        "results": results,
+        "products": products,
+    }
+
+
 def _format_profile_sku_line(sku: dict[str, Any]) -> str:
     name = sku.get("name") or "默认规格"
     bits = []

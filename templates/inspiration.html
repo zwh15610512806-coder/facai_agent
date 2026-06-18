@@ -41,6 +41,10 @@ body{overflow:hidden}
 .message-tools{margin-top:8px;display:flex;gap:6px}
 .message-tool{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);height:28px;padding:0 9px;font-size:12px;font-weight:800;color:var(--text-2);cursor:pointer}
 .message-tool:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.reference-products{margin-top:10px;padding-top:8px;border-top:1px solid var(--border-soft);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.reference-products-label{font-size:12px;font-weight:900;color:var(--text-3)}
+.reference-product-chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;border:1px solid var(--facai-subtle);border-radius:var(--r-pill);background:var(--facai-ghost);color:var(--facai);padding:3px 8px;font-size:12px;font-weight:800;line-height:1.4}
+.reference-product-meta{color:var(--text-2);font-weight:700}
 .thinking{color:var(--text-3)}
 .inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px;background:rgba(255,255,255,.96)}
 .composer-form{display:flex;gap:8px;align-items:flex-end}
@@ -147,14 +151,24 @@ function renderWelcome(){
  });
  renderIcons();
 }
+function formatReferencePrice(value){
+ const number=Number(value);
+ if(!Number.isFinite(number))return '';
+ return '¥'+(Math.round(number*100)/100).toString();
+}
+function renderReferenceProducts(products){
+ if(!products||!products.length)return '';
+ return '<div class="reference-products"><span class="reference-products-label">参考产品</span>'+products.slice(0,6).map(function(product){const meta=[product.category||'',formatReferencePrice(product.price)].filter(Boolean).join(' · ');return '<span class="reference-product-chip"><span>'+escHtml(product.name||'相关产品')+'</span>'+(meta?'<span class="reference-product-meta">'+escHtml(meta)+'</span>':'')+'</span>';}).join('')+'</div>';
+}
 function appendMessage(role,content,options){
  const thread=document.getElementById('inspirationThread');
  if(thread.querySelector('.inspiration-empty'))thread.innerHTML='';
  const msg=document.createElement('div');
  msg.className='chat-message '+(role==='user'?'user':'assistant');
  const safe=escHtml(content);
+ const references=role==='assistant'&&options?(options.referenceProductsHtml||renderReferenceProducts(options.products)):'';
  const tools=role==='assistant'&&!(options&&options.thinking)?'<div class="message-tools"><button class="message-tool" type="button" onclick="copyAssistantMessage(this)">复制</button></div>':'';
- msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')+'<div class="chat-bubble '+(options&&options.thinking?'thinking':'')+'">'+safe+tools+'</div>'+(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
+ msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')+'<div class="chat-bubble '+(options&&options.thinking?'thinking':'')+'">'+safe+references+tools+'</div>'+(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
  thread.appendChild(msg);
  thread.scrollTop=thread.scrollHeight;
  renderIcons();
@@ -193,8 +207,9 @@ async function sendInspirationChat(event){
   if(!response.ok)throw new Error(data.detail||data.message||'发送失败');
   chatHistory.push({role:'user',content:message},{role:'assistant',content:data.answer||''});
   chatHistory=chatHistory.slice(-12);
-  document.querySelector('#modelPill span').textContent=data.mode==='fallback'?'离线提示':(data.model||'AI 对话');
-  appendMessage('assistant',data.answer||'没有收到回复');
+  const referenceProductsHtml=renderReferenceProducts(data.products);
+  document.querySelector('#modelPill span').textContent=data.product_context_used?'产品资料 + AI 对话':(data.mode==='fallback'?'离线提示':(data.model||'AI 对话'));
+  appendMessage('assistant',data.answer||'没有收到回复',{products:data.products,referenceProductsHtml:referenceProductsHtml});
  }catch(error){
   loading.remove();
   appendMessage('assistant','发送失败：'+(error&&error.message?error.message:'网络错误'));

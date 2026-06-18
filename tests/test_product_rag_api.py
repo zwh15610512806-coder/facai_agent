@@ -94,6 +94,25 @@ class ProductRagApiTests(unittest.TestCase):
         self.assertNotIn("已检索到", data["answer"])
         self.assertNotIn("姐妹们", data["answer"])
 
+    def test_product_context_helper_returns_context_without_generating_answer(self):
+        self._add_product(
+            "翻糖压片",
+            "烘焙装饰",
+            31.53,
+            "彩色翻糖片，可用于造型蛋糕装饰。",
+            "适合做蛋糕表面造型和节日款装饰。",
+        )
+
+        context = product_rag.find_product_context_for_inspiration(
+            query="翻糖怎么做内容选题",
+            db=self.db,
+            limit=6,
+        )
+
+        self.assertTrue(context["used"])
+        self.assertIn("翻糖压片", context["context"])
+        self.assertEqual(context["products"][0]["name"], "翻糖压片")
+
     def test_product_query_policy_identifies_known_product_selection_intents(self):
         filling_policy = product_rag._product_query_policy("有哪些适合蛋糕夹心的产品？")
         self.assertEqual(filling_policy.intent, "cake_filling")

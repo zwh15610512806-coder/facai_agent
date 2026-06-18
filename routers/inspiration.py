@@ -1,10 +1,13 @@
 """General inspiration chat API."""
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy.orm import Session
 
+from database import get_db
 from services.ai_service import ai_service
+from services.product_rag import find_product_context_for_inspiration
 
 
 router = APIRouter()
@@ -32,6 +35,15 @@ class InspirationChatResponse(BaseModel):
     answer: str
     mode: Literal["ai", "fallback"]
     model: str
+    product_context_used: bool = False
+    products: list["ProductReference"] = Field(default_factory=list)
+
+
+class ProductReference(BaseModel):
+    product_id: int | None = None
+    name: str = ""
+    category: str = ""
+    price: float | None = None
 
 
 SYSTEM_PROMPT = """你是法采新媒体运营灵感助手。
@@ -61,17 +73,68 @@ def _fallback_answer(message: str) -> str:
     )
 
 
+def _fallback_answer_with_products(message: str, products: list[dict]) -> str:
+    answer = _fallback_answer(message)
+    if not products:
+        return answer
+    names = "、".join(product.get("name", "") for product in products[:6] if product.get("name"))
+    if not names:
+        return answer
+    return answer + f"\n\n已先匹配到可参考产品：{names}。AI 恢复后可以继续把这些资料整理成完整创意方案。"
+
+
+def _safe_product_context(message: str, db: Session) -> dict:
+    try:
+        return find_product_context_for_inspiration(message, db, limit=6)
+    except Exception:
+        return {"used": False, "context": "", "products": []}
+
+
+def _message_with_product_context(message: str, product_context: dict) -> str:
+    context = (product_context.get("context") or "").strip()
+    if not context:
+        return message
+    return (
+        f"用户问题：{message}\n\n"
+        f"可引用的产品资料：\n{context}\n\n"
+        "回答要求：以创意、脚本、选题、文案或运营表达为主；"
+        "自然结合上面的产品资料；不要编造资料外的产品信息；"
+        "不要单独列“来源”段落。"
+    )
+
+
 @router.post("/chat", response_model=InspirationChatResponse)
-async def chat_with_inspiration(data: InspirationChatRequest):
+async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depends(get_db)):
     message = data.message.strip()
     model = ai_service.get_model_name()
+    product_context = _safe_product_context(message, db)
+    products = product_context.get("products") or []
+    product_context_used = bool(products)
     if not ai_service.is_available:
-        return InspirationChatResponse(answer=_fallback_answer(message), mode="fallback", model=model)
+        return InspirationChatResponse(
+            answer=_fallback_answer_with_products(message, products),
+            mode="fallback",
+            model=model,
+            product_context_used=product_context_used,
+            products=products,
+        )
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(_recent_history(data.history))
-    messages.append({"role": "user", "content": message})
+    messages.append({"role": "user", "content": _message_with_product_context(message, product_context)})
     answer = (await ai_service.chat(messages, temperature=0.7, allow_fallback=False)).strip()
     if not answer:
-        return InspirationChatResponse(answer=_fallback_answer(message), mode="fallback", model=model)
-    return InspirationChatResponse(answer=answer, mode="ai", model=model)
+        return InspirationChatResponse(
+            answer=_fallback_answer_with_products(message, products),
+            mode="fallback",
+            model=model,
+            product_context_used=product_context_used,
+            products=products,
+        )
+    return InspirationChatResponse(
+        answer=answer,
+        mode="ai",
+        model=model,
+        product_context_used=product_context_used,
+        products=products,
+    )

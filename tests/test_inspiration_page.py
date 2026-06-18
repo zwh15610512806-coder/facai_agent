@@ -44,6 +44,15 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("@media (max-width: 640px)", page)
         self.assertIn(".inspiration-page{height:auto", page)
 
+    def test_inspiration_template_renders_reference_products(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("function renderReferenceProducts(products)", page)
+        self.assertIn("参考产品", page)
+        self.assertIn("renderReferenceProducts(data.products)", page)
+        self.assertIn("if(!products||!products.length)return ''", page)
+        self.assertIn("产品资料 + AI 对话", page)
+
     def test_common_js_test_includes_inspiration_page(self):
         test_file = (ROOT / "tests" / "test_frontend_common_js.py").read_text(encoding="utf-8-sig")
 
