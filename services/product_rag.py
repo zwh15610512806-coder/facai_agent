@@ -574,7 +574,7 @@ def _strip_answer_sources(answer: str) -> str:
     return re.sub(r"(^|\n)\s*来源：[\s\S]*$", "", answer or "").strip()
 
 
-async def _summarize_answer(query: str, results: list[dict[str, Any]], scope_label: str) -> tuple[str, str]:
+async def _summarize_answer(query: str, results: list[dict[str, Any]], scope_label: str, db: Session) -> tuple[str, str]:
     if not results:
         return _fallback_answer(query, results, scope_label), "fallback"
     policy = _product_query_policy(query)
@@ -589,7 +589,14 @@ async def _summarize_answer(query: str, results: list[dict[str, Any]], scope_lab
             "content": f"用户问题：{query}\n检索范围：{scope_label}\n\n产品资料：\n{context}",
         },
     ]
-    answer = await ai_service.chat(messages, temperature=0.2, allow_fallback=False)
+    interface_key = "product_rag_scoped" if scope_label == "product" else "product_rag_global"
+    answer = await ai_service.chat(
+        messages,
+        temperature=0.2,
+        allow_fallback=False,
+        interface_key=interface_key,
+        db=db,
+    )
     answer = _strip_answer_sources(answer or "")
     if answer:
         return answer, "ai"
@@ -613,7 +620,7 @@ async def answer_global_product_question(
         for product in products
     ]
     sources = _unique([source for result in results for source in result.get("sources", [])])
-    answer, mode = await _summarize_answer(clean, results, "global")
+    answer, mode = await _summarize_answer(clean, results, "global", db)
     return {
         "answer": answer,
         "mode": mode,
@@ -635,7 +642,7 @@ async def answer_product_question(
     detail = build_product_detail_payload(product)
     result = _detail_to_result(detail, clean, scoped=True)
     sources = result.get("sources", [])
-    answer, mode = await _summarize_answer(clean, [result], "product")
+    answer, mode = await _summarize_answer(clean, [result], "product", db)
     return {
         "answer": answer,
         "mode": mode,

@@ -1,4 +1,6 @@
 """General inspiration chat API."""
+import asyncio
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -14,6 +16,9 @@ from services.web_research import search_web
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+INSPIRATION_AI_TIMEOUT_SECONDS = 45.0
+INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = 120.0
 
 
 class ChatTurn(BaseModel):
@@ -91,29 +96,56 @@ def _recent_history(history: list[ChatTurn]) -> list[dict[str, str]]:
     return cleaned[-12:]
 
 
-def _fallback_answer(message: str) -> str:
+def _fallback_answer(message: str, reason: Literal["unavailable", "timeout"] = "unavailable") -> str:
+    intro = (
+        "AI 响应超时，已先返回兜底建议：\n\n"
+        if reason == "timeout"
+        else "AI 服务暂时不可用，但可以先这样拆解你的问题：\n\n"
+    )
+    closing = (
+        "等 AI 响应恢复后，我可以继续把它整理成完整方案。"
+        if reason == "timeout"
+        else "等 AI 服务恢复后，我可以继续把它整理成完整方案。"
+    )
     return (
-        "AI 服务暂时不可用，但可以先这样拆解你的问题：\n\n"
-        f"你刚才问的是：{message}\n\n"
+        f"{intro}你刚才问的是：{message}\n\n"
         "1. 先明确目标：要做选题、脚本、标题、活动文案，还是拍摄方向。\n"
         "2. 再补充对象：产品名、使用场景、价格活动、希望强调的卖点。\n"
         "3. 最后给出约束：平台、时长、语气、是否需要镜头说明。\n\n"
-        "等 AI 服务恢复后，我可以继续把它整理成完整方案。"
+        f"{closing}"
     )
 
 
-def _fallback_answer_with_products(message: str, products: list[dict]) -> str:
-    answer = _fallback_answer(message)
+def _fallback_answer_with_products(
+    message: str,
+    products: list[dict],
+    reason: Literal["unavailable", "timeout"] = "unavailable",
+) -> str:
+    answer = _fallback_answer(message, reason=reason)
     if not products:
         return answer
     names = "、".join(product.get("name", "") for product in products[:6] if product.get("name"))
     if not names:
         return answer
-    return answer + f"\n\n已先匹配到可参考产品：{names}。AI 恢复后可以继续把这些资料整理成完整创意方案。"
+    return answer + f"\n\n已先匹配到可参考产品：{names}。AI 响应恢复后可以继续把这些资料整理成完整创意方案。"
 
 
 def _model_for_tool_mode(tool_mode: str) -> str:
     return DEEPSEEK_V4_PRO_MODEL if tool_mode == "thinking" else DEEPSEEK_V4_FLASH_MODEL
+
+
+def _interface_key_for_tool_mode(tool_mode: str) -> str:
+    return {
+        "thinking": "inspiration_thinking",
+        "research": "inspiration_research",
+        "analysis": "inspiration_analysis",
+    }.get(tool_mode, "inspiration_chat")
+
+
+def _ai_timeout_for_tool_mode(tool_mode: str) -> float:
+    if tool_mode == "thinking":
+        return INSPIRATION_THINKING_AI_TIMEOUT_SECONDS
+    return INSPIRATION_AI_TIMEOUT_SECONDS
 
 
 def _normalize_ai_result(result, model: str) -> tuple[str, str, str]:
@@ -228,7 +260,8 @@ async def upload_inspiration_attachment(file: UploadFile = File(...)):
 async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depends(get_db)):
     message = data.message.strip()
     selected_model = _model_for_tool_mode(data.tool_mode)
-    model = ai_service.get_model_name(selected_model)
+    interface_key = _interface_key_for_tool_mode(data.tool_mode)
+    model = ai_service.get_model_name(selected_model, interface_key=interface_key, db=db)
     product_context = _safe_product_context(message, db)
     products = product_context.get("products") or []
     product_context_used = bool(products)
@@ -256,20 +289,36 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
         "role": "user",
         "content": _compose_user_message(message, product_context, attachments_used, sources, data.tool_mode),
     })
-    result = await ai_service.chat(
-        messages,
-        temperature=0.7,
-        allow_fallback=False,
-        model=selected_model,
-        thinking=data.tool_mode == "thinking",
-        reasoning_effort="high",
-        return_reasoning=True,
-    )
+    timed_out = False
+    timeout_seconds = _ai_timeout_for_tool_mode(data.tool_mode)
+    try:
+        result = await asyncio.wait_for(
+            ai_service.chat(
+                messages,
+                temperature=0.7,
+                allow_fallback=False,
+                model=selected_model,
+                interface_key=interface_key,
+                db=db,
+                thinking=data.tool_mode == "thinking",
+                reasoning_effort="high",
+                return_reasoning=True,
+            ),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError:
+        timed_out = True
+        logger.warning("Inspiration chat AI call timed out after %.1fs", timeout_seconds)
+        result = {"content": "", "reasoning": "", "model": selected_model}
     answer, reasoning, result_model = _normalize_ai_result(result, selected_model)
     answer = answer.strip()
     if not answer:
         return InspirationChatResponse(
-            answer=_fallback_answer_with_products(message, products),
+            answer=_fallback_answer_with_products(
+                message,
+                products,
+                reason="timeout" if timed_out else "unavailable",
+            ),
             mode="fallback",
             model=model,
             tool_mode=data.tool_mode,

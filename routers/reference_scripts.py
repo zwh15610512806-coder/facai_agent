@@ -82,7 +82,7 @@ async def upload_reference_script(
             result = await ai_service.chat([
                 {"role": "system", "content": "你是短视频脚本分析专家，只输出JSON"},
                 {"role": "user", "content": prompt},
-            ], temperature=0.2)
+            ], temperature=0.2, interface_key="reference_script_analyze")
             s = result.find('{'); e = result.rfind('}') + 1
             if s >= 0 and e > s: analysis = json.loads(result[s:e])
         except: pass

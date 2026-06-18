@@ -34,6 +34,14 @@ class ScriptGenerator:
     def get_model_name(self) -> str:
         return self.ai.get_model_name()
 
+    async def _chat_with_interface(self, messages: List[Dict], temperature: float, interface_key: str) -> str:
+        try:
+            return await self.ai.chat(messages, temperature=temperature, interface_key=interface_key)
+        except TypeError as exc:
+            if "interface_key" not in str(exc):
+                raise
+            return await self.ai.chat(messages, temperature=temperature)
+
     def _format_shot_design_requirement(self, include_shot_design: bool) -> str:
         if include_shot_design:
             return (
@@ -428,7 +436,7 @@ class ScriptGenerator:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = await self.ai.chat(messages, temperature=0.85)
+        response = await self._chat_with_interface(messages, temperature=0.85, interface_key="script_generate")
         return self._post_process_script_output(response, include_shot_design)
 
     def _build_system_prompt(self, video_type: str, tone: str, include_shot_design: bool = False) -> str:
@@ -680,7 +688,7 @@ class ScriptGenerator:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = await self.ai.chat(messages, temperature=0.75)
+        response = await self._chat_with_interface(messages, temperature=0.75, interface_key="script_library_rewrite")
         return self._post_process_script_output(response, include_shot_design)
 
     def _build_library_system_prompt(self, include_shot_design: bool) -> str:

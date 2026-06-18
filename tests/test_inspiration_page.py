@@ -116,6 +116,13 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("reasoning:data.reasoning", page)
         self.assertIn("sources:data.sources", page)
 
+    def test_inspiration_template_formats_fetch_failures(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("function formatInspirationChatError(error)", page)
+        self.assertIn("Failed to fetch", page)
+        self.assertIn("连接后端失败或响应超时", page)
+
     def test_inspiration_long_answers_scroll_to_answer_start(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 

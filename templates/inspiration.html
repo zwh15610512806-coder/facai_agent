@@ -107,7 +107,7 @@ body{overflow:hidden}
 <div class="nav-inner">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
 <div class="nav-links">
-<a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link">模板库</a><a href="/app/history" class="nav-link">历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/inspiration" class="nav-link on">灵感</a>
+<a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link">模板库</a><a href="/app/history" class="nav-link">历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/inspiration" class="nav-link on">灵感</a><a href="/app/ai-config" class="nav-link">AI配置</a>
 </div></div></nav>
 <main class="inspiration-page">
 <section class="inspiration-shell" aria-label="灵感 AI 对话工作台">
@@ -511,6 +511,13 @@ function setBusy(isBusy){
  document.getElementById('inspirationInput').disabled=isBusy;
  document.querySelectorAll('.tool-button').forEach(function(button){button.disabled=isBusy;});
 }
+function formatInspirationChatError(error){
+ const message=error&&error.message?String(error.message):'网络错误';
+ if(message.indexOf('Failed to fetch')>=0){
+  return '连接后端失败或响应超时，请确认本地服务正在运行后重试。';
+ }
+ return message;
+}
 async function sendInspirationChat(event){
  event.preventDefault();
  const input=document.getElementById('inspirationInput');
@@ -535,10 +542,10 @@ async function sendInspirationChat(event){
   const referenceProductsHtml=renderReferenceProducts(data.products);
   const modeLabels={thinking:'思考模式 · '+(data.model||'DeepSeek V4 Pro'),research:'深入研究 · 联网搜索',analysis:'数据分析 · 联网搜索'};
   setModelPillLabel(data.product_context_used?'产品资料 + AI 对话':(data.mode==='fallback'?'离线提示':(modeLabels[data.tool_mode]||data.model||'AI 对话')));
-  appendMessage('assistant',data.answer||'没有收到回复',{products:data.products,referenceProductsHtml:referenceProductsHtml,reasoning:data.reasoning,sources:data.sources});
+ appendMessage('assistant',data.answer||'没有收到回复',{products:data.products,referenceProductsHtml:referenceProductsHtml,reasoning:data.reasoning,sources:data.sources});
  }catch(error){
   loading.remove();
-  appendMessage('assistant','发送失败：'+(error&&error.message?error.message:'网络错误'));
+  appendMessage('assistant','发送失败：'+formatInspirationChatError(error));
  }finally{
   setBusy(false);
   input.focus();

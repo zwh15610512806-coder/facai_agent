@@ -13,6 +13,24 @@ DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_V4_FLASH_MODEL = os.getenv("DEEPSEEK_V4_FLASH_MODEL", "deepseek-v4-flash")
 DEEPSEEK_V4_PRO_MODEL = os.getenv("DEEPSEEK_V4_PRO_MODEL", "deepseek-v4-pro")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", DEEPSEEK_V4_FLASH_MODEL)
+DEEPSEEK_REQUEST_TIMEOUT_SECONDS = float(os.getenv("DEEPSEEK_REQUEST_TIMEOUT_SECONDS", "40"))
+
+# OpenAI-compatible LLM provider configuration
+DOUBAO_API_KEY = os.getenv("DOUBAO_API_KEY", "")
+DOUBAO_BASE_URL = os.getenv("DOUBAO_BASE_URL", "")
+DOUBAO_MODEL = os.getenv("DOUBAO_MODEL", "")
+
+MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
+MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1")
+MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M3")
+
+GLM_API_KEY = os.getenv("GLM_API_KEY") or os.getenv("ZAI_API_KEY", "")
+GLM_BASE_URL = os.getenv("GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")
+GLM_MODEL = os.getenv("GLM_MODEL", "glm-5.2")
+
+QWEN_API_KEY = os.getenv("QWEN_API_KEY") or os.getenv("DASHSCOPE_API_KEY", "")
+QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-plus")
 
 # ChromaDB 配置
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db")

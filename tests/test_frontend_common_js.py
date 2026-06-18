@@ -28,7 +28,7 @@ class FrontendCommonJsTests(unittest.TestCase):
         self.assertIn("return formatApiErrorMessage(data.detail || data.message || data, fallback)", common)
 
     def test_optimized_pages_include_common_js(self):
-        for name in ["templates.html", "history.html", "import.html", "products.html", "search.html", "inspiration.html"]:
+        for name in ["templates.html", "history.html", "import.html", "products.html", "search.html", "inspiration.html", "ai_config.html"]:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
             self.assertIn('/static/js/common.js', page, name)
 

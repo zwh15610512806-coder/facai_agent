@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AI配置 - 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="/static/js/common.js?v=20260618"></script>
+<style>
+body{background:var(--bg)}
+.ai-config-main{max-width:1440px;padding-top:24px}
+.ai-config-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px}
+.ai-config-title{margin:0;font-size:1.8rem}
+.ai-config-sub{font-size:13px;color:var(--text-2);line-height:1.7;margin-top:4px}
+.ai-config-grid{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;align-items:start}
+.interface-list{display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 188px);overflow:auto;padding-right:2px}
+.interface-item{width:100%;border:1px solid var(--border);background:var(--surface);border-radius:var(--r-sm);padding:10px 12px;text-align:left;cursor:pointer;color:var(--text);display:grid;gap:4px}
+.interface-item:hover{border-color:var(--facai);background:var(--facai-ghost)}
+.interface-item.is-active{border-color:var(--facai);background:var(--facai);color:#fff}
+.interface-name{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;font-weight:900}
+.interface-desc{font-size:12px;line-height:1.55;color:var(--text-2)}
+.interface-item.is-active .interface-desc{color:rgba(255,255,255,.82)}
+.interface-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;font-weight:800}
+.interface-pill{border-radius:var(--r-pill);background:var(--surface-darker);color:var(--text-2);padding:2px 7px}
+.interface-item.is-active .interface-pill{background:rgba(255,255,255,.18);color:#fff}
+.config-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--s-2);padding:20px;min-width:0}
+.panel-title{font-family:var(--font-ui);font-size:15px;font-weight:900;margin:0 0 14px;color:var(--text)}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.field{display:grid;gap:6px;min-width:0}
+.field.full{grid-column:1/-1}
+.field label{font-size:12px;font-weight:900;color:var(--text-2)}
+.field-help{font-size:12px;color:var(--text-3);line-height:1.55}
+.status-row{display:grid;gap:8px;margin-top:14px}
+.status-line{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--surface-darker);padding:9px 10px;font-size:12px;color:var(--text-2)}
+.status-value{font-weight:900;color:var(--text)}
+.status-ok{color:var(--facai)}
+.status-missing{color:var(--danger)}
+.save-row{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:16px}
+.metric-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.metric{border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--surface-darker);padding:12px}
+.metric-label{font-size:11px;font-weight:900;color:var(--text-3)}
+.metric-value{font-family:var(--font-ui);font-size:22px;font-weight:900;color:var(--text);line-height:1.2;margin-top:2px}
+.recent-table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm)}
+.usage-table{width:100%;border-collapse:collapse;font-size:12px;min-width:720px;background:var(--surface)}
+.usage-table th,.usage-table td{padding:9px 10px;border-bottom:1px solid var(--border-soft);text-align:left;vertical-align:top}
+.usage-table th{font-size:11px;color:var(--text-3);font-weight:900;background:var(--surface-darker)}
+.usage-table tr:last-child td{border-bottom:0}
+.status-badge{display:inline-flex;align-items:center;border-radius:var(--r-pill);padding:2px 8px;font-size:11px;font-weight:900;background:var(--facai-ghost);color:var(--facai)}
+.status-badge.error,.status-badge.unavailable{background:var(--danger-soft);color:var(--danger)}
+.provider-stack{display:grid;gap:8px}
+.provider-row{border:1px solid var(--border-soft);border-radius:var(--r-sm);padding:10px;background:var(--surface-darker);display:grid;gap:4px}
+.provider-row-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:900}
+.provider-row-meta{font-size:11px;color:var(--text-3);line-height:1.55;overflow-wrap:anywhere}
+.provider-env-note{margin:-6px 0 12px}
+@media (max-width:1100px){.ai-config-grid,.config-layout{grid-template-columns:1fr}.interface-list{max-height:none}.ai-config-head{align-items:flex-start;flex-direction:column}}
+@media (max-width:680px){.form-grid,.metric-grid{grid-template-columns:1fr}.ai-config-main{padding-left:12px;padding-right:12px}.panel{padding:16px}.ai-config-title{font-size:1.5rem}}
+</style>
+</head>
+<body>
+<nav class="nav">
+<div class="nav-inner">
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<div class="nav-links">
+<a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link">模板库</a><a href="/app/history" class="nav-link">历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/inspiration" class="nav-link">灵感</a><a href="/app/ai-config" class="nav-link on active">AI配置</a>
+</div></div></nav>
+<main class="page-main ai-config-main">
+  <div class="ai-config-head">
+    <div>
+      <h1 class="ai-config-title">AI配置</h1>
+      <div class="ai-config-sub">按接口单独选择供应商、模型、Base URL、API Key 和单次 max tokens；环境变量作为默认配置，用户可为每个接口覆盖自己的密钥。</div>
+    </div>
+    <button class="btn btn-soft btn-sm" type="button" onclick="loadAll()"><i data-lucide="refresh-cw"></i>刷新</button>
+  </div>
+  <section class="ai-config-grid">
+    <aside class="panel">
+      <h2 class="panel-title">接口</h2>
+      <div id="interfaceList" class="interface-list"></div>
+    </aside>
+    <section class="config-layout">
+      <div class="panel">
+        <h2 id="selectedInterfaceTitle" class="panel-title">接口配置</h2>
+        <div class="form-grid">
+          <div class="field">
+            <label for="providerSelect">模型供应商</label>
+            <select id="providerSelect" class="input" onchange="onProviderChange()"></select>
+          </div>
+          <div class="field">
+            <label for="modelSelect">模型</label>
+            <select id="modelSelect" class="input" onchange="onModelSelectChange()"></select>
+          </div>
+          <div id="customModelField" class="field full" style="display:none">
+            <label for="customModelInput">自定义模型名 / Endpoint ID</label>
+            <input id="customModelInput" class="input" type="text" placeholder="例如 qwen-plus、glm-5.2、MiniMax-M3 或火山方舟 Endpoint ID">
+          </div>
+          <div class="field">
+            <label for="baseUrlInput">Base URL</label>
+            <input id="baseUrlInput" class="input" type="url" placeholder="留空使用供应商默认或 .env 配置">
+            <div class="field-help">上线后用户可填自己的 OpenAI-compatible Base URL。</div>
+          </div>
+          <div class="field">
+            <label for="apiKeyInput">API Key</label>
+            <input id="apiKeyInput" class="input" type="password" autocomplete="new-password" placeholder="留空表示不替换已保存密钥">
+            <div id="apiKeyHint" class="field-help"></div>
+          </div>
+          <div class="field">
+            <label for="maxTokensInput">单次 max tokens</label>
+            <input id="maxTokensInput" class="input" type="number" min="1" max="128000" step="1">
+          </div>
+          <div class="field">
+            <label>接口状态</label>
+            <div id="implementedState" class="field-help"></div>
+          </div>
+        </div>
+        <div class="status-row">
+          <div class="status-line"><span>API Key 状态</span><span id="apiKeyStatus" class="status-value"></span></div>
+          <div class="status-line"><span>默认环境变量</span><span id="apiKeyEnvNames" class="status-value"></span></div>
+          <div class="status-line"><span>实际 Base URL</span><span id="baseUrlStatus" class="status-value"></span></div>
+        </div>
+        <div class="save-row">
+          <button id="clearApiKeyBtn" class="btn btn-soft" type="button" onclick="markApiKeyForClear()"><i data-lucide="key-round"></i>清除密钥</button>
+          <button id="saveConfigBtn" class="btn btn-pri" type="button" onclick="saveCurrentConfig()"><i data-lucide="save"></i>保存配置</button>
+        </div>
+      </div>
+      <aside class="panel">
+        <h2 class="panel-title">供应商状态</h2>
+        <div class="field-help provider-env-note">这里显示默认环境变量状态；每个接口还可以单独保存用户自己的 API Key 和 Base URL。</div>
+        <div id="providerStatusList" class="provider-stack"></div>
+      </aside>
+      <section class="panel" style="grid-column:1/-1">
+        <h2 class="panel-title">Token 统计</h2>
+        <div class="metric-grid">
+          <div class="metric"><div class="metric-label">今日 Token</div><div id="todayTokens" class="metric-value">0</div></div>
+          <div class="metric"><div class="metric-label">累计 Token</div><div id="totalTokens" class="metric-value">0</div></div>
+          <div class="metric"><div class="metric-label">预估花费</div><div id="estimatedCost" class="metric-value">¥0.00</div></div>
+          <div class="metric"><div class="metric-label">最近调用</div><div id="latestCalledAt" class="metric-value">-</div></div>
+        </div>
+      </section>
+      <section class="panel" style="grid-column:1/-1">
+        <h2 class="panel-title">最近调用记录</h2>
+        <div class="recent-table-wrap">
+          <table id="usageRecordTable" class="usage-table">
+            <thead><tr><th>时间</th><th>接口</th><th>供应商</th><th>模型</th><th>Tokens</th><th>来源</th><th>状态</th><th>耗时</th></tr></thead>
+            <tbody id="usageRecordBody"><tr><td colspan="8">加载中...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </section>
+</main>
+<script>
+const ui=window.FacaiUI||{};
+const escHtml=ui.escHtml||function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});};
+const toast=ui.toast||function(message){alert(message);};
+let providers=[];
+let providerByKey={};
+let interfaces=[];
+let selectedInterfaceKey='';
+let clearApiKeyOnSave=false;
+
+function renderIcons(){if(window.lucide)window.lucide.createIcons();}
+function fmtNumber(value){return Number(value||0).toLocaleString('zh-CN');}
+function fmtTime(value){if(!value)return '-';const d=new Date(value);return Number.isNaN(d.getTime())?value:d.toLocaleString('zh-CN',{hour12:false});}
+function selectedInterface(){return interfaces.find(function(item){return item.interface_key===selectedInterfaceKey;})||interfaces[0]||null;}
+
+async function fetchJson(url,options){
+ const response=await fetch(url,options);
+ const data=await response.json().catch(function(){return {};});
+ if(!response.ok)throw new Error(data.detail||data.message||'请求失败');
+ return data;
+}
+
+async function loadAll(){
+ try{
+  const providerData=await fetchJson('/api/ai-config/providers');
+  providers=providerData.providers||[];
+  providerByKey={};
+  providers.forEach(function(provider){providerByKey[provider.key]=provider;});
+  const interfaceData=await fetchJson('/api/ai-config/interfaces');
+  interfaces=interfaceData.interfaces||[];
+  if(!selectedInterfaceKey&&interfaces.length)selectedInterfaceKey=interfaces[0].interface_key;
+  renderProviderStatus();
+  renderInterfaceList();
+  renderCurrentInterface();
+  await loadUsage();
+ }catch(error){
+  toast(error.message||'AI配置加载失败','error');
+ }
+ renderIcons();
+}
+
+function renderProviderStatus(){
+ const box=document.getElementById('providerStatusList');
+ box.innerHTML=providers.map(function(provider){
+  const cls=provider.configured?'status-ok':'status-missing';
+  const status=provider.configured?'已配置':'未配置';
+  const env=(provider.api_key_env_names||[]).join(' / ');
+  const base=provider.base_url||'待配置';
+  return '<div class="provider-row"><div class="provider-row-head"><span>'+escHtml(provider.label)+'</span><span class="'+cls+'">'+status+'</span></div><div class="provider-row-meta">Key: '+escHtml(env)+'</div><div class="provider-row-meta">Base: '+escHtml(base)+'</div></div>';
+ }).join('');
+}
+
+function renderInterfaceList(){
+ const list=document.getElementById('interfaceList');
+ list.innerHTML=interfaces.map(function(item){
+  const active=item.interface_key===selectedInterfaceKey?' is-active':'';
+  const status=item.latest_status?item.latest_status:'未调用';
+  return '<button class="interface-item'+active+'" type="button" onclick="selectInterface(\''+escHtml(item.interface_key)+'\')"><span class="interface-name"><span>'+escHtml(item.label)+'</span><span class="interface-pill">'+escHtml(item.group)+'</span></span><span class="interface-desc">'+escHtml(item.description||'')+'</span><span class="interface-meta"><span class="interface-pill">'+escHtml(item.provider_label||item.provider)+'</span><span class="interface-pill">'+escHtml(item.model)+'</span><span class="interface-pill">'+escHtml(status)+'</span></span></button>';
+ }).join('');
+}
+
+function selectInterface(key){
+ selectedInterfaceKey=key;
+ renderInterfaceList();
+ renderCurrentInterface();
+ loadUsage();
+}
+
+function renderCurrentInterface(){
+ const item=selectedInterface();
+ if(!item)return;
+ document.getElementById('selectedInterfaceTitle').textContent=item.label;
+ const providerSelect=document.getElementById('providerSelect');
+ providerSelect.innerHTML=providers.map(function(provider){return '<option value="'+escHtml(provider.key)+'">'+escHtml(provider.label)+'</option>';}).join('');
+ providerSelect.value=item.provider;
+ document.getElementById('maxTokensInput').value=item.max_tokens||2400;
+ document.getElementById('baseUrlInput').value=item.custom_base_url||'';
+ document.getElementById('apiKeyInput').value='';
+ clearApiKeyOnSave=false;
+ document.getElementById('implementedState').textContent=item.implemented?'已接入真实调用':'配置占位，当前不直接调用大模型';
+ renderModelOptions(item.model);
+ renderProviderDetail();
+ renderInterfaceMetrics(item);
+}
+
+function renderModelOptions(currentModel){
+ const provider=providerByKey[document.getElementById('providerSelect').value]||{};
+ const models=(provider.preset_models||[]).filter(Boolean);
+ const seen={};
+ const options=[];
+ models.forEach(function(model){if(!seen[model]){seen[model]=true;options.push(model);}});
+ if(currentModel&&!seen[currentModel])options.unshift(currentModel);
+ const select=document.getElementById('modelSelect');
+ select.innerHTML=options.map(function(model){return '<option value="'+escHtml(model)+'">'+escHtml(model)+'</option>';}).join('')+'<option value="__custom__">自定义...</option>';
+ select.value=currentModel&&options.includes(currentModel)?currentModel:'__custom__';
+ document.getElementById('customModelField').style.display=select.value==='__custom__'?'grid':'none';
+ document.getElementById('customModelInput').value=select.value==='__custom__'?(currentModel||''):'';
+}
+
+function renderProviderDetail(){
+ const provider=providerByKey[document.getElementById('providerSelect').value]||{};
+ const item=selectedInterface()||{};
+ const usingSavedProvider=item.provider===provider.key;
+ const source=usingSavedProvider?(item.api_key_source||'missing'):(provider.configured?'env':'missing');
+ const configured=usingSavedProvider?!!item.api_key_configured:!!provider.configured;
+ const apiKey=document.getElementById('apiKeyStatus');
+ let statusText='未配置';
+ if(configured&&source==='interface')statusText='已配置（接口密钥 '+(item.api_key_mask||'****')+'）';
+ else if(configured&&source==='env')statusText='已配置（环境变量）';
+ apiKey.textContent=statusText;
+ apiKey.className='status-value '+(configured?'status-ok':'status-missing');
+ document.getElementById('apiKeyEnvNames').textContent=(provider.api_key_env_names||[]).join(' / ')||'-';
+ document.getElementById('baseUrlStatus').textContent=(usingSavedProvider?item.base_url:provider.base_url)||'未配置';
+ document.getElementById('baseUrlInput').placeholder=provider.base_url?'留空使用 '+provider.base_url:'留空使用供应商默认或 .env 配置';
+ document.getElementById('apiKeyHint').textContent=source==='interface'?'已保存接口级密钥；输入新密钥可替换，或点击清除密钥。':'未保存接口级密钥；留空时使用默认环境变量。';
+ document.getElementById('clearApiKeyBtn').disabled=source!=='interface';
+}
+
+function onProviderChange(){
+ const provider=providerByKey[document.getElementById('providerSelect').value]||{};
+ const item=selectedInterface()||{};
+ if(item.provider!==provider.key){
+  document.getElementById('baseUrlInput').value='';
+  document.getElementById('apiKeyInput').value='';
+  clearApiKeyOnSave=false;
+ }
+ renderModelOptions(provider.default_model||'');
+ renderProviderDetail();
+}
+
+function onModelSelectChange(){
+ const isCustom=document.getElementById('modelSelect').value==='__custom__';
+ document.getElementById('customModelField').style.display=isCustom?'grid':'none';
+ if(isCustom)document.getElementById('customModelInput').focus();
+}
+
+function markApiKeyForClear(){
+ clearApiKeyOnSave=true;
+ document.getElementById('apiKeyInput').value='';
+ document.getElementById('apiKeyHint').textContent='保存后将清除接口级 API Key，并回退到供应商环境变量。';
+ document.getElementById('apiKeyStatus').textContent='待清除';
+ document.getElementById('apiKeyStatus').className='status-value status-missing';
+}
+
+function currentModelValue(){
+ const selectValue=document.getElementById('modelSelect').value;
+ if(selectValue==='__custom__')return document.getElementById('customModelInput').value.trim();
+ return selectValue;
+}
+
+async function saveCurrentConfig(){
+ const item=selectedInterface();
+ if(!item)return;
+ const payload={
+  provider:document.getElementById('providerSelect').value,
+  model:currentModelValue(),
+  max_tokens:Number(document.getElementById('maxTokensInput').value)||0,
+  base_url:document.getElementById('baseUrlInput').value.trim()
+ };
+ const apiKey=document.getElementById('apiKeyInput').value.trim();
+ if(apiKey)payload.api_key=apiKey;
+ if(clearApiKeyOnSave)payload.clear_api_key=true;
+ if(!payload.model){toast('请填写模型名或 Endpoint ID','error');return;}
+ try{
+  const updated=await fetchJson('/api/ai-config/interfaces/'+encodeURIComponent(item.interface_key),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const index=interfaces.findIndex(function(row){return row.interface_key===updated.interface_key;});
+  if(index>=0)interfaces[index]=updated;
+  clearApiKeyOnSave=false;
+  toast('AI配置已保存','success');
+  renderInterfaceList();
+  renderCurrentInterface();
+ }catch(error){
+  toast(error.message||'保存失败','error');
+ }
+}
+
+function renderInterfaceMetrics(item){
+ const usage=item.usage||{};
+ document.getElementById('todayTokens').textContent=fmtNumber(usage.today_tokens);
+ document.getElementById('totalTokens').textContent=fmtNumber(usage.total_tokens);
+ document.getElementById('estimatedCost').textContent=usage.estimated_cost_display||'¥0.00';
+ document.getElementById('latestCalledAt').textContent=fmtTime(item.latest_called_at);
+}
+
+async function loadUsage(){
+ const item=selectedInterface();
+ if(!item)return;
+ try{
+  const data=await fetchJson('/api/ai-config/usage?interface_key='+encodeURIComponent(item.interface_key)+'&limit=50');
+  renderUsageTable(data.records||[]);
+ }catch(error){
+  document.getElementById('usageRecordBody').innerHTML='<tr><td colspan="8">'+escHtml(error.message||'加载失败')+'</td></tr>';
+ }
+}
+
+function renderUsageTable(records){
+ const body=document.getElementById('usageRecordBody');
+ if(!records.length){body.innerHTML='<tr><td colspan="8">暂无调用记录</td></tr>';return;}
+ body.innerHTML=records.map(function(record){
+  const statusCls=['error','unavailable'].includes(record.status)?' '+record.status:'';
+  return '<tr><td>'+escHtml(fmtTime(record.created_at))+'</td><td>'+escHtml(record.interface_key)+'</td><td>'+escHtml(record.provider)+'</td><td>'+escHtml(record.model)+'</td><td>'+fmtNumber(record.total_tokens)+'</td><td>'+escHtml(record.usage_source)+'</td><td><span class="status-badge'+statusCls+'">'+escHtml(record.status)+'</span></td><td>'+fmtNumber(record.latency_ms)+'ms</td></tr>';
+ }).join('');
+}
+
+document.addEventListener('DOMContentLoaded',function(){loadAll();renderIcons();});
+</script>
+</body>
+</html>

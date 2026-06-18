@@ -1,3 +1,4 @@
+import asyncio
 import io
 import unittest
 
@@ -19,6 +20,10 @@ class InspirationApiTests(unittest.TestCase):
         self.original_client = inspiration.ai_service.client
         self.original_chat = inspiration.ai_service.chat
         self.original_model = inspiration.ai_service.model
+        self.had_ai_timeout = hasattr(inspiration, "INSPIRATION_AI_TIMEOUT_SECONDS")
+        self.original_ai_timeout = getattr(inspiration, "INSPIRATION_AI_TIMEOUT_SECONDS", None)
+        self.had_thinking_ai_timeout = hasattr(inspiration, "INSPIRATION_THINKING_AI_TIMEOUT_SECONDS")
+        self.original_thinking_ai_timeout = getattr(inspiration, "INSPIRATION_THINKING_AI_TIMEOUT_SECONDS", None)
         self.engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -44,6 +49,14 @@ class InspirationApiTests(unittest.TestCase):
         self.inspiration.ai_service.client = self.original_client
         self.inspiration.ai_service.chat = self.original_chat
         self.inspiration.ai_service.model = self.original_model
+        if self.had_ai_timeout:
+            self.inspiration.INSPIRATION_AI_TIMEOUT_SECONDS = self.original_ai_timeout
+        elif hasattr(self.inspiration, "INSPIRATION_AI_TIMEOUT_SECONDS"):
+            delattr(self.inspiration, "INSPIRATION_AI_TIMEOUT_SECONDS")
+        if self.had_thinking_ai_timeout:
+            self.inspiration.INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = self.original_thinking_ai_timeout
+        elif hasattr(self.inspiration, "INSPIRATION_THINKING_AI_TIMEOUT_SECONDS"):
+            delattr(self.inspiration, "INSPIRATION_THINKING_AI_TIMEOUT_SECONDS")
         self.db.close()
         Base.metadata.drop_all(bind=self.engine)
         self.engine.dispose()
@@ -136,6 +149,50 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["model"], "deepseek-v4-pro")
         self.assertEqual(data["tool_mode"], "thinking")
         self.assertEqual(data["reasoning"], "先拆目标，再比较打法。")
+
+    def test_chat_returns_fallback_when_ai_call_times_out(self):
+        self.inspiration.ai_service.client = object()
+        self.inspiration.INSPIRATION_AI_TIMEOUT_SECONDS = 0.01
+
+        async def slow_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
+            await asyncio.sleep(0.05)
+            return {"content": "late answer", "reasoning": "", "model": "slow-model"}
+
+        self.inspiration.ai_service.chat = slow_chat
+
+        response = self.client.post(
+            "/api/inspiration/chat",
+            json={"message": "timeout test"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["mode"], "fallback")
+        self.assertNotEqual(data["answer"], "late answer")
+        self.assertEqual(data["tool_mode"], "chat")
+        self.assertIn("AI 响应超时", data["answer"])
+
+    def test_thinking_mode_uses_longer_ai_timeout(self):
+        self.inspiration.ai_service.client = object()
+        self.inspiration.INSPIRATION_AI_TIMEOUT_SECONDS = 0.01
+        self.inspiration.INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = 0.2
+
+        async def slow_but_valid_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
+            await asyncio.sleep(0.05)
+            return {"content": "thinking answer", "reasoning": "reasoning trace", "model": "deepseek-v4-pro"}
+
+        self.inspiration.ai_service.chat = slow_but_valid_chat
+
+        response = self.client.post(
+            "/api/inspiration/chat",
+            json={"message": "thinking timeout test", "tool_mode": "thinking"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["mode"], "ai")
+        self.assertEqual(data["answer"], "thinking answer")
+        self.assertEqual(data["tool_mode"], "thinking")
 
     def test_research_mode_adds_web_sources_to_prompt(self):
         self.inspiration.ai_service.client = object()
