@@ -348,7 +348,14 @@ body{overflow:hidden}
 .search-command .search-bar-btn{height:40px;margin:0;padding:0 15px;border-radius:var(--r-sm);align-items:center;justify-content:center}
 .search-command .search-bar-btn svg,.index-refresh svg,.summary-btn svg,.act-btn svg,.clear-filters svg{width:13px;height:13px;flex:0 0 13px}
 .search-command .btn-search svg{width:15px;height:15px;flex-basis:15px}
-.search-command .ai-banner{max-width:none;margin:0;padding:12px 14px}
+.search-sidebar .ai-banner{max-width:none;margin:0 0 14px;padding:12px;background:var(--facai-ghost);border-color:var(--facai-subtle);border-radius:var(--r-sm)}
+.search-sidebar .ai-banner.show{display:flex;flex-direction:column;gap:10px}
+.filter-ai-title{font-family:var(--font-ui);font-size:12px;font-weight:900;color:var(--facai)}
+.filter-ai-body{display:flex;align-items:flex-start;gap:10px}
+.search-sidebar .ai-banner-icon{font-size:20px;line-height:1}
+.search-sidebar .ai-banner-summary{font-size:13px;line-height:1.5}
+.search-sidebar .ai-banner-tags{gap:5px}
+.search-sidebar .ai-tag{font-size:11px;padding:3px 8px}
 .search-workbench{flex:1;min-height:0;display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px}
 .search-panel{min-width:0;min-height:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--s-2);display:flex;flex-direction:column;overflow:hidden}
 .search-panel-hd{flex:0 0 auto;padding:14px 16px;border-bottom:1px solid var(--border-soft);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:rgba(255,255,255,.96)}
@@ -369,15 +376,11 @@ body{overflow:hidden}
 .clear-filters{height:34px;margin-top:2px;border-style:solid;font-weight:800}
 .search-results{flex:initial}
 .search-board{padding:0}
-.search-board-hd{align-items:center}
-.list-title{display:grid;gap:3px;min-width:0}
+.search-board-hd{align-items:center;padding:8px 14px}
+.list-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0}
 .list-title h2{font-family:var(--font-ui);font-size:15px;font-weight:800;line-height:1.35;margin:0}
 .results-count{font-size:12px;line-height:1.5}
 .list-range{font-size:12px;color:var(--text-3)}
-.search-board-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
-.search-board-actions .pagination{margin:0}
-.search-board-actions #topPagination{order:1}
-.search-board-actions .summary-btn{order:2}
 .search-board .index-bar{flex:0 0 auto;margin:12px 14px 0;background:var(--surface-darker);border-color:var(--border-soft);border-radius:var(--r-sm)}
 .folder-crumb{flex:0 0 auto;margin:12px 14px 0}
 .file-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:12px 14px 14px}
@@ -389,7 +392,9 @@ body{overflow:hidden}
 .act-btn{min-height:32px;display:inline-flex;align-items:center;justify-content:center;gap:5px;font-weight:800}
 .empty-state{height:100%;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .pagination{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin-top:18px}
-.pagination-bottom{flex:0 0 auto;justify-content:center;margin:0;padding:12px 14px;border-top:1px solid var(--border-soft);background:rgba(255,255,255,.96)}
+.search-board-footer{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-top:1px solid var(--border-soft);background:rgba(255,255,255,.96)}
+.search-board-footer .summary-btn{flex:0 0 auto;margin:0}
+.pagination-bottom{flex:1;justify-content:flex-end;margin:0;padding:0;border-top:0;background:transparent}
 .pager-btn{min-width:34px;height:34px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all var(--fast) var(--ease)}
 .pager-btn:hover:not(:disabled){border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
 .pager-btn.on{background:var(--facai);border-color:var(--facai);color:#fff}
@@ -421,8 +426,6 @@ body{overflow:hidden}
   .index-refresh{width:100%;margin-left:0}
   #totalFiles{width:100%;margin-left:0!important}
   .search-board-hd{gap:10px}
-  .search-board-actions{align-items:stretch;justify-content:flex-start}
-  .search-board-actions #topPagination{width:100%;justify-content:flex-start}
   .summary-btn{width:100%;justify-content:center}
   .folder-crumb{align-items:flex-start;flex-wrap:wrap;margin:10px 12px 0}
   .folder-back-btn{width:100%}
@@ -431,6 +434,8 @@ body{overflow:hidden}
   .file-icon{width:38px;height:38px;font-size:20px}
   .file-actions{grid-column:1/-1;width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .act-btn{width:100%}
+  .search-board-footer{align-items:stretch;flex-direction:column}
+  .pagination-bottom{width:100%;justify-content:flex-start}
   .pagination{justify-content:flex-start}
   .pager-jump{width:100%;flex-wrap:wrap}
 }
@@ -460,13 +465,6 @@ body{overflow:hidden}
     <button class="search-bar-btn btn-search" id="searchBtn"><i data-lucide="sparkles"></i>AI 搜索</button>
     <button class="search-bar-btn btn-keyword" id="keywordBtn"><i data-lucide="search"></i>关键词</button>
   </div>
-  <div class="ai-banner" id="aiBanner">
-    <div class="ai-banner-icon">🤖</div>
-    <div>
-      <div class="ai-banner-summary" id="aiBannerSummary"></div>
-      <div class="ai-banner-tags" id="aiBannerTags"></div>
-    </div>
-  </div>
 </section>
 
 <!-- 主布局 -->
@@ -484,6 +482,16 @@ body{overflow:hidden}
       <div class="filter-hd">
         <span style="font-size:16px">🎛️</span>
         <span class="filter-title">筛选条件</span>
+      </div>
+      <div class="ai-banner" id="aiBanner">
+        <div class="filter-ai-title">AI 理解</div>
+        <div class="filter-ai-body">
+          <div class="ai-banner-icon">🤖</div>
+          <div>
+            <div class="ai-banner-summary" id="aiBannerSummary"></div>
+            <div class="ai-banner-tags" id="aiBannerTags"></div>
+          </div>
+        </div>
       </div>
       <div class="filter-sec">
         <div class="filter-label">文件类型</div>
@@ -521,10 +529,6 @@ body{overflow:hidden}
         <div class="results-count" id="resultsCount">找到 <strong>0</strong> 个文件</div>
         <span class="list-range" id="resultRangeHint">等待搜索</span>
       </div>
-      <div class="search-board-actions">
-        <div id="topPagination" class="pagination"></div>
-        <button class="summary-btn" id="summaryBtn" onclick="generateSummary()"><i data-lucide="bot"></i>AI 整理汇总</button>
-      </div>
     </div>
 
     <!-- 索引状态 -->
@@ -554,7 +558,10 @@ body{overflow:hidden}
       </div>
     </div>
 
-    <div class="pagination pagination-bottom" id="bottomPagination"></div>
+    <div class="search-board-footer">
+      <button class="summary-btn" id="summaryBtn" onclick="generateSummary()"><i data-lucide="bot"></i>AI 整理汇总</button>
+      <div class="pagination pagination-bottom" id="bottomPagination"></div>
+    </div>
   </section>
 </div>
 </main>
@@ -718,7 +725,6 @@ function renderFiles(files) {
 
 function renderPagination() {
   if (!totalResults) {
-    $('topPagination').innerHTML = '';
     $('bottomPagination').innerHTML = '';
     updateResultMeta(0, 0, 0);
     return;
@@ -728,28 +734,21 @@ function renderPagination() {
   const end = Math.min(totalResults, currentPage * pageSize);
   updateResultMeta(start, end, totalResults);
 
-  let top = '';
-  top += `<button class="pager-btn"${currentPage <= 1 ? ' disabled' : ''} onclick="goToPage(${currentPage - 1})">‹</button>`;
+  let bottom = '';
+  bottom += `<button class="pager-btn"${currentPage <= 1 ? ' disabled' : ''} onclick="goToPage(${currentPage - 1})">‹</button>`;
   let last = 0;
   for (let i = 1; i <= totalPages; i++) {
     if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1) {
-      if (i - last > 1) top += '<span class="pager-ellipsis">...</span>';
-      top += `<button class="pager-btn${i === currentPage ? ' on' : ''}" onclick="goToPage(${i})">${i}</button>`;
+      if (i - last > 1) bottom += '<span class="pager-ellipsis">...</span>';
+      bottom += `<button class="pager-btn${i === currentPage ? ' on' : ''}" onclick="goToPage(${i})">${i}</button>`;
       last = i;
     }
   }
-  top += `<button class="pager-btn"${currentPage >= totalPages ? ' disabled' : ''} onclick="goToPage(${currentPage + 1})">›</button>`;
-  top += `<span class="list-range">每页 ${pageSize} 条</span>`;
-
-  let bottom = '<div class="pagination">';
-  bottom += `<button class="pager-btn"${currentPage <= 1 ? ' disabled' : ''} onclick="goToPage(${currentPage - 1})">‹</button>`;
+  bottom += `<button class="pager-btn"${currentPage >= totalPages ? ' disabled' : ''} onclick="goToPage(${currentPage + 1})">›</button>`;
   bottom += `<span class="list-range">第 ${currentPage} / ${totalPages} 页，共 ${totalResults.toLocaleString()} 条</span>`;
   bottom += `<select id="pageSize" class="input" style="width:auto;font-size:13px" onchange="changePageSize(this.value)"><option value="15" ${pageSize===15?'selected':''}>15 条/页</option><option value="30" ${pageSize===30?'selected':''}>30 条/页</option><option value="60" ${pageSize===60?'selected':''}>60 条/页</option></select>`;
   bottom += `<span class="pager-jump"><span>跳至</span><input id="pageJumpInput" type="number" min="1" max="${totalPages}" value="${currentPage}" class="input pager-input" onkeydown="if(event.key==='Enter')jumpToPage()"><span>页</span><button class="pager-btn" onclick="jumpToPage()">跳转</button></span>`;
-  bottom += `<button class="pager-btn"${currentPage >= totalPages ? ' disabled' : ''} onclick="goToPage(${currentPage + 1})">›</button>`;
-  bottom += '</div>';
 
-  $('topPagination').innerHTML = top;
   $('bottomPagination').innerHTML = bottom;
 }
 
