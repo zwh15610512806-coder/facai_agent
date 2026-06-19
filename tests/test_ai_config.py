@@ -26,11 +26,13 @@ PROVIDER_ENV_KEYS = [
 ]
 
 INSPIRATION_TOOLS_INTERFACE_KEY = "inspiration_tools"
+SCRIPT_GENERATE_INTERFACE_KEY = "script_generate"
 SCRIPT_CREATION_INTERFACE_KEY = "script_creation"
 CONTENT_ANALYSIS_INTERFACE_KEY = "content_analysis"
 VISIBLE_AI_INTERFACE_KEYS = [
     "inspiration_chat",
     INSPIRATION_TOOLS_INTERFACE_KEY,
+    SCRIPT_GENERATE_INTERFACE_KEY,
     SCRIPT_CREATION_INTERFACE_KEY,
     CONTENT_ANALYSIS_INTERFACE_KEY,
 ]
@@ -41,7 +43,6 @@ INSPIRATION_TOOL_KEYS = [
     "inspiration_attachment",
 ]
 SCRIPT_CREATION_KEYS = [
-    "script_generate",
     "script_library_rewrite",
     "script_rewrite",
 ]
@@ -157,6 +158,38 @@ class AiConfigApiTests(unittest.TestCase):
         self.assertEqual(keys, VISIBLE_AI_INTERFACE_KEYS)
         for legacy_key in MERGED_AI_INTERFACE_KEYS:
             self.assertNotIn(legacy_key, keys)
+
+    def test_script_generation_has_separate_deepseek_v4_pro_interface(self):
+        response = self.client.get("/api/ai-config/interfaces")
+
+        self.assertEqual(response.status_code, 200)
+        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
+        self.assertIn(SCRIPT_GENERATE_INTERFACE_KEY, by_key)
+        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["provider"], "deepseek")
+        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["model"], "deepseek-v4-pro")
+        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["max_tokens"], 3600)
+        self.assertNotEqual(
+            by_key[SCRIPT_GENERATE_INTERFACE_KEY]["interface_key"],
+            SCRIPT_CREATION_INTERFACE_KEY,
+        )
+
+    def test_legacy_script_generate_default_setting_upgrades_to_v4_pro(self):
+        from models import AIInterfaceSetting
+
+        self.db.add(AIInterfaceSetting(
+            interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+            provider="deepseek",
+            model="deepseek-chat",
+            max_tokens=2400,
+        ))
+        self.db.commit()
+
+        response = self.client.get("/api/ai-config/interfaces")
+
+        self.assertEqual(response.status_code, 200)
+        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
+        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["model"], "deepseek-v4-pro")
+        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["max_tokens"], 3600)
 
     def test_legacy_interface_update_resolves_to_its_screenshot_group(self):
         response = self.client.put(
@@ -518,6 +551,45 @@ class AiServiceRoutingTests(unittest.TestCase):
         self.assertEqual(fake_client.completions.payload["max_tokens"], 2048)
         record = self.db.query(AIUsageRecord).one()
         self.assertEqual(record.interface_key, SCRIPT_CREATION_INTERFACE_KEY)
+        self.assertEqual(record.provider, "qwen")
+
+    def test_script_generate_chat_uses_separate_generation_setting(self):
+        from models import AIInterfaceSetting, AIUsageRecord
+        from services.ai_service import AIService
+
+        self.db.query(AIInterfaceSetting).delete()
+        self.db.add_all([
+            AIInterfaceSetting(
+                interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+                provider="qwen",
+                model="qwen-max",
+                max_tokens=3072,
+            ),
+            AIInterfaceSetting(
+                interface_key=SCRIPT_CREATION_INTERFACE_KEY,
+                provider="qwen",
+                model="qwen-plus",
+                max_tokens=2048,
+            ),
+        ])
+        self.db.commit()
+
+        service = AIService()
+        fake_client = FakeClient(FakeResponse())
+        service._clients["qwen"] = fake_client
+
+        result = asyncio.run(service.chat(
+            [{"role": "user", "content": "generate this"}],
+            interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+            allow_fallback=False,
+            db=self.db,
+        ))
+
+        self.assertEqual(result, "AI ok")
+        self.assertEqual(fake_client.completions.payload["model"], "qwen-max")
+        self.assertEqual(fake_client.completions.payload["max_tokens"], 3072)
+        record = self.db.query(AIUsageRecord).one()
+        self.assertEqual(record.interface_key, SCRIPT_GENERATE_INTERFACE_KEY)
         self.assertEqual(record.provider, "qwen")
 
     def test_chat_prefers_interface_api_key_and_base_url_over_env_defaults(self):

@@ -31,8 +31,13 @@ class ScriptGenerator:
     def __init__(self):
         self.ai = ai_service
 
-    def get_model_name(self) -> str:
-        return self.ai.get_model_name()
+    def get_model_name(self, interface_key: str = "script_generate") -> str:
+        try:
+            return self.ai.get_model_name(interface_key=interface_key)
+        except TypeError as exc:
+            if "interface_key" not in str(exc):
+                raise
+            return self.ai.get_model_name()
 
     async def _chat_with_interface(self, messages: List[Dict], temperature: float, interface_key: str) -> str:
         try:

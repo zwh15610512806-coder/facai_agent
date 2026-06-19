@@ -123,13 +123,15 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         )
 
     # 保存生成记录
-    engine_label = "模板库改写" if engine == "template" and reference_scripts else "DeepSeek AI"
+    using_template_library = engine == "template" and reference_scripts
+    engine_label = "模板库改写" if using_template_library else "DeepSeek AI"
+    model_interface_key = "script_library_rewrite" if using_template_library else "script_generate"
     record = GeneratedScript(
         product_id=product.id,
         template_id=template.id if template else None,
         script_content=script_content,
         video_type=video_type,
-        ai_model=f"{engine_label} · {generator.get_model_name()}",
+        ai_model=f"{engine_label} · {generator.get_model_name(model_interface_key)}",
     )
     db.add(record)
     db.commit()

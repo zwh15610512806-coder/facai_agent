@@ -17,7 +17,7 @@ class FakeTemplateLibraryGenerator:
         self.library_called = False
         self.include_shot_design = None
 
-    def get_model_name(self):
+    def get_model_name(self, interface_key="script_generate"):
         return "fake-model"
 
     def find_similar_scripts(self, *args, **kwargs):
