@@ -144,6 +144,25 @@ class SearchLocalTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, b"pdf")
 
+    def test_video_preview_supports_range_requests_for_browser_playback(self):
+        self._start_and_wait_for_index()
+        search = self.client.get(
+            "/api/search-proxy/search",
+            params={"q": "\u86cb\u7cd5", "type": "video"},
+        ).json()
+        file_id = search["files"][0]["id"]
+
+        response = self.client.get(
+            f"/api/search-proxy/files/{file_id}/preview",
+            headers={"Range": "bytes=0-1"},
+        )
+
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers["accept-ranges"], "bytes")
+        self.assertEqual(response.headers["content-range"], "bytes 0-1/5")
+        self.assertEqual(response.headers["content-length"], "2")
+        self.assertEqual(response.content, b"vi")
+
 
 if __name__ == "__main__":
     unittest.main()

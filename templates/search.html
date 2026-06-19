@@ -885,11 +885,13 @@ async function previewFile(id, ft, ext) {
     $('modalTitle').textContent = f.file_name;
     const pu = '/api/search-proxy/files/' + id + '/preview';
     if (ft === 'image') $('modalBody').innerHTML = '<img src="' + pu + '" class="img-preview" alt="' + escAttr(f.file_name) + '">';
-    else if (ft === 'video') $('modalBody').innerHTML = '<video class="vid-preview" controls><source src="' + pu + '" type="video/mp4"></video>';
-    else if (ft === 'audio') $('modalBody').innerHTML = '<audio controls style="width:100%;margin:20px"><source src="' + pu + '" type="audio/mpeg"></audio>';
+    else if (ft === 'video') $('modalBody').innerHTML = '<video class="vid-preview" controls preload="metadata"><source src="' + pu + '" type="video/mp4"></video>';
+    else if (ft === 'audio') $('modalBody').innerHTML = '<audio controls preload="metadata" style="width:100%;margin:20px"><source src="' + pu + '" type="audio/mpeg"></audio>';
     else if (ft === 'document' && ext === 'pdf') $('modalBody').innerHTML = '<iframe src="' + pu + '" class="pdf-preview"></iframe>';
     else $('modalBody').innerHTML = '<div style="text-align:center;padding:40px"><p style="margin-bottom:12px;color:var(--text-2)">该文件类型不支持在线预览</p><button class="act-btn pri" onclick="downloadFile(' + id + ')"><i data-lucide="download"></i>下载文件</button></div>';
     $('previewModal').classList.add('show');
+    const media = $('modalBody').querySelector('video,audio');
+    if (media) media.load();
     renderIcons();
   } catch(e) { toast('预览失败', false); }
 }

@@ -54,6 +54,11 @@ class SearchPageTests(unittest.TestCase):
         self.assertIn(".search-board-hd{align-items:center;padding:8px 14px}", self.page)
         self.assertIn(".list-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0}", self.page)
 
+    def test_video_preview_preloads_metadata_when_modal_opens(self):
+        self.assertIn('<video class="vid-preview" controls preload="metadata">', self.page)
+        self.assertIn("const media = $('modalBody').querySelector('video,audio');", self.page)
+        self.assertIn("if (media) media.load();", self.page)
+
     def test_search_page_matches_workbench_typography_and_spacing(self):
         self.assertIn("body{overflow:hidden}", self.page)
         self.assertIn(".search-page{max-width:min(1680px,calc(100vw - 32px));height:calc(100dvh - 68px)", self.page)
