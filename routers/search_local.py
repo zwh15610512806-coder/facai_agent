@@ -30,6 +30,7 @@ FILE_TYPE_MAP = {
     "archive": [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"],
 }
 EXT_TYPE_MAP = {ext: file_type for file_type, exts in FILE_TYPE_MAP.items() for ext in exts}
+PREVIEW_RANGE_CHUNK_SIZE = 1024 * 1024
 
 _lock = threading.RLock()
 _loaded = False
@@ -509,7 +510,12 @@ def _get_indexed_file(file_id: int) -> dict[str, Any] | None:
     return item
 
 
-def _parse_byte_range(range_header: str, file_size: int) -> tuple[int, int] | None:
+def _parse_byte_range(
+    range_header: str,
+    file_size: int,
+    *,
+    max_open_ended_length: int | None = None,
+) -> tuple[int, int] | None:
     match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
     if not match or file_size <= 0:
         return None
@@ -521,6 +527,8 @@ def _parse_byte_range(range_header: str, file_size: int) -> tuple[int, int] | No
     if start_text:
         start = int(start_text)
         end = int(end_text) if end_text else file_size - 1
+        if not end_text and max_open_ended_length:
+            end = min(end, start + max_open_ended_length - 1)
     else:
         suffix_length = int(end_text)
         if suffix_length <= 0:
@@ -547,7 +555,11 @@ def _iter_file_range(path: str, start: int, end: int):
 
 def _range_response(path: str, media_type: str, range_header: str) -> StreamingResponse | None:
     file_size = os.path.getsize(path)
-    parsed = _parse_byte_range(range_header, file_size)
+    parsed = _parse_byte_range(
+        range_header,
+        file_size,
+        max_open_ended_length=PREVIEW_RANGE_CHUNK_SIZE,
+    )
     if not parsed:
         return None
 
