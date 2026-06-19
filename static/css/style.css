@@ -129,7 +129,7 @@ h3 { font-size: 1.1rem; font-weight: 700; }
 .nav-links { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .nav-link {
   padding: 8px 16px; border-radius: var(--r-sm);
-  font-family: var(--font-ui); font-size: 14px; font-weight: 500;
+  font-family: var(--font-ui); font-size: 15px; font-weight: 500;
   text-decoration: none; color: var(--text-2); white-space: nowrap;
   transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
 }

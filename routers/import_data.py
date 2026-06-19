@@ -16,7 +16,8 @@ import io
 import os
 import re
 from typing import Any, List
-from config import UPLOAD_DIR
+from config import MAX_UPLOAD_SIZE, UPLOAD_DIR
+from services.upload_limits import read_upload_bytes
 
 router = APIRouter()
 
@@ -74,7 +75,7 @@ async def import_csv(
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="仅支持CSV文件")
 
-    content = await file.read()
+    content = await read_upload_bytes(file, max_bytes=MAX_UPLOAD_SIZE)
     result = ImportResult()
 
     try:
@@ -179,7 +180,7 @@ async def import_excel(
     except ImportError:
         raise HTTPException(status_code=500, detail="需要安装 openpyxl 和 pandas")
 
-    content = await file.read()
+    content = await read_upload_bytes(file, max_bytes=MAX_UPLOAD_SIZE)
     result = ImportResult()
 
     try:
@@ -301,7 +302,7 @@ async def import_markdown_products(
             continue
 
         try:
-            content = await upload.read()
+            content = await read_upload_bytes(upload, max_bytes=MAX_UPLOAD_SIZE)
             text = decode_markdown_bytes(content)
             if text is None:
                 result["skipped"] += 1
@@ -372,6 +373,8 @@ async def import_markdown_products(
                 "updated_fields": updated_fields,
                 "pending_fields": _normalize_pending_fields(product.pending_fields),
             })
+        except HTTPException:
+            raise
         except Exception as exc:
             db.rollback()
             result["skipped"] += 1

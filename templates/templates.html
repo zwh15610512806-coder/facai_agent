@@ -1,12 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>视频脚本库 — 法采新媒体运营 Agent</title>
+<title>脚本模板库 — 法采新媒体运营 Agent</title>
 <link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="/static/vendor/lucide.min.js"></script>
 <style>
 .badge-f{background:var(--facai-soft);color:var(--facai)}.badge-o{background:#dce6f5;color:#334a7a}.badge-t{background:#e0ddf0;color:#404078}
 .mo-wide{max-width:760px}
@@ -128,15 +126,16 @@
 <div class="nav-inner">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
 <div class="nav-links">
-<a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link on">模板库</a><a href="/app/history" class="nav-link">历史</a>
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/import" class="nav-link">数据导入</a><a href="/app/templates" class="nav-link on">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
+<a href="/app/ai-config" class="nav-link">AI配置</a>
 </div></div></nav>
 
 <main class="page-main library-main">
 <header class="page-hd library-header">
 <div class="library-title-row">
 <div>
-<h1>脚本模板与爆款库</h1>
+<h1>脚本模板库</h1>
 <div class="library-stats"><span id="countHint">加载中&hellip;</span><span class="stat-chip" id="resultCountHint">当前筛选 0 条</span></div>
 </div>
 <div class="library-actions">
@@ -174,7 +173,7 @@
 <div id="topPagination" class="pagination"></div>
 </div>
 <div id="scriptList" class="script-grid"><div class="empty-state">加载中&hellip;</div></div>
-<div id="bottomPagination" class="pagination pagination-bottom"><div id="paginationBar" class="pagination"><button id="pagePrev" class="pager-btn" disabled>‹</button><span id="pageInfo" class="list-range">第 1 页</span><select id="pageSize" class="input" style="width:auto;font-size:13px"><option value="24">24 条/页</option><option value="48">48 条/页</option><option value="96">96 条/页</option></select><span class="pager-jump"><span>跳至</span><input id="pageJumpInput" type="number" min="1" value="1" class="input pager-input" onkeydown="if(event.key==='Enter')jumpToPage()"><span>页</span><button class="pager-btn" onclick="jumpToPage()">跳转</button></span><button id="pageNext" class="pager-btn" disabled>›</button></div></div>
+<div id="bottomPagination" class="pagination pagination-bottom"><div id="paginationBar" class="pagination"><button id="pagePrev" class="pager-btn" disabled>‹</button><span id="pageInfo" class="list-range">第 1 页</span><select id="pageSize" class="input" style="width:auto;font-size:13px"><option value="25">25 条/页</option><option value="50">50 条/页</option><option value="100">100 条/页</option></select><span class="pager-jump"><span>跳至</span><input id="pageJumpInput" type="number" min="1" value="1" class="input pager-input" onkeydown="if(event.key==='Enter')jumpToPage()"><span>页</span><button class="pager-btn" onclick="jumpToPage()">跳转</button></span><button id="pageNext" class="pager-btn" disabled>›</button></div></div>
 </section>
 </main>
 
@@ -214,7 +213,8 @@ var currentScript=null,currentType='',products=[],modalProduct=null;
 var modalProductCategory='';
 var selectedIds=new Set(),batchMode=false;
 var currentPage=1;
-var pageSize=24;
+var pageSize=25;
+var searchPageSize=25;
 var currentResults=[],resultMode='normal',listTotal=0,totalPages=1,facaiTotal=0,otherTotal=0;
 var CATS=['烘焙调色','烘焙装饰','烘焙调味','烘焙夹心','烘焙配件'];
 var TYPES=['机制类','痛点类','需求类','认知类','达人分享类','制作方便','成本低','对比类','情绪类','场景类'];
@@ -222,6 +222,8 @@ var TYPES=['机制类','痛点类','需求类','认知类','达人分享类','�
 function toast(msg,type){var e=document.createElement('div');e.className='toast toast-'+(type==='success'?'ok':'err');e.textContent=msg;document.body.appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(function(){e.remove()},300)},2000);}
 function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
 function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
+function getActivePageSize(){return resultMode==='search'?searchPageSize:pageSize;}
+function buildPageSizeOptions(activePageSize){var sizes=resultMode==='search'?[25,50]:[25,50,100];return sizes.map(function(size){return '<option value="'+size+'" '+(activePageSize===size?'selected':'')+'>'+size+' 条/页</option>';}).join('');}
 
 (function(){
 var h='<button class="fpill on" onclick="setFilter(\'src\',\'all\')">全部</button><button class="fpill" onclick="setFilter(\'src\',\'facai\')">法采</button><button class="fpill" onclick="setFilter(\'src\',\'other\')">其他</button>';
@@ -293,7 +295,8 @@ renderCurrentPage();
 function renderCurrentPage(){
 var c=document.getElementById('scriptList');
 var total=resultMode==='normal'?listTotal:currentResults.length;
-var pages=resultMode==='normal'?totalPages:Math.max(1,Math.ceil(total/pageSize));
+var activePageSize=getActivePageSize();
+var pages=resultMode==='normal'?totalPages:Math.max(1,Math.ceil(total/activePageSize));
 var clientPaged=(resultMode==='search'||src==='other');
 if(resultMode==='normal'&&src!=='other')pages=Math.max(1,Math.ceil(total/pageSize));
 if(currentPage>pages)currentPage=pages;
@@ -304,8 +307,8 @@ if(!total){
  renderPagination();
  return;
 }
-var start=(currentPage-1)*pageSize;
-var items=clientPaged?currentResults.slice(start,start+pageSize):currentResults;
+var start=(currentPage-1)*activePageSize;
+var items=clientPaged?currentResults.slice(start,start+activePageSize):currentResults;
 c.innerHTML=items.map(function(s){return buildScriptCard(s);}).join('');
 if(window.lucide)lucide.createIcons();
 updateResultMeta(start+1,Math.min(start+items.length,total),total);
@@ -351,7 +354,8 @@ document.getElementById('listRangeHint').textContent=total?('第 '+start+'-'+end
 
 function renderPagination(){
 var total=resultMode==='normal'?listTotal:currentResults.length;
-var pages=resultMode==='normal'?totalPages:Math.max(1,Math.ceil(total/pageSize));
+var activePageSize=getActivePageSize();
+var pages=resultMode==='normal'?totalPages:Math.max(1,Math.ceil(total/activePageSize));
 var html='';
 html+='<button class="pager-btn" '+(currentPage<=1?'disabled':'')+' onclick="setPage('+(currentPage-1)+')">‹</button>';
 var last=0;
@@ -363,11 +367,11 @@ for(var i=1;i<=pages;i++){
  }
 }
 html+='<button class="pager-btn" '+(currentPage>=pages?'disabled':'')+' onclick="setPage('+(currentPage+1)+')">›</button>';
-html+='<span class="list-range">每页 '+pageSize+' 条</span>';
+html+='<span class="list-range">每页 '+activePageSize+' 条</span>';
 var bottomHtml='<div id="paginationBar" class="pagination">';
 bottomHtml+='<button id="pagePrev" class="pager-btn" '+(currentPage<=1?'disabled':'')+' onclick="setPage('+(currentPage-1)+')">‹</button>';
 bottomHtml+='<span id="pageInfo" class="list-range">第 '+currentPage+' / '+pages+' 页，共 '+total+' 条</span>';
-bottomHtml+='<select id="pageSize" class="input" style="width:auto;font-size:13px" onchange="changePageSize(this.value)"><option value="24" '+(pageSize===24?'selected':'')+'>24 条/页</option><option value="48" '+(pageSize===48?'selected':'')+'>48 条/页</option><option value="96" '+(pageSize===96?'selected':'')+'>96 条/页</option></select>';
+bottomHtml+='<select id="pageSize" class="input" style="width:auto;font-size:13px" onchange="changePageSize(this.value)">'+buildPageSizeOptions(activePageSize)+'</select>';
 bottomHtml+='<span class="pager-jump"><span>跳至</span><input id="pageJumpInput" type="number" min="1" max="'+pages+'" value="'+currentPage+'" class="input pager-input" onkeydown="if(event.key===\'Enter\')jumpToPage()"><span>页</span><button class="pager-btn" onclick="jumpToPage()">跳转</button></span>';
 bottomHtml+='<button id="pageNext" class="pager-btn" '+(currentPage>=pages?'disabled':'')+' onclick="setPage('+(currentPage+1)+')">›</button>';
 bottomHtml+='</div>';
@@ -376,14 +380,15 @@ document.getElementById('bottomPagination').innerHTML=bottomHtml;
 }
 
 function setPage(page){
-var pages=resultMode==='normal'?totalPages:Math.max(1,Math.ceil(currentResults.length/pageSize));
+var activePageSize=getActivePageSize();
+var pages=resultMode==='normal'?totalPages:Math.max(1,Math.ceil(currentResults.length/activePageSize));
 currentPage=Math.max(1,Math.min(page,pages));
 if(resultMode==='normal'&&src!=='other')loadAll();else renderCurrentPage();
 var board=document.querySelector('.script-board');
 if(board)window.scrollTo({top:Math.max(0,board.offsetTop-80),behavior:'smooth'});
 }
 
-function changePageSize(value){pageSize=parseInt(value,10)||24;currentPage=1;if(resultMode==='normal'&&src!=='other')loadAll();else renderCurrentPage();}
+function changePageSize(value){var parsed=parseInt(value,10);if(resultMode==='search')searchPageSize=parsed||25;else pageSize=parsed||25;currentPage=1;if(resultMode==='normal'&&src!=='other')loadAll();else renderCurrentPage();}
 function jumpToPage(){var input=document.getElementById('pageJumpInput');if(!input)return;var target=parseInt(input.value,10);if(!target)return;setPage(target);}
 function changePage(page){setPage(page);}
 
@@ -434,7 +439,7 @@ async function doSemSearch(){
  updateResultMeta(0,0,0);
  renderPagination();
  try{
-  var params='q='+encodeURIComponent(q)+'&limit=30';if(highOnly)params+='&high_only=1';
+  var params='q='+encodeURIComponent(q)+'&limit=50';if(highOnly)params+='&high_only=1';
   var r=await fetch('/api/templates/viral/search?'+params);
   var results=await r.json();
   renderSemResults(results);

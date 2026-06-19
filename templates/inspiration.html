@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AI工作 · 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
+<script src="/static/vendor/lucide.min.js"></script>
+<script src="/static/js/common.js?v=20260618"></script>
+<style>
+body{overflow:hidden}
+.inspiration-page{max-width:min(1440px,calc(100vw - 32px));height:calc(100dvh - 68px);margin:0 auto;padding:16px;display:flex;flex-direction:column}
+.inspiration-shell{flex:1;min-height:0;display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px}
+.inspiration-panel{min-width:0;min-height:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--s-2);display:flex;flex-direction:column;overflow:hidden}
+.inspiration-side{padding:14px;gap:12px}
+.inspiration-new{width:100%;height:40px}
+.inspiration-side-title{font-family:var(--font-ui);font-size:13px;font-weight:900;color:var(--text);margin:8px 0 4px}
+.conversation-section{min-height:0;display:flex;flex-direction:column;gap:8px;flex:1}
+.conversation-list{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:2px}
+.conversation-item{width:100%;min-height:52px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;padding:8px 9px;text-align:left;display:grid;gap:3px;cursor:pointer;color:var(--text)}
+.conversation-item:hover{border-color:var(--border);background:var(--surface-darker)}
+.conversation-item.is-active{border-color:var(--facai-subtle);background:var(--facai-ghost);color:var(--facai)}
+.conversation-title{min-width:0;font-size:13px;font-weight:850;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conversation-meta{font-size:11px;font-weight:700;color:var(--text-3);line-height:1.35}
+.conversation-item.is-active .conversation-meta{color:var(--facai)}
+.conversation-empty{border:1px dashed var(--border);border-radius:var(--r-sm);padding:12px;color:var(--text-3);font-size:12px;line-height:1.65;background:var(--surface-darker)}
+.prompt-list{display:grid;gap:8px}
+.prompt-chip{border:1px solid var(--border);background:var(--surface);border-radius:var(--r-sm);padding:9px 10px;text-align:left;font-family:var(--font-ui);font-size:13px;font-weight:700;line-height:1.5;color:var(--text-2);cursor:pointer}
+.prompt-chip:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.inspiration-note{margin-top:auto;padding:12px;border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--surface-darker);font-size:12px;line-height:1.65;color:var(--text-2)}
+.inspiration-main{background:linear-gradient(180deg,#fff 0%,#fff 62%,#fbfaf8 100%)}
+.inspiration-hd{flex:0 0 auto;padding:14px 18px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.inspiration-title{font-family:var(--font-display);font-size:1.25rem;margin:0}
+.model-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--facai-subtle);background:var(--facai-ghost);color:var(--facai);border-radius:var(--r-pill);padding:4px 10px;font-size:12px;font-weight:800}
+.model-pill svg,.model-pill i,.inspiration-new svg,.inspiration-new i{width:14px;height:14px}
+.inspiration-thread{flex:1;min-height:0;overflow:auto;padding:22px 18px 14px;display:flex;flex-direction:column;gap:14px}
+.inspiration-empty{max-width:680px;margin:auto;text-align:center;color:var(--text-2);display:grid;gap:14px}
+.inspiration-empty-icon{width:46px;height:46px;border-radius:var(--r);margin:0 auto;background:var(--facai-soft);color:var(--facai);display:flex;align-items:center;justify-content:center}
+.inspiration-empty-icon svg,.inspiration-empty-icon i{width:21px;height:21px}
+.inspiration-empty h1{font-size:1.7rem;margin:0}
+.inspiration-empty-prompts{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.chat-message{display:flex;gap:10px;align-items:flex-start;max-width:100%}
+.chat-message.user{justify-content:flex-end}
+.chat-avatar{width:30px;height:30px;border-radius:var(--r-pill);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;background:var(--facai-soft);color:var(--facai)}
+.chat-avatar svg,.chat-avatar i{width:15px;height:15px}
+.chat-bubble{max-width:min(780px,84%);border:1px solid var(--border-soft);border-radius:14px;background:var(--surface);padding:11px 13px;font-size:14px;line-height:1.78;color:var(--text);box-shadow:var(--s-1);white-space:pre-wrap;overflow-wrap:anywhere}
+.chat-message.user .chat-bubble{background:var(--facai);border-color:var(--facai);color:#fff;box-shadow:var(--s-brand)}
+.message-tools{margin-top:8px;display:flex;gap:6px}
+.message-tool{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);height:28px;padding:0 9px;font-size:12px;font-weight:800;color:var(--text-2);cursor:pointer}
+.message-tool:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.message-tool:disabled{opacity:.55;cursor:not-allowed}
+.generated-document-card{margin-top:10px;padding:10px 11px;border:1px solid var(--facai-subtle);border-radius:var(--r-sm);background:var(--facai-ghost);display:flex;align-items:center;justify-content:space-between;gap:10px;white-space:normal}
+.generated-document-title{min-width:0;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:900;color:var(--facai)}
+.generated-document-title span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.generated-document-title svg,.generated-document-title i{width:14px;height:14px;flex:0 0 auto}
+.generated-document-download{flex:0 0 auto;border:1px solid var(--facai-subtle);border-radius:var(--r-pill);background:var(--surface);color:var(--facai);padding:4px 9px;font-size:12px;font-weight:900;text-decoration:none}
+.generated-document-download:hover{background:var(--facai);color:#fff}
+.reference-products{margin-top:10px;padding-top:8px;border-top:1px solid var(--border-soft);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.reference-products-label{font-size:12px;font-weight:900;color:var(--text-3)}
+.reference-product-chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;border:1px solid var(--facai-subtle);border-radius:var(--r-pill);background:var(--facai-ghost);color:var(--facai);padding:3px 8px;font-size:12px;font-weight:800;line-height:1.4}
+.reference-product-meta{color:var(--text-2);font-weight:700}
+.message-attachments,.source-list{margin-top:10px;padding-top:8px;border-top:1px solid var(--border-soft);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.message-attachment-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface-darker);color:var(--text-2);padding:3px 8px;font-size:12px;font-weight:800;line-height:1.4}
+.message-attachment-chip svg,.message-attachment-chip i{width:13px;height:13px}
+.reasoning-block{margin-top:10px;border:1px solid var(--facai-subtle);border-radius:var(--r-sm);background:var(--facai-ghost);white-space:normal;overflow:hidden}
+.reasoning-block summary{cursor:pointer;padding:7px 9px;font-size:12px;font-weight:900;color:var(--facai)}
+.reasoning-body{padding:0 9px 9px;font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap}
+.source-label{font-size:12px;font-weight:900;color:var(--text-3)}
+.source-chip{display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface);color:var(--text-2);padding:3px 8px;font-size:12px;font-weight:800;line-height:1.4;text-decoration:none}
+.source-chip:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.thinking{color:var(--text-3)}
+.inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px;background:rgba(255,255,255,.96)}
+.composer-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+.tool-button{height:32px;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface);color:var(--text-2);padding:0 10px;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:850;cursor:pointer}
+.tool-button:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.tool-button.is-active{border-color:var(--facai);background:var(--facai);color:#fff}
+.tool-button svg,.tool-button i{width:14px;height:14px}
+.attachment-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.attachment-pill{display:inline-flex;align-items:center;gap:6px;max-width:100%;border:1px solid var(--facai-subtle);border-radius:var(--r-pill);background:var(--facai-ghost);color:var(--facai);padding:4px 8px;font-size:12px;font-weight:850}
+.attachment-pill button{border:0;background:transparent;color:inherit;cursor:pointer;padding:0;display:inline-flex;align-items:center}
+.attachment-pill svg,.attachment-pill i{width:13px;height:13px}
+.composer-form{display:flex;gap:8px;align-items:flex-end}
+.inspiration-input{flex:1;min-height:44px;max-height:132px;resize:none;border:1.5px solid var(--border);border-radius:var(--r);padding:10px 12px;font:inherit;font-size:14px;line-height:1.55;background:var(--surface)}
+.inspiration-input:focus{outline:none;border-color:var(--facai);box-shadow:0 0 0 3px var(--facai-subtle)}
+.icon-button{width:44px;height:44px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
+.icon-button:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.send-button{border:0;background:var(--facai);color:#fff}
+.send-button:disabled{background:var(--border);cursor:not-allowed}
+.icon-button svg,.icon-button i{width:16px;height:16px}
+@media (max-width: 900px){
+  body{overflow:auto}
+  .inspiration-page{height:auto;max-width:100%;padding:12px}
+  .inspiration-shell{grid-template-columns:1fr}
+  .inspiration-side{min-height:0}
+  .conversation-list{max-height:180px}
+  .prompt-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .inspiration-main{min-height:calc(100dvh - 220px)}
+}
+@media (max-width: 640px){
+  .inspiration-page{height:auto;padding:10px}
+  .inspiration-hd{align-items:flex-start;flex-direction:column}
+  .prompt-list{grid-template-columns:1fr}
+  .inspiration-thread{padding:16px 12px 10px}
+  .chat-bubble{max-width:92%}
+  .composer-form{gap:6px}
+  .icon-button{width:40px;height:40px}
+}
+</style>
+</head>
+<body>
+<nav class="nav">
+<div class="nav-inner">
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<div class="nav-links">
+<a href="/app" class="nav-link on">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/import" class="nav-link">数据导入</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/ai-config" class="nav-link">AI配置</a>
+</div></div></nav>
+<main class="inspiration-page">
+<section class="inspiration-shell" aria-label="AI工作对话工作台">
+  <aside class="inspiration-panel inspiration-side">
+    <button class="btn btn-pri inspiration-new" type="button" onclick="startNewConversation()"><i data-lucide="plus"></i>新对话</button>
+    <div class="conversation-section">
+      <div class="inspiration-side-title">历史对话</div>
+      <div id="conversationHistoryList" class="conversation-list" aria-label="历史对话列表"></div>
+    </div>
+    <div class="inspiration-note">对话会保存在当前浏览器，适合沉淀脚本方向、标题、口播和活动表达。</div>
+  </aside>
+  <section class="inspiration-panel inspiration-main">
+    <div class="inspiration-hd">
+      <div><h1 class="inspiration-title">AI工作</h1><div class="text-2" style="font-size:13px">和 AI 聊创意、脚本、选题与运营表达</div></div>
+      <span id="modelPill" class="model-pill"><i data-lucide="sparkles"></i><span>AI 对话</span></span>
+    </div>
+    <div id="inspirationThread" class="inspiration-thread"></div>
+    <div class="inspiration-composer">
+      <div class="composer-tools" aria-label="AI工作对话功能">
+        <button class="tool-button" type="button" onclick="document.getElementById('inspirationFileInput').click()"><i data-lucide="paperclip"></i>上传文件</button>
+        <button class="tool-button mode-button" type="button" data-tool-mode="thinking" onclick="setInspirationMode('thinking')"><i data-lucide="brain-circuit"></i>思考模式</button>
+        <button class="tool-button mode-button" type="button" data-tool-mode="research" onclick="setInspirationMode('research')"><i data-lucide="search"></i>深入研究</button>
+        <button class="tool-button mode-button" type="button" data-tool-mode="analysis" onclick="setInspirationMode('analysis')"><i data-lucide="chart-no-axes-column"></i>数据分析</button>
+        <input id="inspirationFileInput" type="file" accept=".txt,.md,.json,.csv,.pdf,.docx,.xlsx" multiple hidden>
+      </div>
+      <div id="attachmentList" class="attachment-list" aria-live="polite"></div>
+      <form class="composer-form" onsubmit="sendInspirationChat(event)">
+        <button id="clearChatBtn" class="icon-button" type="button" onclick="clearCurrentConversation()" aria-label="清空当前对话" title="清空当前对话"><i data-lucide="trash-2"></i></button>
+        <textarea id="inspirationInput" class="inspiration-input" rows="1" placeholder="问点什么，例如：帮我想一个奶冻粉的短视频脚本方向..." onkeydown="submitOnEnter(event)"></textarea>
+        <button id="inspirationSend" class="icon-button send-button" type="submit" aria-label="发送"><i data-lucide="send-horizontal"></i></button>
+      </form>
+    </div>
+  </section>
+</section>
+</main>
+<script>
+const ui=window.FacaiUI||{};
+const escHtml=ui.escHtml||function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});};
+const toast=ui.toast||function(message){alert(message);};
+const copyText=ui.copyText||function(text){return navigator.clipboard.writeText(text);};
+let chatHistory=[];
+const INSPIRATION_HISTORY_KEY='facai.inspiration.conversations.v1';
+const MAX_CONVERSATIONS=24;
+const MAX_MESSAGES_PER_CONVERSATION=60;
+let conversations=[];
+let activeConversationId='';
+let activeInspirationMode='chat';
+let selectedAttachments=[];
+const fallbackIconPaths={
+ 'bot':'<path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path>',
+ 'brain-circuit':'<path d="M12 5a3 3 0 1 0-5.8 1.1"></path><path d="M12 5a3 3 0 1 1 5.8 1.1"></path><path d="M7 20a4 4 0 0 1-1.9-7.5"></path><path d="M17 20a4 4 0 0 0 1.9-7.5"></path><path d="M12 5v14"></path><path d="M8 12h8"></path><path d="M9 16h6"></path>',
+ 'chart-no-axes-column':'<path d="M5 21V10"></path><path d="M12 21V3"></path><path d="M19 21v-6"></path>',
+ 'file-text':'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path>',
+ 'paperclip':'<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>',
+ 'plus':'<path d="M5 12h14"></path><path d="M12 5v14"></path>',
+ 'search':'<circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>',
+ 'send-horizontal':'<path d="m3 3 3 9-3 9 19-9Z"></path><path d="M6 12h16"></path>',
+ 'sparkles':'<path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"></path><path d="M20 3v4"></path><path d="M22 5h-4"></path><path d="M4 17v2"></path><path d="M5 18H3"></path>',
+ 'trash-2':'<path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>',
+ 'user':'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>',
+ 'x':'<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>'
+};
+function fallbackIconSvg(name){
+ const paths=fallbackIconPaths[name];
+ return paths?'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths+'</svg>':'';
+}
+function renderIcons(){
+ if(window.lucide){window.lucide.createIcons();return;}
+ document.querySelectorAll('i[data-lucide]').forEach(function(icon){
+  const svg=fallbackIconSvg(icon.getAttribute('data-lucide'));
+  if(svg)icon.outerHTML=svg;
+ });
+}
+function createConversation(messages){
+ const now=Date.now();
+ return {id:'conv-'+now+'-'+Math.random().toString(36).slice(2,8),title:'新对话',messages:Array.isArray(messages)?messages:[],updatedAt:now};
+}
+function sanitizeProduct(product){
+ if(!product||typeof product!=='object')return null;
+ return {
+  product_id:product.product_id==null?'':String(product.product_id),
+  name:product.name==null?'':String(product.name),
+  category:product.category==null?'':String(product.category),
+  price:product.price
+ };
+}
+function sanitizeAttachment(attachment){
+ if(!attachment||typeof attachment!=='object')return null;
+ const filename=String(attachment.filename||'附件').trim()||'附件';
+ return {
+  filename:filename,
+  file_type:String(attachment.file_type||'file').trim()||'file',
+  text:String(attachment.text||''),
+  char_count:Number(attachment.char_count)||String(attachment.text||'').length
+ };
+}
+function sanitizeSource(source){
+ if(!source||typeof source!=='object')return null;
+ const title=String(source.title||'外网资料').trim()||'外网资料';
+ const url=String(source.url||'').trim();
+ if(!url)return null;
+ return {title:title,url:url,snippet:String(source.snippet||'')};
+}
+function sanitizeMessage(message){
+ if(!message||typeof message!=='object')return null;
+ const role=message.role==='assistant'?'assistant':'user';
+ const content=String(message.content==null?'':message.content);
+ if(!content.trim())return null;
+ const products=Array.isArray(message.products)?message.products.map(sanitizeProduct).filter(Boolean).slice(0,6):[];
+ const attachments=Array.isArray(message.attachments)?message.attachments.map(sanitizeAttachment).filter(Boolean).slice(0,6):[];
+ const sources=Array.isArray(message.sources)?message.sources.map(sanitizeSource).filter(Boolean).slice(0,6):[];
+ return {role:role,content:content,products:products,attachments:attachments,sources:sources,reasoning:String(message.reasoning||'')};
+}
+function deriveConversationTitle(messages){
+ const firstUser=(messages||[]).find(function(message){return message.role==='user'&&message.content;});
+ const clean=String(firstUser?firstUser.content:'新对话').replace(/\s+/g,' ').trim()||'新对话';
+ return clean.length>22?clean.slice(0,22)+'...':clean;
+}
+function sanitizeConversation(raw){
+ if(!raw||typeof raw!=='object')return null;
+ const messages=Array.isArray(raw.messages)?raw.messages.map(sanitizeMessage).filter(Boolean).slice(-MAX_MESSAGES_PER_CONVERSATION):[];
+ if(!messages.length)return null;
+ const title=String(raw.title||deriveConversationTitle(messages)).replace(/\s+/g,' ').trim()||deriveConversationTitle(messages);
+ const updatedAt=Number(raw.updatedAt)||Date.now();
+ return {id:String(raw.id||('conv-'+updatedAt)),title:title,messages:messages,updatedAt:updatedAt};
+}
+function currentConversation(){
+ return conversations.find(function(conversation){return conversation.id===activeConversationId;})||null;
+}
+function syncChatHistoryFromActive(){
+ const conversation=currentConversation();
+ chatHistory=conversation?conversation.messages.map(function(message){return {role:message.role,content:message.content};}).slice(-12):[];
+}
+function sortConversations(){
+ conversations.sort(function(a,b){return Number(b.updatedAt||0)-Number(a.updatedAt||0);});
+}
+function saveConversations(){
+ try{
+  const stored=conversations.filter(function(conversation){return conversation.messages&&conversation.messages.length;}).slice(0,MAX_CONVERSATIONS);
+  localStorage.setItem(INSPIRATION_HISTORY_KEY,JSON.stringify(stored));
+ }catch(error){}
+}
+function loadConversations(){
+ try{
+  const raw=JSON.parse(localStorage.getItem(INSPIRATION_HISTORY_KEY)||'[]');
+  conversations=(Array.isArray(raw)?raw:[]).map(sanitizeConversation).filter(Boolean).slice(0,MAX_CONVERSATIONS);
+ }catch(error){
+  conversations=[];
+ }
+ sortConversations();
+ if(conversations.length){
+  activeConversationId=conversations[0].id;
+ }else{
+  const conversation=createConversation();
+  conversations=[conversation];
+  activeConversationId=conversation.id;
+ }
+ syncChatHistoryFromActive();
+}
+function ensureActiveConversation(){
+ let conversation=currentConversation();
+ if(conversation)return conversation;
+ conversation=createConversation();
+ conversations.unshift(conversation);
+ activeConversationId=conversation.id;
+ syncChatHistoryFromActive();
+ return conversation;
+}
+function formatConversationMeta(conversation){
+ const count=conversation.messages.length;
+ const timestamp=Number(conversation.updatedAt)||Date.now();
+ const diff=Date.now()-timestamp;
+ let time='刚刚';
+ if(diff>=86400000){
+  const date=new Date(timestamp);
+  time=(date.getMonth()+1)+'/'+date.getDate();
+ }else if(diff>=3600000){
+  time=Math.floor(diff/3600000)+' 小时前';
+ }else if(diff>=60000){
+  time=Math.floor(diff/60000)+' 分钟前';
+ }
+ return time+' · '+count+' 条';
+}
+function renderConversationHistory(){
+ const list=document.getElementById('conversationHistoryList');
+ if(!list)return;
+ sortConversations();
+ const visible=conversations.filter(function(conversation){return conversation.messages&&conversation.messages.length;});
+ if(!visible.length){
+  list.innerHTML='<div class="conversation-empty">暂无历史对话<br>开始提问后会自动保存。</div>';
+  return;
+ }
+ list.innerHTML=visible.map(function(conversation){
+  const active=conversation.id===activeConversationId?' is-active':'';
+  return '<button class="conversation-item'+active+'" type="button" data-conversation-id="'+escHtml(conversation.id)+'"><span class="conversation-title">'+escHtml(conversation.title||deriveConversationTitle(conversation.messages))+'</span><span class="conversation-meta">'+escHtml(formatConversationMeta(conversation))+'</span></button>';
+ }).join('');
+ list.querySelectorAll('[data-conversation-id]').forEach(function(button){
+  button.addEventListener('click',function(){selectConversation(button.getAttribute('data-conversation-id')||'');});
+ });
+}
+function setModelPillLabel(text){
+ const label=document.querySelector('#modelPill span');
+ if(label)label.textContent=text;
+}
+function renderConversation(){
+ const conversation=ensureActiveConversation();
+ if(!conversation.messages.length){
+  renderWelcome();
+  return;
+ }
+ const thread=document.getElementById('inspirationThread');
+ thread.innerHTML='';
+ conversation.messages.forEach(function(message){
+  appendMessage(message.role,message.content,{products:message.products,attachments:message.attachments,reasoning:message.reasoning,sources:message.sources,scroll:'none'});
+ });
+ thread.scrollTop=thread.scrollHeight;
+ const hasProductContext=conversation.messages.some(function(message){return message.products&&message.products.length;});
+ setModelPillLabel(hasProductContext?'产品资料 + AI 对话':'AI 对话');
+ renderIcons();
+}
+function selectConversation(id){
+ if(!id||id===activeConversationId)return;
+ const conversation=conversations.find(function(item){return item.id===id;});
+ if(!conversation)return;
+ activeConversationId=conversation.id;
+ syncChatHistoryFromActive();
+ renderConversation();
+ renderConversationHistory();
+}
+function addConversationMessage(role,content,extras){
+ const conversation=ensureActiveConversation();
+ const message=sanitizeMessage({role:role,content:content,products:extras&&extras.products,attachments:extras&&extras.attachments,reasoning:extras&&extras.reasoning,sources:extras&&extras.sources});
+ if(!message)return null;
+ conversation.messages.push(message);
+ conversation.messages=conversation.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
+ conversation.title=deriveConversationTitle(conversation.messages);
+ conversation.updatedAt=Date.now();
+ sortConversations();
+ syncChatHistoryFromActive();
+ saveConversations();
+ renderConversationHistory();
+ return message;
+}
+function startNewConversation(){
+ const current=currentConversation();
+ if(current&&current.messages.length){
+  const conversation=createConversation();
+  conversations.unshift(conversation);
+  activeConversationId=conversation.id;
+ }else if(current){
+  activeConversationId=current.id;
+ }else{
+  ensureActiveConversation();
+ }
+ syncChatHistoryFromActive();
+ document.getElementById('inspirationInput').value='';
+ selectedAttachments=[];
+ renderSelectedAttachments();
+ setModelPillLabel('AI 对话');
+ renderWelcome();
+ renderConversationHistory();
+ saveConversations();
+ document.getElementById('inspirationInput').focus();
+}
+function clearCurrentConversation(){
+ const conversation=ensureActiveConversation();
+ conversation.messages=[];
+ conversation.title='新对话';
+ conversation.updatedAt=Date.now();
+ syncChatHistoryFromActive();
+ saveConversations();
+ document.getElementById('inspirationInput').value='';
+ selectedAttachments=[];
+ renderSelectedAttachments();
+ setModelPillLabel('AI 对话');
+ renderWelcome();
+ renderConversationHistory();
+}
+function renderWelcome(){
+ const thread=document.getElementById('inspirationThread');
+ const prompts=[
+  ['新品开头','帮我想 5 个烘焙新品短视频开头'],
+  ['低成本选题','给我 3 个低成本拍摄选题'],
+  ['直播话术','把卖点改成更口语的直播话术'],
+  ['促单文案','帮我做一版活动促单文案']
+ ];
+ thread.innerHTML='<div class="inspiration-empty"><div class="inspiration-empty-icon"><i data-lucide="sparkles"></i></div><h1>今天想聊点什么？</h1><p>可以直接问选题、脚本、标题、活动文案或拍摄方向。</p><div class="inspiration-empty-prompts">'+prompts.map(function(item){return '<button class="prompt-chip" type="button" data-prompt="'+escHtml(item[1])+'">'+escHtml(item[0])+'</button>';}).join('')+'</div></div>';
+ thread.querySelectorAll('[data-prompt]').forEach(function(button){
+  button.addEventListener('click',function(){usePrompt(button.getAttribute('data-prompt')||'');});
+ });
+ renderIcons();
+}
+function formatReferencePrice(value){
+ const number=Number(value);
+ if(!Number.isFinite(number))return '';
+ return '¥'+(Math.round(number*100)/100).toString();
+}
+function renderReferenceProducts(products){
+ if(!products||!products.length)return '';
+ return '<div class="reference-products"><span class="reference-products-label">参考产品</span>'+products.slice(0,6).map(function(product){const meta=[product.category||'',formatReferencePrice(product.price)].filter(Boolean).join(' · ');return '<span class="reference-product-chip"><span>'+escHtml(product.name||'相关产品')+'</span>'+(meta?'<span class="reference-product-meta">'+escHtml(meta)+'</span>':'')+'</span>';}).join('')+'</div>';
+}
+function renderMessageAttachments(attachments){
+ if(!attachments||!attachments.length)return '';
+ return '<div class="message-attachments">'+attachments.slice(0,6).map(function(attachment){return '<span class="message-attachment-chip"><i data-lucide="file-text"></i><span>'+escHtml(attachment.filename||'附件')+'</span></span>';}).join('')+'</div>';
+}
+function renderReasoning(reasoning){
+ if(!reasoning)return '';
+ return '<details class="reasoning-block"><summary>思考过程</summary><div class="reasoning-body">'+escHtml(reasoning)+'</div></details>';
+}
+function renderSources(sources){
+ if(!sources||!sources.length)return '';
+ return '<div class="source-list"><span class="source-label">外网参考</span>'+sources.slice(0,6).map(function(source,index){return '<a class="source-chip" href="'+escHtml(source.url||'#')+'" target="_blank" rel="noopener noreferrer">'+escHtml((index+1)+'. '+(source.title||'资料来源'))+'</a>';}).join('')+'</div>';
+}
+function renderGeneratedDocument(document){
+ if(!document||!document.download_url)return '';
+ return '<div class="generated-document-card"><div class="generated-document-title"><i data-lucide="file-text"></i><span>'+escHtml(document.title||document.filename||'Word 文档')+'</span></div><a class="generated-document-download" href="'+escHtml(document.download_url)+'" target="_blank" rel="noopener">下载 Word 文档</a></div>';
+}
+function getActiveInspirationMode(){
+ return activeInspirationMode;
+}
+function renderInspirationMode(){
+ document.querySelectorAll('.mode-button').forEach(function(button){
+  const isActive=button.getAttribute('data-tool-mode')===activeInspirationMode;
+  button.classList.toggle('is-active',isActive);
+  button.setAttribute('aria-pressed',isActive?'true':'false');
+ });
+}
+function setInspirationMode(mode){
+ activeInspirationMode=activeInspirationMode===mode?'chat':mode;
+ renderInspirationMode();
+ const labels={chat:'AI 对话',thinking:'思考模式 · DeepSeek V4 Pro',research:'深入研究 · 联网搜索',analysis:'数据分析 · 联网搜索'};
+ setModelPillLabel(labels[activeInspirationMode]||'AI 对话');
+}
+function renderSelectedAttachments(){
+ const list=document.getElementById('attachmentList');
+ if(!list)return;
+ list.innerHTML=selectedAttachments.map(function(attachment,index){return '<span class="attachment-pill"><i data-lucide="file-text"></i><span>'+escHtml(attachment.filename||'附件')+'</span><button type="button" onclick="removeSelectedAttachment('+index+')" aria-label="移除附件"><i data-lucide="x"></i></button></span>';}).join('');
+ renderIcons();
+}
+function removeSelectedAttachment(index){
+ selectedAttachments.splice(index,1);
+ renderSelectedAttachments();
+}
+async function uploadInspirationFiles(files){
+ const list=Array.prototype.slice.call(files||[]);
+ if(!list.length)return;
+ for(const file of list.slice(0,6-selectedAttachments.length)){
+  const formData=new FormData();
+  formData.append('file',file);
+  try{
+   const response=await fetch('/api/inspiration/attachments',{method:'POST',body:formData});
+   const data=await response.json();
+   if(!response.ok)throw new Error(data.detail||data.message||'附件解析失败');
+   selectedAttachments.push(data);
+   toast('已读取附件：'+(data.filename||file.name),'success');
+  }catch(error){
+   toast((file.name||'附件')+'：'+(error&&error.message?error.message:'上传失败'),'error');
+  }
+ }
+ renderSelectedAttachments();
+}
+function scrollChatToMessage(message,mode){
+ const thread=document.getElementById('inspirationThread');
+ if(!thread||!message||mode==='none')return;
+ if(mode==='top'){
+  const top=Math.max(0,message.offsetTop-thread.offsetTop-14);
+  thread.scrollTo({top:top,behavior:'smooth'});
+  return;
+ }
+ thread.scrollTop=thread.scrollHeight;
+}
+function appendMessage(role,content,options){
+ const thread=document.getElementById('inspirationThread');
+ if(thread.querySelector('.inspiration-empty'))thread.innerHTML='';
+ const msg=document.createElement('div');
+ msg.className='chat-message '+(role==='user'?'user':'assistant');
+ const safe=escHtml(content);
+ const attachmentHtml=options?renderMessageAttachments(options.attachments):'';
+ const reasoningHtml=role==='assistant'&&options?renderReasoning(options.reasoning):'';
+ const references=role==='assistant'&&options?(options.referenceProductsHtml||renderReferenceProducts(options.products)):'';
+ const sourceHtml=role==='assistant'&&options?renderSources(options.sources):'';
+ const tools=role==='assistant'&&!(options&&options.thinking)?'<div class="message-tools"><button class="message-tool" type="button" onclick="copyAssistantMessage(this)">复制</button><button class="message-tool" type="button" onclick="generateAssistantDocument(this)">生成文档</button></div>':'';
+ msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')+'<div class="chat-bubble '+(options&&options.thinking?'thinking':'')+'">'+safe+attachmentHtml+reasoningHtml+references+sourceHtml+tools+'</div>'+(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
+ thread.appendChild(msg);
+ const scrollMode=(options&&options.scroll)||((role==='assistant'&&!(options&&options.thinking))?'top':'bottom');
+ scrollChatToMessage(msg,scrollMode);
+ renderIcons();
+ return msg;
+}
+function copyAssistantMessage(button){
+ const bubble=button.closest('.chat-bubble');
+ const text=bubble?bubble.childNodes[0].textContent:'';
+ copyText(text).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});
+}
+function findAssistantDocumentContext(answer){
+ const conversation=currentConversation();
+ const toDocumentHistory=function(items){
+  return (items||[]).slice(-12).map(function(item){return {role:item.role,content:String(item.content||'').slice(0,4000)};});
+ };
+ const fallback={message:'',answer:answer,history:toDocumentHistory(chatHistory),attachments:[],products:[]};
+ if(!conversation||!conversation.messages)return fallback;
+ for(let index=conversation.messages.length-1;index>=0;index--){
+  const message=conversation.messages[index];
+  if(message.role==='assistant'&&message.content===answer){
+   let previousUser=null;
+   for(let cursor=index-1;cursor>=0;cursor--){
+    if(conversation.messages[cursor].role==='user'){previousUser=conversation.messages[cursor];break;}
+   }
+   return {
+    message:previousUser?previousUser.content:'',
+    answer:answer,
+    history:toDocumentHistory(conversation.messages.slice(Math.max(0,index-12),index+1)),
+    attachments:previousUser&&previousUser.attachments?previousUser.attachments:[],
+    products:message.products||[],
+    title:previousUser?previousUser.content:''
+   };
+  }
+ }
+ return fallback;
+}
+function formatInspirationApiError(data,fallback){
+ if(!data)return fallback||'请求失败';
+ if(typeof data.detail==='string')return data.detail;
+ if(Array.isArray(data.detail)){
+  const first=data.detail[0]||{};
+  if(first.msg)return first.msg;
+  if(first.message)return first.message;
+  return fallback||'请求参数有误，请检查内容后重试。';
+ }
+ if(data.detail&&typeof data.detail==='object'){
+  if(data.detail.msg)return data.detail.msg;
+  if(data.detail.message)return data.detail.message;
+  return fallback||'请求参数有误，请检查内容后重试。';
+ }
+ if(data.message)return String(data.message);
+ return fallback||'请求失败';
+}
+async function generateAssistantDocument(button){
+ const bubble=button.closest('.chat-bubble');
+ const answer=bubble?bubble.childNodes[0].textContent.trim():'';
+ if(!bubble||!answer)return toast('暂无可生成文档的内容','error');
+ const oldText=button.textContent;
+ button.disabled=true;
+ button.textContent='生成中...';
+ try{
+  const payload=findAssistantDocumentContext(answer);
+  const response=await fetch('/api/inspiration/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data=await response.json();
+  if(!response.ok)throw new Error(formatInspirationApiError(data,'文档生成失败'));
+  const existing=bubble.querySelector('.generated-document-card');
+  if(existing)existing.remove();
+  bubble.insertAdjacentHTML('beforeend',renderGeneratedDocument(data));
+  toast('Word 文档已生成','success');
+  renderIcons();
+ }catch(error){
+  toast(error&&error.message?error.message:'文档生成失败','error');
+ }finally{
+  button.disabled=false;
+  button.textContent=oldText;
+ }
+}
+function usePrompt(text){
+ const input=document.getElementById('inspirationInput');
+ input.value=text;
+ input.focus();
+}
+function submitOnEnter(event){
+ if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();document.getElementById('inspirationSend').click();}
+}
+function setBusy(isBusy){
+ document.getElementById('inspirationSend').disabled=isBusy;
+ document.getElementById('inspirationInput').disabled=isBusy;
+ document.querySelectorAll('.tool-button').forEach(function(button){button.disabled=isBusy;});
+}
+function formatInspirationChatError(error){
+ const message=error&&error.message?String(error.message):'网络错误';
+ if(message.indexOf('Failed to fetch')>=0){
+  return '连接后端失败或响应超时，请确认本地服务正在运行后重试。';
+ }
+ return message;
+}
+async function sendInspirationChat(event){
+ event.preventDefault();
+ const input=document.getElementById('inspirationInput');
+ const message=input.value.trim();
+ if(!message)return;
+ ensureActiveConversation();
+ const historyForRequest=chatHistory.slice();
+ input.value='';
+ const attachmentsForRequest=selectedAttachments.slice();
+ appendMessage('user',message,{attachments:selectedAttachments});
+ addConversationMessage('user',message,{attachments:selectedAttachments});
+ selectedAttachments=[];
+ renderSelectedAttachments();
+ const loading=appendMessage('assistant','正在思考...', {thinking:true});
+ setBusy(true);
+ try{
+  const response=await fetch('/api/inspiration/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:message,history:historyForRequest,tool_mode:getActiveInspirationMode(),attachments:attachmentsForRequest})});
+  const data=await response.json();
+  loading.remove();
+  if(!response.ok)throw new Error(data.detail||data.message||'发送失败');
+  addConversationMessage('assistant',data.answer||'',{products:data.products,reasoning:data.reasoning,sources:data.sources});
+  const referenceProductsHtml=renderReferenceProducts(data.products);
+  const modeLabels={thinking:'思考模式 · '+(data.model||'DeepSeek V4 Pro'),research:'深入研究 · 联网搜索',analysis:'数据分析 · 联网搜索'};
+  setModelPillLabel(data.product_context_used?'产品资料 + AI 对话':(data.mode==='fallback'?'离线提示':(modeLabels[data.tool_mode]||data.model||'AI 对话')));
+ appendMessage('assistant',data.answer||'没有收到回复',{products:data.products,referenceProductsHtml:referenceProductsHtml,reasoning:data.reasoning,sources:data.sources});
+ }catch(error){
+  loading.remove();
+  appendMessage('assistant','发送失败：'+formatInspirationChatError(error));
+ }finally{
+  setBusy(false);
+  input.focus();
+ }
+}
+function clearChat(){
+ clearCurrentConversation();
+}
+loadConversations();
+renderConversation();
+renderConversationHistory();
+renderInspirationMode();
+renderSelectedAttachments();
+document.getElementById('inspirationFileInput').addEventListener('change',function(event){
+ uploadInspirationFiles(event.target.files);
+ event.target.value='';
+});
+document.addEventListener('DOMContentLoaded',renderIcons);
+</script>
+</body>
+</html>

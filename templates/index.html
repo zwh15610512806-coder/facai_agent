@@ -1,12 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>生成脚本 — 法采新媒体运营 Agent</title>
 <link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -14,13 +12,15 @@
 <div class="nav-inner">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
 <div class="nav-links">
-<a href="/app" class="nav-link on">生成</a>
-<a href="/app/rewrite" class="nav-link">改写</a>
-<a href="/app/products" class="nav-link">产品</a>
-<a href="/app/import" class="nav-link">导入</a>
-<a href="/app/templates" class="nav-link">模板库</a>
-<a href="/app/history" class="nav-link">历史</a>
+<a href="/app" class="nav-link">AI工作</a>
+<a href="/app/generate" class="nav-link on">生成脚本</a>
+<a href="/app/rewrite" class="nav-link">爆款脚本改写</a>
+<a href="/app/products" class="nav-link">产品知识库</a>
+<a href="/app/import" class="nav-link">数据导入</a>
+<a href="/app/templates" class="nav-link">脚本模板库</a>
+<a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
+<a href="/app/ai-config" class="nav-link">AI配置</a>
 </div></div></nav>
 
 <!-- ====== Hero Banner ====== -->
@@ -517,7 +517,7 @@
 </div>
 
 <!-- Lucide Icons -->
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="/static/vendor/lucide.min.js"></script>
 
 <script>
 function scrollToStep1(){document.getElementById('step1').scrollIntoView({behavior:'smooth',block:'start'});}

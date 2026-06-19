@@ -20,7 +20,7 @@ class TemplatesPageTests(unittest.TestCase):
 
     def test_script_list_is_paginated(self):
         self.assertIn("var currentPage=1", self.page)
-        self.assertIn("var pageSize=24", self.page)
+        self.assertIn("var pageSize=25", self.page)
         self.assertIn("var currentResults=[]", self.page)
         self.assertIn('id="topPagination"', self.page)
         self.assertIn('id="bottomPagination"', self.page)
@@ -36,11 +36,12 @@ class TemplatesPageTests(unittest.TestCase):
         self.assertIn("renderCurrentPage()", render_all.group("body"))
 
     def test_pagination_uses_requested_page_sizes_and_page_jump(self):
-        self.assertIn('<option value="24">24 条/页</option>', self.page)
+        self.assertIn('<option value="25">25 条/页</option>', self.page)
         self.assertNotIn('<option value="16">16 条/页</option>', self.page)
-        self.assertIn('>24 条/页</option>', self.page)
-        self.assertIn('>48 条/页</option>', self.page)
-        self.assertIn('>96 条/页</option>', self.page)
+        self.assertNotIn('>24 条/页</option>', self.page)
+        self.assertIn('>25 条/页</option>', self.page)
+        self.assertIn('>50 条/页</option>', self.page)
+        self.assertIn('>100 条/页</option>', self.page)
         self.assertNotIn('>32 条/页</option>', self.page)
         self.assertNotIn('>64 条/页</option>', self.page)
         self.assertIn('id="pageJumpInput"', self.page)
@@ -48,6 +49,29 @@ class TemplatesPageTests(unittest.TestCase):
         self.assertIn("function jumpToPage", self.page)
         self.assertIn("setPage(target)", self.page)
         self.assertIn("if(event.key==='Enter')jumpToPage()", self.page)
+
+    def test_semantic_search_uses_full_five_column_page_size(self):
+        self.assertIn("var searchPageSize=25", self.page)
+        self.assertIn("function getActivePageSize()", self.page)
+        self.assertIn("return resultMode==='search'?searchPageSize:pageSize", self.page)
+        self.assertIn("function buildPageSizeOptions(activePageSize)", self.page)
+
+        render_current = re.search(
+            r"function renderCurrentPage\(\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+        self.assertIsNotNone(render_current)
+        self.assertIn("var activePageSize=getActivePageSize()", render_current.group("body"))
+        self.assertIn("currentResults.slice(start,start+activePageSize)", self.page)
+
+        semantic_search = re.search(
+            r"async function doSemSearch\(\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+        self.assertIsNotNone(semantic_search)
+        self.assertIn("limit=50", semantic_search.group("body"))
 
     def test_filters_and_semantic_search_reset_to_first_page(self):
         for function_name in ["setFilter", "toggleHigh", "toggleSort", "doSemSearch", "clearSemSearch"]:

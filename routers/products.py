@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from config import MAX_UPLOAD_SIZE
 from database import get_db
 from models import Product, SellingPoint
 from schemas import (
@@ -24,6 +25,7 @@ from services.product_detail import (
     build_product_detail_payload,
 )
 from services.product_rag import answer_global_product_question, answer_product_question
+from services.upload_limits import write_upload_file
 
 router = APIRouter()
 
@@ -31,7 +33,6 @@ router = APIRouter()
 PRODUCT_FILES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "product_files")
 os.makedirs(PRODUCT_FILES_DIR, exist_ok=True)
 
-UPLOAD_CHUNK_SIZE = 1024 * 1024
 SOURCE_PREVIEW_CHAR_LIMIT = 120_000
 TEXT_SOURCE_EXTENSIONS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml"}
 
@@ -57,13 +58,8 @@ def _safe_product_upload_path(product_id: int, filename: Optional[str]) -> str:
     return file_path
 
 
-async def _write_upload_file(file: UploadFile, file_path: str) -> None:
-    with open(file_path, "wb") as out:
-        while True:
-            chunk = await file.read(UPLOAD_CHUNK_SIZE)
-            if not chunk:
-                break
-            out.write(chunk)
+async def _write_upload_file(file: UploadFile, file_path: str, *, max_bytes: int) -> None:
+    await write_upload_file(file, file_path, max_bytes=max_bytes)
 
 
 def _path_is_inside(base: Path, path: Path) -> bool:
@@ -73,6 +69,19 @@ def _path_is_inside(base: Path, path: Path) -> bool:
         return os.path.commonpath([str(base_resolved), str(path_resolved)]) == str(base_resolved)
     except (OSError, ValueError):
         return False
+
+
+def _resolve_owned_product_file(path: str | None) -> Path | None:
+    if not path:
+        return None
+    try:
+        resolved = Path(path).resolve()
+        base = Path(PRODUCT_FILES_DIR).resolve()
+    except (OSError, ValueError):
+        return None
+    if not _path_is_inside(base, resolved):
+        return None
+    return resolved
 
 
 def _safe_source_name(source: str) -> str:
@@ -174,7 +183,7 @@ def _read_source_preview(path: Path) -> tuple[str, bool]:
 class ProductRagRequest(BaseModel):
     query: str = Field(..., min_length=1)
     category: Optional[str] = None
-    limit: int = Field(default=5, ge=1, le=10)
+    limit: int = Field(default=5, ge=1, le=30)
 
 
 class ProductScopedRagRequest(BaseModel):
@@ -589,7 +598,7 @@ async def upload_product_file(
 
     # 保存文件
     file_path = _safe_product_upload_path(product_id, file.filename)
-    await _write_upload_file(file, file_path)
+    await _write_upload_file(file, file_path, max_bytes=MAX_UPLOAD_SIZE)
 
     # 更新数据库
     product.info_file = file_path
@@ -632,10 +641,11 @@ def download_product_file(product_id: int, db: Session = Depends(get_db)):
     if not product or not product.info_file:
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    if not os.path.exists(product.info_file):
+    safe_path = _resolve_owned_product_file(product.info_file)
+    if safe_path is None or not safe_path.exists():
         raise HTTPException(status_code=404, detail="文件已被删除")
 
-    return FileResponse(product.info_file, filename=os.path.basename(product.info_file))
+    return FileResponse(str(safe_path), filename=safe_path.name)
 
 
 @router.delete("/{product_id}/file")
@@ -645,8 +655,11 @@ def delete_product_file(product_id: int, db: Session = Depends(get_db)):
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
 
-    if product.info_file and os.path.exists(product.info_file):
-        os.remove(product.info_file)
+    safe_path = _resolve_owned_product_file(product.info_file)
+    if product.info_file and safe_path is None:
+        raise HTTPException(status_code=400, detail="文件路径不安全")
+    if safe_path and safe_path.exists():
+        safe_path.unlink()
 
     product.info_file = None
     db.commit()
@@ -663,12 +676,13 @@ async def extract_points_from_file(product_id: int, db: Session = Depends(get_db
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
-    if not product.info_file or not os.path.exists(product.info_file):
+    safe_path = _resolve_owned_product_file(product.info_file)
+    if not product.info_file or safe_path is None or not safe_path.exists():
         raise HTTPException(status_code=400, detail="请先上传产品资料文件")
 
     # 提取卖点
     points = await extract_selling_points(
-        product.info_file,
+        str(safe_path),
         product.name,
         product.category,
     )
@@ -708,13 +722,17 @@ async def extract_all_points(db: Session = Depends(get_db)):
 
     results = []
     for product in products:
-        if not os.path.exists(product.info_file):
+        safe_path = _resolve_owned_product_file(product.info_file)
+        if safe_path is None:
+            results.append({"id": product.id, "name": product.name, "status": "文件路径不安全"})
+            continue
+        if not safe_path.exists():
             results.append({"id": product.id, "name": product.name, "status": "文件不存在"})
             continue
 
         try:
             points = await extract_selling_points(
-                product.info_file, product.name, product.category
+                str(safe_path), product.name, product.category
             )
             if points:
                 db.query(SellingPoint).filter(SellingPoint.product_id == product.id).delete()

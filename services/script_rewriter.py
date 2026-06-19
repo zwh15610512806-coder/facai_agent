@@ -298,31 +298,25 @@ class ScriptRewriter:
 
         instructions += f"\n\n【原始脚本】\n{original_script}\n\n请输出改写后的脚本："
 
-        if self.ai.is_available:
-            system_prompt = self.SYSTEM_PROMPT if include_shot_design else self.PLAIN_SYSTEM_PROMPT
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": instructions},
-            ]
-            try:
-                response = self.ai.client.chat.completions.create(
-                    model=self.ai.model,
-                    messages=messages,
-                    temperature=0.45,
-                    max_tokens=2200,
-                    top_p=0.85,
-                )
-                result = response.choices[0].message.content
+        system_prompt = self.SYSTEM_PROMPT if include_shot_design else self.PLAIN_SYSTEM_PROMPT
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": instructions},
+        ]
+        try:
+            result = await self.ai.chat(
+                messages,
+                temperature=0.45,
+                allow_fallback=False,
+                max_tokens=2200,
+                interface_key="script_rewrite",
+            )
+            if result:
                 if include_shot_design:
                     return self._cleanup_rewrite_output(result)
                 return self._cleanup_plain_rewrite_output(result)
-            except Exception:
-                fallback = self._offline_material_rewrite(
-                    name, category, price_text, selling_points, original_script=original_script
-                )
-                if include_shot_design:
-                    return fallback
-                return self._cleanup_plain_rewrite_output(fallback)
+        except Exception:
+            pass
 
         fallback = self._offline_material_rewrite(
             name, category, price_text, selling_points, original_script=original_script

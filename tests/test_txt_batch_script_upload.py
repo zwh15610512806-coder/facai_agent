@@ -104,6 +104,25 @@ class TxtBatchScriptUploadTests(unittest.TestCase):
         self.assertIn("First imported script", scripts[0].script_content)
         self.assertEqual(scripts[0].performance_data["source"], "批量TXT上传")
 
+    def test_batch_upload_rejects_files_over_configured_limit(self):
+        had_limit = hasattr(templates_router, "MAX_UPLOAD_SIZE")
+        original_limit = getattr(templates_router, "MAX_UPLOAD_SIZE", None)
+        templates_router.MAX_UPLOAD_SIZE = 4
+        try:
+            response = self.client.post(
+                "/api/templates/viral/upload-txt-batch",
+                data={"category": "烘焙配件"},
+                files=[("files", ("too-large.txt", "12345", "text/plain"))],
+            )
+        finally:
+            if had_limit:
+                templates_router.MAX_UPLOAD_SIZE = original_limit
+            else:
+                delattr(templates_router, "MAX_UPLOAD_SIZE")
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(self.db.query(ViralScript).count(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

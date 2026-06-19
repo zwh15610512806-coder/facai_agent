@@ -100,7 +100,11 @@ async def extract_selling_points(file_path: str, product_name: str, product_cate
                 {"role": "system", "content": "你是一个烘焙产品卖点提炼专家。只输出JSON数组，不要其他文字。"},
                 {"role": "user", "content": prompt},
             ]
-            result = await ai_service.chat(messages, temperature=0.3)
+            result = await ai_service.chat(
+                messages,
+                temperature=0.3,
+                interface_key="selling_point_extract",
+            )
 
             # 提取 JSON
             import json

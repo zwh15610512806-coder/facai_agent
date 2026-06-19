@@ -33,9 +33,16 @@ def _ensure_compatible_columns():
     if engine.dialect.name != "sqlite":
         return
     inspector = inspect(engine)
-    if "products" not in inspector.get_table_names():
-        return
-    columns = {column["name"] for column in inspector.get_columns("products")}
+    table_names = set(inspector.get_table_names())
     with engine.begin() as connection:
-        if "pending_fields" not in columns:
-            connection.execute(text("ALTER TABLE products ADD COLUMN pending_fields JSON"))
+        if "products" in table_names:
+            columns = {column["name"] for column in inspector.get_columns("products")}
+            if "pending_fields" not in columns:
+                connection.execute(text("ALTER TABLE products ADD COLUMN pending_fields JSON"))
+
+        if "ai_interface_settings" in table_names:
+            columns = {column["name"] for column in inspector.get_columns("ai_interface_settings")}
+            if "api_key_secret" not in columns:
+                connection.execute(text("ALTER TABLE ai_interface_settings ADD COLUMN api_key_secret TEXT"))
+            if "base_url_override" not in columns:
+                connection.execute(text("ALTER TABLE ai_interface_settings ADD COLUMN base_url_override VARCHAR(500)"))

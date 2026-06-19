@@ -12,7 +12,9 @@ from typing import List, Optional
 import re
 import json
 
+from config import MAX_UPLOAD_SIZE
 from services.ai_service import ai_service
+from services.upload_limits import read_upload_bytes
 
 router = APIRouter()
 
@@ -55,7 +57,7 @@ async def analyze_script_ai(text: str, user_type: str = "") -> dict:
         result = await ai_service.chat([
             {"role": "system", "content": "你是短视频脚本分析专家，只输出JSON"},
             {"role": "user", "content": prompt},
-        ], temperature=0.2)
+        ], temperature=0.2, interface_key="viral_script_analyze")
         start = result.find('{')
         end = result.rfind('}') + 1
         if start >= 0 and end > start:
@@ -363,7 +365,7 @@ async def upload_viral_txt_batch(
             continue
 
         try:
-            content = await upload.read()
+            content = await read_upload_bytes(upload, max_bytes=MAX_UPLOAD_SIZE)
             script_text = format_script(_decode_txt(content))
             if len(script_text) < 20:
                 raise ValueError("脚本内容太短")
@@ -388,6 +390,8 @@ async def upload_viral_txt_batch(
             _sync_viral_index(viral, db)
             result["success"] += 1
             result["ids"].append(viral.id)
+        except HTTPException:
+            raise
         except Exception as exc:
             db.rollback()
             result["skipped"] += 1
@@ -399,7 +403,7 @@ async def upload_viral_txt_batch(
 async def categorize_product_ai(name: str) -> str:
     if not ai_service.is_available: return ""
     try:
-        r = await ai_service.chat([{"role":"system","content":"归类到：烘焙调色/烘焙装饰/烘焙调味/烘焙夹心/烘焙配件。只输出品类名。"},{"role":"user","content":name}], temperature=0.1)
+        r = await ai_service.chat([{"role":"system","content":"归类到：烘焙调色/烘焙装饰/烘焙调味/烘焙夹心/烘焙配件。只输出品类名。"},{"role":"user","content":name}], temperature=0.1, interface_key="viral_script_analyze")
         for c in ["烘焙调色","烘焙装饰","烘焙调味","烘焙夹心","烘焙配件"]:
             if c in r: return c
     except: pass

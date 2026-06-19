@@ -1,12 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>生成脚本库 — 法采新媒体运营 Agent</title>
+<title>生成历史 — 法采新媒体运营 Agent</title>
 <link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="/static/vendor/lucide.min.js"></script>
 <style>
 .script-preview-expanded {
   max-height: none;
@@ -39,15 +37,16 @@
 <div class="nav-inner">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
 <div class="nav-links">
-<a href="/app" class="nav-link">生成</a><a href="/app/rewrite" class="nav-link">改写</a><a href="/app/products" class="nav-link">产品</a><a href="/app/import" class="nav-link">导入</a><a href="/app/templates" class="nav-link">模板库</a><a href="/app/history" class="nav-link on">历史</a>
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/import" class="nav-link">数据导入</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link on">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
+<a href="/app/ai-config" class="nav-link">AI配置</a>
 </div></div></nav>
 
 <main class="page-main">
 <header class="page-hd">
 <div style="display:flex;align-items:center;justify-content:space-between">
-<div><h1>生成脚本库</h1><p style="margin-top:2px" id="countHint">加载中&hellip;</p></div>
-<a href="/app" class="btn btn-pri btn-sm">生成新脚本</a>
+<div><h1>生成历史</h1><p style="margin-top:2px" id="countHint">加载中&hellip;</p></div>
+<a href="/app/generate" class="btn btn-pri btn-sm">生成新脚本</a>
 </div></header>
 
 <div id="historyList"><div class="empty">加载中&hellip;</div></div>
@@ -67,7 +66,7 @@ async function loadHistory(){try{var r=await fetch('/api/scripts/history?page='+
 
 function renderList(){
 var c=document.getElementById('historyList');
-if(!scripts.length){c.innerHTML='<div class="card" style="text-align:center"><div class="empty"><div class="empty-icon">&#128240;</div><p style="margin-bottom:12px">暂无生成记录</p><a href="/app" class="btn btn-pri btn-sm">去生成第一个脚本 &rarr;</a></div></div>';return;}
+if(!scripts.length){c.innerHTML='<div class="card" style="text-align:center"><div class="empty"><div class="empty-icon">&#128240;</div><p style="margin-bottom:12px">暂无生成记录</p><a href="/app/generate" class="btn btn-pri btn-sm">去生成第一个脚本 &rarr;</a></div></div>';return;}
 var h='';
 for(var i=0;i<scripts.length;i++){
 var s=scripts[i],hh=s.is_high_conversion;

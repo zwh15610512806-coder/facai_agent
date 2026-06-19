@@ -1,8 +1,23 @@
 """AI 服务 — DeepSeek API + 法采技能模板"""
 from openai import OpenAI
-from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, DEEPSEEK_REQUEST_TIMEOUT_SECONDS
 from typing import Optional, List, Dict
+import asyncio
+import hashlib
+import math
 import logging
+import time
+
+from services.ai_config import (
+    DEFAULT_MAX_TOKENS,
+    INTERFACE_BY_KEY,
+    canonical_interface_key,
+    get_or_create_interface_setting,
+    get_provider_definition,
+    is_configured_secret,
+    record_usage,
+    resolve_interface_connection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -313,42 +328,282 @@ class AIService:
     def __init__(self):
         self.client = None
         self.model = DEEPSEEK_MODEL
+        self._clients = {}
         self._init_client()
 
     def _init_client(self):
-        if DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "your-deepseek-api-key-here":
+        if is_configured_secret(DEEPSEEK_API_KEY):
             self.client = OpenAI(
                 api_key=DEEPSEEK_API_KEY,
                 base_url=DEEPSEEK_BASE_URL,
+                timeout=DEEPSEEK_REQUEST_TIMEOUT_SECONDS,
             )
+            self._clients["deepseek"] = self.client
         else:
             logger.warning("DeepSeek API Key 未配置，将使用法采模板填充模式")
 
     @property
     def is_available(self) -> bool:
-        return self.client is not None
+        return self._get_provider_client("deepseek") is not None
 
-    def get_model_name(self) -> str:
-        if self.is_available:
-            return self.model
+    def _client_cache_key(self, provider_key: str, api_key: str, base_url: str) -> str:
+        digest = hashlib.sha256(f"{api_key}|{base_url}".encode("utf-8")).hexdigest()[:16]
+        return f"{provider_key}:{digest}"
+
+    def _get_provider_client(
+        self,
+        provider_key: str,
+        api_key_override: Optional[str] = None,
+        base_url_override: Optional[str] = None,
+    ):
+        has_override = api_key_override is not None or base_url_override is not None
+        if provider_key == "deepseek" and not has_override:
+            return self.client
+        if not has_override and provider_key in self._clients:
+            return self._clients[provider_key]
+
+        provider = get_provider_definition(provider_key)
+        api_key = (api_key_override or provider.api_key()).strip()
+        base_url = (base_url_override or provider.base_url()).strip()
+        if not api_key or not base_url:
+            return None
+
+        cache_key = self._client_cache_key(provider_key, api_key, base_url)
+        if cache_key in self._clients:
+            return self._clients[cache_key]
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=DEEPSEEK_REQUEST_TIMEOUT_SECONDS,
+        )
+        self._clients[cache_key] = client
+        if not has_override:
+            self._clients[provider_key] = client
+        if provider_key == "deepseek" and not has_override:
+            self.client = client
+        return client
+
+    def _resolve_chat_config(
+        self,
+        interface_key: str,
+        model_override: Optional[str],
+        max_tokens_override: Optional[int],
+        db=None,
+    ) -> tuple[str, str, int, Optional[str], Optional[str]]:
+        original_interface_key = (interface_key or "default").strip()
+        canonical_key = canonical_interface_key(original_interface_key)
+        is_alias = canonical_key != original_interface_key
+        if canonical_key not in INTERFACE_BY_KEY:
+            return (
+                "deepseek",
+                model_override or self.model,
+                int(max_tokens_override or DEFAULT_MAX_TOKENS),
+                None,
+                None,
+            )
+
+        definition = INTERFACE_BY_KEY[canonical_key]
+        if db is not None:
+            setting = get_or_create_interface_setting(db, canonical_key)
+            provider = setting.provider
+            configured_model = setting.model
+            configured_max_tokens = setting.max_tokens
+            connection = resolve_interface_connection(setting)
+        else:
+            from database import SessionLocal
+
+            session = SessionLocal()
+            try:
+                setting = get_or_create_interface_setting(session, canonical_key)
+                provider = setting.provider
+                configured_model = setting.model
+                configured_max_tokens = setting.max_tokens
+                connection = resolve_interface_connection(setting)
+            finally:
+                session.close()
+
+        if is_alias:
+            selected_model = configured_model
+        elif model_override and model_override != definition.default_model:
+            selected_model = model_override
+        else:
+            selected_model = configured_model
+        if is_alias:
+            selected_max_tokens = int(configured_max_tokens or DEFAULT_MAX_TOKENS)
+        else:
+            selected_max_tokens = int(max_tokens_override or configured_max_tokens or DEFAULT_MAX_TOKENS)
+        api_key_override = connection["api_key"] if connection["api_key_source"] == "interface" else None
+        base_url_override = connection["custom_base_url"] or None
+        return provider, selected_model, selected_max_tokens, api_key_override, base_url_override
+
+    def get_model_name(
+        self,
+        model: Optional[str] = None,
+        interface_key: str = "default",
+        db=None,
+    ) -> str:
+        if canonical_interface_key(interface_key) in INTERFACE_BY_KEY:
+            provider_key, selected_model, _, api_key_override, base_url_override = self._resolve_chat_config(
+                interface_key,
+                model,
+                None,
+                db,
+            )
+            if self._get_provider_client(provider_key, api_key_override, base_url_override):
+                return selected_model
+        elif self.is_available:
+            return model or self.model
         return "法采模板引擎"
 
-    async def chat(self, messages: List[Dict], temperature: float = 0.8, allow_fallback: bool = True) -> str:
-        if not self.is_available:
-            return self._fallback_response(messages) if allow_fallback else ""
+    def _estimate_text_tokens(self, text: str) -> int:
+        if not text:
+            return 0
+        return max(1, math.ceil(len(str(text)) / 4))
+
+    def _estimate_prompt_tokens(self, messages: List[Dict]) -> int:
+        total = 0
+        for message in messages or []:
+            total += self._estimate_text_tokens(message.get("role", ""))
+            total += self._estimate_text_tokens(message.get("content", ""))
+        return total
+
+    def _usage_from_response(self, response, messages: List[Dict], content: str) -> tuple[int, int, int, str]:
+        usage = getattr(response, "usage", None)
+        if isinstance(usage, dict):
+            prompt_tokens = int(usage.get("prompt_tokens") or 0)
+            completion_tokens = int(usage.get("completion_tokens") or 0)
+            total_tokens = int(usage.get("total_tokens") or prompt_tokens + completion_tokens)
+        elif usage is not None:
+            prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+            completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+            total_tokens = int(getattr(usage, "total_tokens", 0) or prompt_tokens + completion_tokens)
+        else:
+            prompt_tokens = 0
+            completion_tokens = 0
+            total_tokens = 0
+
+        if total_tokens:
+            return prompt_tokens, completion_tokens, total_tokens, "provider"
+
+        prompt_tokens = self._estimate_prompt_tokens(messages)
+        completion_tokens = self._estimate_text_tokens(content)
+        return prompt_tokens, completion_tokens, prompt_tokens + completion_tokens, "estimated"
+
+    def _record_usage_safe(self, **kwargs) -> None:
+        try:
+            record_usage(**kwargs)
+        except Exception as exc:
+            logger.warning(f"AI usage record failed: {exc}")
+
+    async def chat(
+        self,
+        messages: List[Dict],
+        temperature: float = 0.8,
+        allow_fallback: bool = True,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        interface_key: str = "default",
+        db=None,
+        thinking: bool = False,
+        reasoning_effort: str = "high",
+        return_reasoning: bool = False,
+    ):
+        start_time = time.perf_counter()
+        provider_key, selected_model, selected_max_tokens, api_key_override, base_url_override = self._resolve_chat_config(
+            interface_key,
+            model,
+            max_tokens,
+            db,
+        )
+        client = self._get_provider_client(provider_key, api_key_override, base_url_override)
+        if client is None:
+            fallback = self._fallback_response(messages) if allow_fallback else ""
+            prompt_tokens = self._estimate_prompt_tokens(messages)
+            completion_tokens = self._estimate_text_tokens(fallback)
+            self._record_usage_safe(
+                interface_key=interface_key,
+                provider=provider_key,
+                model=selected_model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                usage_source="estimated",
+                latency_ms=int((time.perf_counter() - start_time) * 1000),
+                status="unavailable",
+                error_summary=f"{get_provider_definition(provider_key).label} API Key or Base URL is not configured",
+                db=db,
+            )
+            if return_reasoning:
+                return {"content": fallback, "reasoning": "", "model": self.get_model_name(selected_model)}
+            return fallback
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=2000,
-                top_p=0.9,
+            payload = {
+                "model": selected_model,
+                "messages": messages,
+                "max_tokens": selected_max_tokens,
+            }
+            if thinking:
+                if provider_key == "deepseek":
+                    payload["reasoning_effort"] = reasoning_effort
+                    payload["extra_body"] = {"thinking": {"type": "enabled"}}
+                else:
+                    payload["temperature"] = temperature
+            else:
+                payload["temperature"] = temperature
+                payload["top_p"] = 0.9
+                if provider_key == "deepseek":
+                    payload["extra_body"] = {"thinking": {"type": "disabled"}}
+            response = await asyncio.to_thread(client.chat.completions.create, **payload)
+            message = response.choices[0].message
+            content = message.content or ""
+            prompt_tokens, completion_tokens, total_tokens, usage_source = self._usage_from_response(
+                response,
+                messages,
+                content,
             )
-            return response.choices[0].message.content
+            self._record_usage_safe(
+                interface_key=interface_key,
+                provider=provider_key,
+                model=selected_model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                usage_source=usage_source,
+                latency_ms=int((time.perf_counter() - start_time) * 1000),
+                status="success",
+                db=db,
+            )
+            if return_reasoning:
+                return {
+                    "content": content,
+                    "reasoning": getattr(message, "reasoning_content", "") or "",
+                    "model": selected_model,
+                    "provider": provider_key,
+                }
+            return content
         except Exception as e:
             logger.error(f"AI 调用失败: {e}")
-            return self._fallback_response(messages) if allow_fallback else ""
+            fallback = self._fallback_response(messages) if allow_fallback else ""
+            prompt_tokens = self._estimate_prompt_tokens(messages)
+            completion_tokens = self._estimate_text_tokens(fallback)
+            self._record_usage_safe(
+                interface_key=interface_key,
+                provider=provider_key,
+                model=selected_model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                usage_source="estimated",
+                latency_ms=int((time.perf_counter() - start_time) * 1000),
+                status="error",
+                error_summary=str(e),
+                db=db,
+            )
+            if return_reasoning:
+                return {"content": fallback, "reasoning": "", "model": selected_model}
+            return fallback
 
     def _fallback_response(self, messages) -> str:
         """离线模式：用法采模板生成脚本，每次调用都随机生成新内容"""

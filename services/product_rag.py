@@ -1,6 +1,7 @@
 """RAG-style product question answering helpers."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 import re
 
@@ -15,7 +16,76 @@ from services.product_detail import build_product_detail_payload
 PRODUCT_CHAT_SYSTEM_PROMPT = """你是法采产品资料助手。
 只根据给定的产品资料回答，不编造资料外的信息。
 回答要简洁、可执行，优先说明产品名、适用场景、核心卖点、SKU/价格/活动机制。
-如果资料不足，直接说明没有查到，并列出已检索到的相关资料。"""
+必须先用“简要回答：”给一句概况，再用“具体信息：”列产品依据，不要单独列“来源：”段落。
+如果用户问“有哪些/推荐哪些”这类宽泛选品问题，要尽量覆盖检索到的相关产品，不只挑少数 Top 推荐。
+如果资料不足，直接说明没有查到；不要把来源文件列表当作答案。"""
+
+
+BROAD_QUERY_WORDS = ("有哪些", "哪些", "推荐", "适合", "有什么", "列出", "找")
+PRODUCT_QUERY_WORDS = ("产品", "款", "品", "材料", "原料")
+FILLING_SCENE_TERMS = ("蛋糕夹心", "夹心", "夹层", "内馅", "内心", "奶冻", "慕斯", "布蕾")
+FILLING_PRODUCT_TERMS = (
+    "夹心", "夹层", "内馅", "内心", "奶冻", "慕斯", "布蕾", "果泥", "芋泥",
+    "栗子泥", "夹心珠", "夹心脆", "脆馅", "脆珠", "薄脆", "成品奶冻",
+)
+PRIMARY_FILLING_NAME_TERMS = (
+    "夹心", "奶冻", "慕斯", "布蕾", "果泥", "芋泥", "栗子泥", "脆馅", "脆珠", "薄脆",
+)
+COLORING_NAME_TERMS = (
+    "色素", "色粉", "红丝绒", "果蔬粉", "果蔬色素", "竹炭粉", "红曲粉", "浅柔色素",
+    "天然色素", "水性色素", "油性色素", "水状色素", "胶状色素", "油溶色粉", "水溶色粉",
+)
+
+
+@dataclass(frozen=True)
+class ProductIntentRule:
+    intent: str
+    category: str
+    query_terms: tuple[str, ...]
+    name_terms: tuple[str, ...] = ()
+    allow_uncategorized_name_match: bool = False
+
+
+PRODUCT_INTENT_RULES = (
+    ProductIntentRule(
+        intent="coloring",
+        category="烘焙调色",
+        query_terms=("调色", "上色", "色素", "色粉", "红丝绒", "颜色还原", "配色"),
+        name_terms=COLORING_NAME_TERMS,
+        allow_uncategorized_name_match=True,
+    ),
+    ProductIntentRule(
+        intent="cake_filling",
+        category="烘焙夹心",
+        query_terms=FILLING_SCENE_TERMS,
+        name_terms=PRIMARY_FILLING_NAME_TERMS,
+        allow_uncategorized_name_match=True,
+    ),
+    ProductIntentRule(
+        intent="flavoring",
+        category="烘焙调味",
+        query_terms=("调味", "风味", "口味", "果酱", "茶酱", "糖浆", "酱料", "香精"),
+    ),
+    ProductIntentRule(
+        intent="decoration",
+        category="烘焙装饰",
+        query_terms=("装饰", "造型", "点缀", "翻糖", "糖珠", "拉线", "手绘", "插件"),
+    ),
+    ProductIntentRule(
+        intent="packaging",
+        category="烘焙配件",
+        query_terms=("配件", "打包", "刀叉", "盒装", "餐盘", "包装", "纸盘"),
+    ),
+)
+
+
+@dataclass(frozen=True)
+class ProductQueryPolicy:
+    intent: str
+    broad: bool
+    strict_primary_filter: bool = False
+    intents: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
 
 
 def _clean_query(query: str) -> str:
@@ -58,6 +128,118 @@ def _text_score(text: str, terms: list[str]) -> int:
 
 def _wants_price(query: str) -> bool:
     return any(word in query for word in ("价格", "售价", "活动", "优惠", "SKU", "sku", "日常价", "机制", "多少钱"))
+
+
+def _is_filling_query(query: str) -> bool:
+    return any(term in query for term in FILLING_SCENE_TERMS)
+
+
+def _matched_intent_rules(query: str) -> tuple[ProductIntentRule, ...]:
+    clean = _clean_query(query)
+    return tuple(
+        rule for rule in PRODUCT_INTENT_RULES
+        if any(term in clean for term in rule.query_terms)
+    )
+
+
+def _is_broad_product_query(query: str) -> bool:
+    clean = _clean_query(query)
+    if not clean:
+        return False
+    has_broad_word = any(word in clean for word in BROAD_QUERY_WORDS)
+    has_product_word = any(word in clean for word in PRODUCT_QUERY_WORDS)
+    has_known_intent = bool(_matched_intent_rules(clean))
+    return (
+        has_broad_word and (has_product_word or has_known_intent)
+    ) or (
+        has_product_word and has_known_intent
+    )
+
+
+def _product_query_policy(query: str) -> ProductQueryPolicy:
+    clean = _clean_query(query)
+    broad = _is_broad_product_query(clean)
+    rules = _matched_intent_rules(clean) if broad else ()
+    if rules:
+        intents = tuple(rule.intent for rule in rules)
+        categories = tuple(rule.category for rule in rules)
+        intent = intents[0] if len(intents) == 1 else "multi"
+        return ProductQueryPolicy(
+            intent=intent,
+            broad=True,
+            strict_primary_filter=True,
+            intents=intents,
+            categories=categories,
+        )
+    if broad:
+        return ProductQueryPolicy(intent="broad_product", broad=True)
+    return ProductQueryPolicy(intent="default", broad=False)
+
+
+def _product_search_text(product: Product) -> str:
+    point_text = " ".join(
+        f"{point.point_type or ''} {point.content or ''}"
+        for point in (product.selling_points or [])
+    )
+    return " ".join([
+        product.name or "",
+        product.category or "",
+        product.brand or "",
+        product.description or "",
+        point_text,
+    ])
+
+
+def _is_primary_filling_product(product: Product) -> bool:
+    if (product.category or "") == "烘焙夹心":
+        return True
+    name = product.name or ""
+    return any(term in name for term in PRIMARY_FILLING_NAME_TERMS)
+
+
+def _is_primary_product_for_policy(product: Product, policy: ProductQueryPolicy) -> bool:
+    if not policy.strict_primary_filter:
+        return True
+    category = product.category or ""
+    name = product.name or ""
+    if category in policy.categories:
+        return True
+    if category:
+        return False
+    rules = [rule for rule in PRODUCT_INTENT_RULES if rule.intent in policy.intents]
+    return any(
+        rule.allow_uncategorized_name_match
+        and any(term in name for term in rule.name_terms)
+        for rule in rules
+    )
+
+
+def _scenario_relevance_score(product: Product, query: str, policy: ProductQueryPolicy | None = None) -> int:
+    policy = policy or _product_query_policy(query)
+    text = _product_search_text(product)
+    terms = _query_terms(query)
+    score = _text_score(text, terms)
+    if policy.strict_primary_filter:
+        if product.category in policy.categories:
+            score += 80
+        if product.name:
+            rules = [rule for rule in PRODUCT_INTENT_RULES if rule.intent in policy.intents]
+            for rule in rules:
+                if any(term in product.name for term in rule.name_terms):
+                    score += 30
+                if any(term in text for term in rule.query_terms):
+                    score += 12
+    if "cake_filling" in policy.intents:
+        if "蛋糕夹心" in text:
+            score += 35
+        if "夹心" in text:
+            score += 20
+        for term in FILLING_PRODUCT_TERMS:
+            if term in (product.name or ""):
+                score += 25
+            elif term in text:
+                score += 10
+    return score
 
 
 def _format_price(value: Any) -> str:
@@ -171,6 +353,8 @@ def _keyword_products(query: str, db: Session, limit: int, category: str | None 
 
 
 def _candidate_products(query: str, db: Session, limit: int, category: str | None = None) -> list[Product]:
+    policy = _product_query_policy(query)
+    pool_limit = max(limit, 30) if policy.broad else limit
     product_ids: list[int] = []
     try:
         from vector_store.product_store import ProductVectorStore
@@ -178,7 +362,7 @@ def _candidate_products(query: str, db: Session, limit: int, category: str | Non
         hits = ProductVectorStore().hybrid_search(
             query=query,
             db=db,
-            limit=limit,
+            limit=pool_limit,
             category_filter=category,
         )
         product_ids = [int(hit["product_id"]) for hit in hits if hit.get("product_id")]
@@ -191,14 +375,37 @@ def _candidate_products(query: str, db: Session, limit: int, category: str | Non
         by_id = {product.id: product for product in products}
         ordered = [by_id[product_id] for product_id in product_ids if product_id in by_id]
 
-    keyword_matches = _keyword_products(query, db, limit, category)
+    keyword_matches = _keyword_products(query, db, pool_limit, category)
+    category_matches: list[Product] = []
+    if policy.categories:
+        category_values = [
+            category_value
+            for category_value in policy.categories
+            if not category or category == category_value
+        ]
+        if category_values:
+            category_matches = (
+                db.query(Product)
+                .filter(Product.status == "active", Product.category.in_(category_values))
+                .limit(max(pool_limit, pool_limit * len(category_values)))
+                .all()
+            )
     merged: list[Product] = []
     seen: set[int] = set()
-    for product in [*ordered, *keyword_matches]:
+    for product in [*ordered, *keyword_matches, *category_matches]:
         if product.id in seen:
             continue
         seen.add(product.id)
         merged.append(product)
+    if policy.strict_primary_filter:
+        merged = [product for product in merged if _is_primary_product_for_policy(product, policy)]
+    if policy.broad:
+        scored = [(_scenario_relevance_score(product, query, policy), index, product) for index, product in enumerate(merged)]
+        minimum_score = 20 if policy.strict_primary_filter else 1
+        relevant = [item for item in scored if item[0] >= minimum_score]
+        scored = relevant or scored
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        merged = [product for _, _, product in scored]
     return merged[:limit]
 
 
@@ -236,6 +443,43 @@ def _context_for_ai(results: list[dict[str, Any]]) -> str:
     return "\n\n".join(blocks)[:9000]
 
 
+def _reference_product(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "product_id": result.get("product_id"),
+        "name": result.get("name", ""),
+        "category": result.get("category", ""),
+        "price": result.get("price"),
+    }
+
+
+def find_product_context_for_inspiration(query: str, db: Session, *, limit: int = 6) -> dict[str, Any]:
+    """Return product context for creative chat without generating a product answer."""
+    clean = _clean_query(query)
+    if not clean:
+        return {"used": False, "context": "", "results": [], "products": []}
+
+    requested_limit = max(1, min(limit, 6))
+    policy = _product_query_policy(clean)
+    candidates = _candidate_products(clean, db, max(requested_limit, 12))
+    if not policy.broad:
+        candidates = [
+            product for product in candidates
+            if _scenario_relevance_score(product, clean, policy) > 0
+        ]
+    candidates = candidates[:requested_limit]
+    results = [
+        _detail_to_result(build_product_detail_payload(product), clean)
+        for product in candidates
+    ]
+    products = [_reference_product(result) for result in results]
+    return {
+        "used": bool(results),
+        "context": _context_for_ai(results) if results else "",
+        "results": results,
+        "products": products,
+    }
+
+
 def _format_profile_sku_line(sku: dict[str, Any]) -> str:
     name = sku.get("name") or "默认规格"
     bits = []
@@ -252,30 +496,89 @@ def _format_profile_sku_line(sku: dict[str, Any]) -> str:
     return f"{name}：" + "；".join(bits)
 
 
+def _result_reason(result: dict[str, Any]) -> str:
+    if result.get("selling_points"):
+        return result["selling_points"][0].get("content", "")
+    if result.get("description"):
+        return result["description"]
+    if result.get("sku_prices"):
+        return result["sku_prices"][0].get("line", "")
+    return ""
+
+
+def _result_source_label(result: dict[str, Any]) -> str:
+    if result.get("sources"):
+        return "、".join(result["sources"][:5])
+    labels = ["结构化产品资料", "卖点资料"]
+    if result.get("sku_prices"):
+        labels.append("SKU/价格资料")
+    return "、".join(labels)
+
+
 def _fallback_answer(query: str, results: list[dict[str, Any]], scope: str) -> str:
     if not results:
-        return f"没有在产品资料里检索到与“{query}”直接相关的内容。"
+        return "\n".join([
+            f"简要回答：没有在产品资料里检索到与“{query}”直接相关的内容。",
+            "",
+            "具体信息：暂无可引用的匹配产品。",
+        ])
 
     if scope == "product":
         result = results[0]
-        lines = [f"已在「{result['name']}」资料中找到以下信息："]
-    else:
-        lines = [f"已检索到 {len(results)} 个相关产品："]
-
-    for result in results[:5]:
-        if scope != "product":
-            price = f" ¥{_format_price(result.get('price'))}" if result.get("price") is not None else ""
-            lines.append(f"- {result['name']}（{result.get('category') or '未分类'}{price}）")
-        for point in result.get("selling_points", [])[:2]:
-            lines.append(f"  · [{point.get('point_type', '卖点')}] {point.get('content', '')}")
-        for sku in result.get("sku_prices", [])[:2]:
+        lines = [
+            f"简要回答：根据「{result['name']}」的产品资料，可以围绕它的适用场景、卖点和价格来回答。",
+            "",
+            "具体信息：",
+        ]
+        points = result.get("selling_points", [])[:4]
+        if points:
+            for point in points:
+                lines.append(f"- {point.get('content', '')}")
+        elif result.get("description"):
+            lines.append(f"- {result['description']}")
+        if result.get("price") is not None:
+            lines.append(f"- 参考售价：¥{_format_price(result.get('price'))}")
+        for sku in result.get("sku_prices", [])[:3]:
             if sku.get("line"):
-                lines.append(f"  · {sku['line']}")
+                lines.append(f"- {sku['line']}")
+        return "\n".join(line for line in lines if line.strip())
+
+    policy = _product_query_policy(query)
+    name_limit = 30 if policy.broad else 8
+    names = "、".join(result["name"] for result in results[:name_limit])
+    if len(results) > name_limit:
+        names += f"等 {len(results)} 款"
+    lines = [
+        f"简要回答：根据产品资料，适合“{query}”的法采产品包括 {names}。",
+        "",
+        "具体信息：",
+    ]
+    wants_price = _wants_price(query)
+    for result in results:
+        meta = []
+        if result.get("category"):
+            meta.append(result["category"])
+        if result.get("price") is not None:
+            meta.append(f"¥{_format_price(result.get('price'))}")
+        suffix = f"（{'，'.join(meta)}）" if meta else ""
+        reason = _result_reason(result)
+        lines.append(f"- {result['name']}{suffix}" + (f"：{reason}" if reason else ""))
+        if wants_price:
+            for sku in result.get("sku_prices", [])[:1]:
+                if sku.get("line"):
+                    lines.append(f"  · {sku['line']}")
     return "\n".join(lines)
 
 
-async def _summarize_answer(query: str, results: list[dict[str, Any]], scope_label: str) -> tuple[str, str]:
+def _strip_answer_sources(answer: str) -> str:
+    return re.sub(r"(^|\n)\s*来源：[\s\S]*$", "", answer or "").strip()
+
+
+async def _summarize_answer(query: str, results: list[dict[str, Any]], scope_label: str, db: Session) -> tuple[str, str]:
     if not results:
+        return _fallback_answer(query, results, scope_label), "fallback"
+    policy = _product_query_policy(query)
+    if scope_label == "global" and policy.broad:
         return _fallback_answer(query, results, scope_label), "fallback"
 
     context = _context_for_ai(results)
@@ -286,8 +589,15 @@ async def _summarize_answer(query: str, results: list[dict[str, Any]], scope_lab
             "content": f"用户问题：{query}\n检索范围：{scope_label}\n\n产品资料：\n{context}",
         },
     ]
-    answer = await ai_service.chat(messages, temperature=0.2, allow_fallback=False)
-    answer = (answer or "").strip()
+    interface_key = "product_rag_scoped" if scope_label == "product" else "product_rag_global"
+    answer = await ai_service.chat(
+        messages,
+        temperature=0.2,
+        allow_fallback=False,
+        interface_key=interface_key,
+        db=db,
+    )
+    answer = _strip_answer_sources(answer or "")
     if answer:
         return answer, "ai"
     return _fallback_answer(query, results, scope_label), "fallback"
@@ -301,13 +611,16 @@ async def answer_global_product_question(
     limit: int = 5,
 ) -> dict[str, Any]:
     clean = _clean_query(query)
-    products = _candidate_products(clean, db, max(1, min(limit, 10)), category)
+    requested_limit = max(1, min(limit, 30))
+    policy = _product_query_policy(clean)
+    candidate_limit = 30 if policy.broad else requested_limit
+    products = _candidate_products(clean, db, candidate_limit, category)
     results = [
         _detail_to_result(build_product_detail_payload(product), clean)
         for product in products
     ]
     sources = _unique([source for result in results for source in result.get("sources", [])])
-    answer, mode = await _summarize_answer(clean, results, "global")
+    answer, mode = await _summarize_answer(clean, results, "global", db)
     return {
         "answer": answer,
         "mode": mode,
@@ -329,7 +642,7 @@ async def answer_product_question(
     detail = build_product_detail_payload(product)
     result = _detail_to_result(detail, clean, scoped=True)
     sources = result.get("sources", [])
-    answer, mode = await _summarize_answer(clean, [result], "product")
+    answer, mode = await _summarize_answer(clean, [result], "product", db)
     return {
         "answer": answer,
         "mode": mode,

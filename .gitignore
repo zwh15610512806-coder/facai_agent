@@ -22,10 +22,12 @@ data/chroma_test/*
 data/models/*
 data/search_index.json
 data/product_files/*
+data/generated_documents/*
 data/*.png
 !data/chroma_db/.gitkeep
 !data/chroma_test/.gitkeep
 !data/product_files/.gitkeep
+!data/generated_documents/.gitkeep
 data/uploads/*
 !data/uploads/.gitkeep
 .venv/

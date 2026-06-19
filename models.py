@@ -111,3 +111,36 @@ class ReferenceScript(Base):
     is_high_conversion = Column(Integer, default=0, comment="高成交标记")
     embedding_id = Column(String(200), comment="ChromaDB向量ID")
     created_at = Column(DateTime, server_default=func.now())
+
+
+class AIInterfaceSetting(Base):
+    """Per-interface AI provider/model configuration."""
+    __tablename__ = "ai_interface_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    interface_key = Column(String(100), nullable=False, unique=True, index=True)
+    provider = Column(String(50), nullable=False, default="deepseek")
+    model = Column(String(120), nullable=False)
+    max_tokens = Column(Integer, nullable=False, default=2400)
+    api_key_secret = Column(Text)
+    base_url_override = Column(String(500))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class AIUsageRecord(Base):
+    """Token/call metadata for AI requests. Prompt and response bodies are not stored."""
+    __tablename__ = "ai_usage_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    interface_key = Column(String(100), nullable=False, index=True)
+    provider = Column(String(50), nullable=False, index=True)
+    model = Column(String(120), nullable=False)
+    prompt_tokens = Column(Integer, nullable=False, default=0)
+    completion_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    usage_source = Column(String(20), nullable=False, default="estimated")
+    latency_ms = Column(Integer, nullable=False, default=0)
+    status = Column(String(30), nullable=False, index=True)
+    error_summary = Column(Text)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
