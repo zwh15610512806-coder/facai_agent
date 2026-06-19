@@ -19,6 +19,9 @@ class SharedMobileResponsiveCssTests(unittest.TestCase):
         self.assertIn("flex-direction: column", body)
         self.assertIn(".nav-links", body)
         self.assertIn("overflow-x: auto", body)
+        self.assertIn("scroll-padding-inline", body)
+        self.assertIn(".nav-link.on", body)
+        self.assertIn("min-height: 42px", body)
         self.assertIn(".product-grid", body)
         self.assertIn("grid-template-columns: 1fr", body)
         self.assertIn("safe-area-inset-bottom", body)
@@ -120,6 +123,52 @@ class PageSpecificMobileLayoutTests(unittest.TestCase):
         self.assertIn("flex-wrap: nowrap", page)
         self.assertIn(".fchip", page)
         self.assertIn("flex: 0 0 auto", page)
+
+
+class ProductsPageMobileWorkspaceTests(unittest.TestCase):
+    def setUp(self):
+        self.page = (ROOT / "templates" / "products.html").read_text(encoding="utf-8-sig")
+
+    def test_products_page_has_mobile_segmented_workspace_controls(self):
+        self.assertIn('data-mobile-view="list"', self.page)
+        self.assertIn('class="mobile-product-tabs"', self.page)
+        self.assertIn('class="mobile-product-tab on"', self.page)
+        self.assertIn('data-view="list"', self.page)
+        self.assertIn('data-view="detail"', self.page)
+        self.assertIn('data-view="chat"', self.page)
+        self.assertIn('onclick="setMobileProductView(\'list\')"', self.page)
+        self.assertIn('onclick="setMobileProductView(\'detail\')"', self.page)
+        self.assertIn('onclick="setMobileProductView(\'chat\')"', self.page)
+
+    def test_products_page_mobile_breakpoint_shows_only_active_panel(self):
+        mobile = re.search(r"@media \(max-width: 768px\)\s*\{(?P<body>.*?)\n\}", self.page, flags=re.S)
+
+        self.assertIsNotNone(mobile)
+        body = mobile.group("body")
+        self.assertIn(".mobile-product-tabs", body)
+        self.assertIn(".products-page[data-mobile-view=\"list\"] .sidebar-panel", body)
+        self.assertIn(".products-page[data-mobile-view=\"detail\"] .detail-panel", body)
+        self.assertIn(".products-page[data-mobile-view=\"chat\"] .chat-panel", body)
+        self.assertIn("display:flex", body)
+        self.assertIn(".products-panel{display:none", body)
+        self.assertIn("calc(100dvh - 142px - env(safe-area-inset-bottom))", body)
+        self.assertIn(".chat-composer", body)
+        self.assertIn("padding-bottom:max(12px, env(safe-area-inset-bottom))", body)
+
+    def test_products_page_mobile_source_modal_and_chat_avoid_horizontal_overflow(self):
+        mobile = re.search(r"@media \(max-width: 768px\)\s*\{(?P<body>.*?)\n\}", self.page, flags=re.S)
+
+        self.assertIsNotNone(mobile)
+        body = mobile.group("body")
+        self.assertIn(".source-modal-box", body)
+        self.assertIn("width:100vw", body)
+        self.assertIn("max-width:100vw", body)
+        self.assertIn(".source-download-link", body)
+        self.assertIn("width:100%", body)
+        self.assertIn(".chat-bubble", body)
+        self.assertIn("max-width:94%", body)
+        self.assertIn(".chat-input", body)
+        self.assertIn("font-size:16px", body)
 
 
 if __name__ == "__main__":
