@@ -70,9 +70,9 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         ],
     }
 
-    # 准备模板上下文
+    # 准备模板上下文；AI生成不使用脚本模板库内容
     template_context = None
-    if template:
+    if template and engine == "template":
         template_context = {
             "name": template.name,
             "video_type": template.video_type,
@@ -82,19 +82,20 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             "example_script": template.example_script,
         }
 
-    # 检索相似爆款脚本（shuffle 避免每次返回同样顺序）
-    # 模板库改写模式取更多参考脚本（5条），DeepSeek模式保持3条
-    ref_limit = 5 if engine == "template" else 3
-    if auto_high_library:
-        reference_scripts = generator.find_high_conversion_scripts(
-            product_context, db, limit=ref_limit
-        )
-    else:
-        reference_scripts = generator.find_similar_scripts(
-            product_context, video_type, db, limit=ref_limit
-        )
-    import random as _r
-    _r.shuffle(reference_scripts)
+    # 只有模板库改写模式检索脚本库；AI生成只使用产品资料和跑量逻辑
+    reference_scripts = []
+    if engine == "template":
+        ref_limit = 5
+        if auto_high_library:
+            reference_scripts = generator.find_high_conversion_scripts(
+                product_context, db, limit=ref_limit
+            )
+        else:
+            reference_scripts = generator.find_similar_scripts(
+                product_context, video_type, db, limit=ref_limit
+            )
+        import random as _r
+        _r.shuffle(reference_scripts)
 
     if auto_high_library and not reference_scripts:
         raise HTTPException(status_code=404, detail="暂无高成交模板库脚本，请先在模板库标记高成交脚本")
@@ -111,7 +112,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             include_shot_design=request.include_shot_design,
         )
     else:
-        # DeepSeek AI 模式：全新创作，参考脚本仅作灵感
+        # AI生成模式：全新创作，不注入模板库参考脚本
         script_content = await generator.generate(
             product=product_context,
             template=template_context,
@@ -123,13 +124,15 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         )
 
     # 保存生成记录
-    engine_label = "模板库改写" if engine == "template" and reference_scripts else "DeepSeek AI"
+    using_template_library = engine == "template" and reference_scripts
+    engine_label = "模板库改写" if using_template_library else "AI生成"
+    model_interface_key = "script_library_rewrite" if using_template_library else "script_generate"
     record = GeneratedScript(
         product_id=product.id,
         template_id=template.id if template else None,
         script_content=script_content,
         video_type=video_type,
-        ai_model=f"{engine_label} · {generator.get_model_name()}",
+        ai_model=f"{engine_label} · {generator.get_model_name(model_interface_key)}",
     )
     db.add(record)
     db.commit()

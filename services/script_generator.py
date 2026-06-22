@@ -6,6 +6,7 @@ from sqlalchemy import or_
 from typing import List, Dict, Optional, Any
 import json
 import logging
+import random
 import re
 
 logger = logging.getLogger(__name__)
@@ -28,11 +29,25 @@ class ScriptGenerator:
         "场景类": "场景建立 → 动作展示 → 成品呈现 → 场景转化 → CTA。核心是让用户看见自己会在何处使用",
     }
 
+    DEEPSEEK_OPENING_STRATEGIES = (
+        "价格机制开场：第一句先讲清活动、成本或省心机制，但只能使用输入里真实存在的价格/活动信息",
+        "痛点场景开场：第一句直接切进门店备货、打包、配送、出品或接急单时的具体麻烦",
+        "结果反差开场：第一句对比普通做法和法采产品带来的效率、品质或成本变化",
+        "认知反差开场：第一句先点破烘焙店老板容易忽略的选品细节",
+        "动作画面开场：第一句从拿起、切开、装袋、打包、配送、上架等具体动作进入",
+        "客户反馈开场：第一句从顾客体验、门店复购或出餐效率切入，不编造具体数据",
+    )
+
     def __init__(self):
         self.ai = ai_service
 
-    def get_model_name(self) -> str:
-        return self.ai.get_model_name()
+    def get_model_name(self, interface_key: str = "script_generate") -> str:
+        try:
+            return self.ai.get_model_name(interface_key=interface_key)
+        except TypeError as exc:
+            if "interface_key" not in str(exc):
+                raise
+            return self.ai.get_model_name()
 
     async def _chat_with_interface(self, messages: List[Dict], temperature: float, interface_key: str) -> str:
         try:
@@ -42,28 +57,76 @@ class ScriptGenerator:
                 raise
             return await self.ai.chat(messages, temperature=temperature)
 
-    def _format_shot_design_requirement(self, include_shot_design: bool) -> str:
+    def _format_shot_design_requirement(
+        self,
+        include_shot_design: bool,
+        use_template_reference: bool = True,
+    ) -> str:
         if include_shot_design:
+            reference_line = (
+                "- 参考模板库脚本的画面节奏和镜头功能。"
+                if use_template_reference
+                else "- 参考抖音带货跑量逻辑和真实产品场景的画面节奏。"
+            )
             return (
                 "\n【画面设计要求】\n"
-                "- 参考模板库脚本的画面节奏和镜头功能。\n"
+                f"{reference_line}\n"
                 "- 每句话添加镜头说明，让口播文案和画面动作一一对应。\n"
                 "- 可使用格式：（镜头/画面说明）口播文案，并保留适度段落结构。"
             )
+        reference_line = (
+            "- 仍参考模板库的成交逻辑和表达节奏，但不保留模板里的镜头格式。"
+            if use_template_reference
+            else "- 仍参考抖音带货跑量逻辑和真实产品场景，但不套用模板脚本格式。"
+        )
+        connector_line = (
+            "- 可以使用“啊、姐妹们、关键、如果”等口语连接词，让文案读起来顺滑自然。"
+            if use_template_reference
+            else "- 可以使用“关键、如果、直接、你看、说白了”等口语连接词，让文案读起来顺滑自然。"
+        )
         return (
             "\n【输出格式要求】\n"
             "- 本节格式要求优先级最高。\n"
             "- 只输出一段连续视频文案，适合直接作为口播稿使用，格式要像自然达人带货口播的一整段话。\n"
             "- 禁止镜头说明、画面说明、分镜标题、字幕提示、口播标签和场景说明。\n"
             "- 禁止时间码、【】段落标签、项目符号、Markdown 标题和“改写自”说明；禁止换行。\n"
-            "- 可以使用“啊、姐妹们、关键、如果”等口语连接词，让文案读起来顺滑自然。\n"
-            "- 仍参考模板库的成交逻辑和表达节奏，但不保留模板里的镜头格式。"
+            f"{connector_line}\n"
+            f"{reference_line}"
         )
 
-    def _post_process_script_output(self, script: str, include_shot_design: bool) -> str:
+    def _format_deepseek_run_rate_framework(self) -> str:
+        return (
+            "\n【抖音跑量自检框架】\n"
+            "- 开头3-5秒必须给出具体钩子，可以是价格机制、痛点反差、场景冲突、效果对比或认知反差，避免泛化开头。\n"
+            "- 目标人群必须明确为烘焙店老板/烘焙从业者，不要写成泛消费者种草。\n"
+            "- 用一个真实使用场景承接痛点或需求，让观众能立刻代入门店备货、出品、配送、打包或活动促销。\n"
+            "- 至少引用2个产品资料里的具体卖点，卖点要落到成本、效率、品质、稳定性、使用步骤或成品效果，禁止空泛夸张。\n"
+            "- 价格、活动、赠品必须与输入一致；价格待更新时不得编造价格、折扣、赠品或到手价。\n"
+            "- CTA必须自然引导左下角/小黄车，但避免全篇硬广，要先让用户相信产品值得点开。\n"
+            "- 先内部自评并修正：钩子是否能留住人，场景是否真实，卖点是否具体，价格是否一致，CTA是否明确；最终不要输出评分或解释。"
+        )
+
+    def _choose_deepseek_opening_strategy(self) -> str:
+        return random.choice(self.DEEPSEEK_OPENING_STRATEGIES)
+
+    def _format_deepseek_opening_variety_requirement(self, opening_strategy: str) -> str:
+        return (
+            "\n【开头去重要求】\n"
+            f"- 本次开头角度：{opening_strategy}\n"
+            "- 禁止以“姐妹们”“烘焙姐妹们”“家人们”“老板们看过来”作为默认开头，除非用户额外要求。\n"
+            "- 第一小句必须直接进入价格机制、痛点场景、结果反差、认知反差、客户反馈或具体动作画面，不要先喊人群称呼。\n"
+            "- 每次重新生成必须更换开头角度和第一句话句式，不要连续使用同一种开场句。"
+        )
+
+    def _post_process_script_output(
+        self,
+        script: str,
+        include_shot_design: bool,
+        remove_default_audience_opening: bool = False,
+    ) -> str:
         text = (script or "").strip()
         if include_shot_design:
-            return text
+            return self._remove_default_audience_opening(text) if remove_default_audience_opening else text
 
         text = self._strip_plain_script_preamble(text)
         text = re.sub(r"(?m)^\s*-{3,}\s*$", " ", text)
@@ -82,7 +145,23 @@ class ScriptGenerator:
         text = re.sub(r"\s+", " ", text)
         text = re.sub(r"(?<=[\u4e00-\u9fff0-9，。！？、；：])\s+(?=[\u4e00-\u9fff0-9“”])", "", text)
         text = re.sub(r"\s+([，。！？、；：,.!?;:])", r"\1", text)
+        if remove_default_audience_opening:
+            text = self._remove_default_audience_opening(text)
         return text.strip()
+
+    def _remove_default_audience_opening(self, text: str) -> str:
+        """Remove generic audience-call prefixes from DeepSeek-created scripts only."""
+        if not text:
+            return ""
+
+        prefix_pattern = (
+            r"^(\s*(?:[（(][^（）()]{1,120}[）)]\s*)?)"
+            r"(?:做烘焙的)?(?:烘焙)?姐妹们(?:看过来|注意了|别划走)?[，,、！!\s]*"
+        )
+
+        lines = text.splitlines()
+        lines[0] = re.sub(prefix_pattern, r"\1", lines[0]).lstrip()
+        return "\n".join(lines).strip()
 
     def _strip_plain_script_preamble(self, text: str) -> str:
         """Keep only the actual spoken script when the model adds analysis or intro text."""
@@ -410,6 +489,7 @@ class ScriptGenerator:
             return self._post_process_script_output(
                 build_faicai_script(product, tone),
                 include_shot_design,
+                remove_default_audience_opening=True,
             )
 
         # 构建系统提示
@@ -422,11 +502,11 @@ class ScriptGenerator:
         # 构建用户提示
         user_prompt = self._build_user_prompt(
             product=product,
-            template=template,
+            template=None,
             video_type=video_type,
             tone=tone,
             extra_requirements=extra_requirements,
-            reference_scripts=reference_scripts,
+            reference_scripts=[],
             include_shot_design=include_shot_design,
         )
 
@@ -437,7 +517,11 @@ class ScriptGenerator:
         ]
 
         response = await self._chat_with_interface(messages, temperature=0.85, interface_key="script_generate")
-        return self._post_process_script_output(response, include_shot_design)
+        return self._post_process_script_output(
+            response,
+            include_shot_design,
+            remove_default_audience_opening=True,
+        )
 
     def _build_system_prompt(self, video_type: str, tone: str, include_shot_design: bool = False) -> str:
         """构建系统提示词"""
@@ -445,6 +529,8 @@ class ScriptGenerator:
             video_type,
             self.TYPE_STRATEGIES["机制类"]
         )
+        opening_strategy = self._choose_deepseek_opening_strategy()
+        opening_requirement = self._format_deepseek_opening_variety_requirement(opening_strategy)
         if not include_shot_design:
             return f"""你是法采食品店的短视频带货纯口播文案专家，擅长把烘焙产品卖点写成一段自然达人口播。
 
@@ -454,9 +540,11 @@ class ScriptGenerator:
 - 只输出最终视频文案本身，不输出解释、标题、编号或 Markdown。
 - 只输出一段连续自然口播文案，不换行，不分段。
 - 禁止【】段落标签、时间码、分镜标题、镜头说明、画面说明、字幕提示、口播标签和场景说明。
-- 可以借鉴爆款脚本的成交逻辑、痛点推进、卖点顺序和口语节奏，但不能保留模板脚本的格式。
-- 语言要像真实带货达人顺口说出来，可以使用“啊、姐妹们、关键、如果、直接”这类自然连接词。
-- 必须包含产品卖点、价格或促销信息，并有明确左下角下单引导。
+- 可以借鉴抖音爆款带货视频的成交逻辑、痛点推进、卖点顺序和口语节奏，但不能套用模板脚本格式。
+- 语言要像真实带货达人顺口说出来，可以使用“关键、如果、直接、你看、说白了”这类自然连接词。
+- 必须包含产品卖点、已有价格/促销信息或价格待更新提示，并有明确左下角下单引导。
+{self._format_deepseek_run_rate_framework()}
+{opening_requirement}
 
 当前任务：
 - 视频类型：{video_type}
@@ -479,13 +567,25 @@ class ScriptGenerator:
         ]
         variation = random.choice(variations)
 
-        return f"""{ai_service.SYSTEM_PROMPT}
+        return f"""你是法采食品店的短视频带货口播+画面脚本专家，擅长把烘焙产品卖点写成适合抖音跑量的真实门店场景脚本。
+
+当前输出模式：口播+画面设计。
+
+硬性输出规则：
+- 只输出最终脚本本身，不输出解释、创作思路或 Markdown。
+- 可以用时间段和功能标签组织脚本，但每一句口播都要配合具体镜头/画面说明。
+- 镜头说明必须服务产品证明：真实门店场景、产品细节、使用动作、成品效果、价格机制或左下角下单引导。
+- 口语表达要像烘焙店老板/烘焙从业者在真实分享，可以使用“关键、如果、直接、你看、说白了”等自然连接词。
+- 必须包含产品卖点、已有价格/促销信息或价格待更新提示，并有明确左下角/小黄车下单引导。
+- 避免全篇硬广，先用场景、证明和具体卖点让用户相信产品值得点开。
 
 当前任务：
 - 视频类型：{video_type}
 - 创作策略：{strategy}
 - 语言风格：{tone}
 - 创意要求：{variation}
+{self._format_deepseek_run_rate_framework()}
+{opening_requirement}
 
 请严格按照上述策略创作，确保脚本具备抖音跑量能力。"""
 
@@ -510,6 +610,8 @@ class ScriptGenerator:
         pending_fields = set(product.get("pending_fields") or [])
         price_text = "待更新" if "price" in pending_fields else f"{product.get('price', 0)}元"
         parts.append(f"售价：{price_text}")
+        if "price" in pending_fields:
+            parts.append("价格约束：价格待更新时不得编造价格、折扣、赠品或到手价，只能提示价格待更新或引导查看详情页。")
         if product.get("original_price"):
             parts.append(f"原价：{product.get('original_price')}元")
         if product.get("description"):
@@ -524,35 +626,7 @@ class ScriptGenerator:
         else:
             parts.append("\n【核心卖点】（请根据产品信息提炼）")
 
-        # 3. 模板参考
-        if template:
-            parts.append("\n【参考模板】")
-            parts.append(f"模板名称：{template.get('name', '')}")
-
-            hooks = template.get("hook_templates", [])
-            if hooks:
-                parts.append(f"推荐开头钩子：{hooks[0]}")
-                if len(hooks) > 1:
-                    parts.append(f"备选钩子：{' | '.join(hooks[1:3])}")
-
-            ctas = template.get("cta_templates", [])
-            if ctas:
-                parts.append(f"推荐CTA话术：{ctas[0]}")
-
-            if template.get("example_script"):
-                parts.append(f"\n参考示例：\n{template['example_script']}")
-
-        # 4. 爆款参考脚本
-        if reference_scripts:
-            parts.append("\n【同类爆款脚本参考】")
-            for i, rs in enumerate(reference_scripts[:2], 1):
-                parts.append(f"\n--- 参考{i}: {rs.get('title', '')} ---")
-                parts.append(rs.get("content", "")[:500])
-                if rs.get("performance"):
-                    perf = rs["performance"]
-                    parts.append(f"(播放量:{perf.get('views','N/A')} 转化率:{perf.get('conversion','N/A')})")
-
-        # 5. 创作要求
+        # 3. 创作要求
         parts.append(f"\n【创作要求】")
         parts.append(f"1. 视频类型：{video_type}")
         parts.append(f"2. 语言风格：{tone}")
@@ -563,10 +637,10 @@ class ScriptGenerator:
         else:
             parts.append(f"3. 开头要有强钩子，但不要用标题、时间码或段落标签标出来")
             parts.append(f"4. 输出风格参考自然达人带货口播，像一口气说完的一段话，不要解释创作过程")
-        parts.append(f"6. 必须包含价格信息和明确的左下角下单引导")
+        parts.append(f"6. 必须包含输入中已有的价格/活动信息和明确的左下角下单引导；如果价格待更新，不能编造具体价格")
         parts.append(f"7. 融入具体的产品卖点，不要空泛")
 
-        parts.append(self._format_shot_design_requirement(include_shot_design))
+        parts.append(self._format_shot_design_requirement(include_shot_design, use_template_reference=False))
 
         if extra_requirements:
             parts.append(f"\n【额外要求】{extra_requirements}")

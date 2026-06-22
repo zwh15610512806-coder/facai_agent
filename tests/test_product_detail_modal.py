@@ -551,6 +551,27 @@ class ProductDetailTemplateTests(unittest.TestCase):
         self.assertNotIn('id="scopedChatThread"', self.page)
         self.assertIn("renderRagResults", self.page)
 
+    def test_products_page_mobile_workspace_switches_between_list_detail_and_chat(self):
+        self.assertIn("let mobileProductView='list'", self.page)
+        self.assertIn("function setMobileProductView(view)", self.page)
+        self.assertIn("function syncMobileProductView()", self.page)
+        self.assertIn("document.querySelector('.products-page')", self.page)
+        self.assertIn("root.setAttribute('data-mobile-view',mobileProductView)", self.page)
+        self.assertIn("document.querySelectorAll('.mobile-product-tab')", self.page)
+        self.assertIn("button.classList.toggle('on',button.getAttribute('data-view')===mobileProductView)", self.page)
+
+    def test_product_mobile_workspace_moves_to_expected_panel_after_user_actions(self):
+        select_body = re.search(r"async function selectProduct\(id\)\{(?P<body>.*?)\n\}", self.page, flags=re.S)
+        clear_body = re.search(r"function clearSelectedProduct\(\)\{(?P<body>.*?)\n\}", self.page, flags=re.S)
+        chat_body = re.search(r"async function sendGlobalChat\(event\)\{(?P<body>.*?)\n\}", self.page, flags=re.S)
+
+        self.assertIsNotNone(select_body)
+        self.assertIsNotNone(clear_body)
+        self.assertIsNotNone(chat_body)
+        self.assertIn("setMobileProductView('detail');", select_body.group("body"))
+        self.assertIn("setMobileProductView('list');", clear_body.group("body"))
+        self.assertIn("setMobileProductView('chat');", chat_body.group("body"))
+
     def test_selecting_product_resets_main_chat_to_product_scope(self):
         self.assertIn("function renderProductChatWelcome(product)", self.page)
         self.assertIn("renderProductChatWelcome(product);", self.page)

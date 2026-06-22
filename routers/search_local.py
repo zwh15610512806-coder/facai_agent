@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 
 router = APIRouter(tags=["search"])
@@ -30,6 +30,7 @@ FILE_TYPE_MAP = {
     "archive": [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"],
 }
 EXT_TYPE_MAP = {ext: file_type for file_type, exts in FILE_TYPE_MAP.items() for ext in exts}
+PREVIEW_RANGE_CHUNK_SIZE = 1024 * 1024
 
 _lock = threading.RLock()
 _loaded = False
@@ -509,6 +510,72 @@ def _get_indexed_file(file_id: int) -> dict[str, Any] | None:
     return item
 
 
+def _parse_byte_range(
+    range_header: str,
+    file_size: int,
+    *,
+    max_open_ended_length: int | None = None,
+) -> tuple[int, int] | None:
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+    if not match or file_size <= 0:
+        return None
+
+    start_text, end_text = match.groups()
+    if not start_text and not end_text:
+        return None
+
+    if start_text:
+        start = int(start_text)
+        end = int(end_text) if end_text else file_size - 1
+        if not end_text and max_open_ended_length:
+            end = min(end, start + max_open_ended_length - 1)
+    else:
+        suffix_length = int(end_text)
+        if suffix_length <= 0:
+            return None
+        start = max(file_size - suffix_length, 0)
+        end = file_size - 1
+
+    if start >= file_size or start > end:
+        return None
+    return start, min(end, file_size - 1)
+
+
+def _iter_file_range(path: str, start: int, end: int):
+    with open(path, "rb") as file:
+        file.seek(start)
+        remaining = end - start + 1
+        while remaining > 0:
+            chunk = file.read(min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+
+
+def _range_response(path: str, media_type: str, range_header: str) -> StreamingResponse | None:
+    file_size = os.path.getsize(path)
+    parsed = _parse_byte_range(
+        range_header,
+        file_size,
+        max_open_ended_length=PREVIEW_RANGE_CHUNK_SIZE,
+    )
+    if not parsed:
+        return None
+
+    start, end = parsed
+    return StreamingResponse(
+        _iter_file_range(path, start, end),
+        status_code=206,
+        media_type=media_type,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Content-Length": str(end - start + 1),
+        },
+    )
+
+
 @router.get("/files/{file_id}")
 async def get_file(file_id: int):
     item = _get_indexed_file(file_id)
@@ -527,9 +594,14 @@ async def download_file(file_id: int):
 
 
 @router.get("/files/{file_id}/preview")
-async def preview_file(file_id: int):
+async def preview_file(file_id: int, request: Request):
     item = _get_indexed_file(file_id)
     if not item or item.get("file_type") == "folder" or not os.path.exists(item["file_path"]):
         return _json({"success": False, "message": "文件不存在或不能预览"}, status_code=404)
     media_type = mimetypes.guess_type(item["file_path"])[0] or "application/octet-stream"
-    return FileResponse(item["file_path"], media_type=media_type)
+    range_header = request.headers.get("range")
+    if range_header:
+        partial = _range_response(item["file_path"], media_type, range_header)
+        if partial:
+            return partial
+    return FileResponse(item["file_path"], media_type=media_type, headers={"Accept-Ranges": "bytes"})

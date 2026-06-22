@@ -17,7 +17,7 @@ class FakeTemplateLibraryGenerator:
         self.library_called = False
         self.include_shot_design = None
 
-    def get_model_name(self):
+    def get_model_name(self, interface_key="script_generate"):
         return "fake-model"
 
     def find_similar_scripts(self, *args, **kwargs):
@@ -62,6 +62,54 @@ class FakeTemplateLibraryGenerator:
         assert reference_scripts
         assert all(script["is_high_conversion"] for script in reference_scripts)
         return "根据高成交模板库生成的脚本"
+
+
+class FakeDeepSeekGenerator:
+    def __init__(self):
+        self.similar_called = False
+        self.high_only_called = False
+        self.generate_called = False
+        self.reference_scripts = None
+        self.template = None
+
+    def get_model_name(self, interface_key="script_generate"):
+        return "fake-model"
+
+    def find_similar_scripts(self, product, video_type, db, limit=3):
+        self.similar_called = True
+        return [
+            {
+                "title": "Should not be used",
+                "content": "模板库参考脚本",
+                "video_type": video_type,
+                "category": product["category"],
+                "tags": "",
+                "performance": None,
+                "is_high_conversion": True,
+            }
+        ]
+
+    def find_high_conversion_scripts(self, product, db, limit=5):
+        self.high_only_called = True
+        return []
+
+    async def generate_from_library(self, *args, **kwargs):
+        raise AssertionError("explicit DeepSeek generation should not use template-library rewrite")
+
+    async def generate(
+        self,
+        product,
+        template,
+        video_type,
+        tone="活泼",
+        extra_requirements=None,
+        reference_scripts=None,
+        include_shot_design=False,
+    ):
+        self.generate_called = True
+        self.template = template
+        self.reference_scripts = reference_scripts
+        return "DeepSeek 只结合产品资料和跑量逻辑生成的脚本"
 
 
 class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
@@ -114,6 +162,25 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         asyncio.run(scripts_router.generate_script(request, db=self.db))
 
         self.assertTrue(fake.include_shot_design)
+
+    def test_explicit_deepseek_generation_does_not_fetch_or_pass_template_library_scripts(self):
+        fake = FakeDeepSeekGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(
+            product_id=self.product.id,
+            engine="deepseek",
+            video_type="需求类",
+        )
+
+        response = asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertTrue(fake.generate_called)
+        self.assertFalse(fake.similar_called)
+        self.assertFalse(fake.high_only_called)
+        self.assertEqual(fake.reference_scripts, [])
+        self.assertIsNone(fake.template)
+        self.assertEqual(response.script_content, "DeepSeek 只结合产品资料和跑量逻辑生成的脚本")
+        self.assertEqual(self.db.query(scripts_router.GeneratedScript).first().ai_model, "AI生成 · fake-model")
 
 
 class ScriptGeneratorHighConversionSearchTests(unittest.TestCase):

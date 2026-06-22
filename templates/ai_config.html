@@ -125,7 +125,7 @@ body{background:var(--bg)}
       </div>
       <aside class="panel">
         <h2 class="panel-title">供应商状态</h2>
-        <div class="field-help provider-env-note">这里显示默认环境变量状态；每个接口还可以单独保存用户自己的 API Key 和 Base URL。</div>
+        <div class="field-help provider-env-note">这里优先显示当前接口保存的 API Key 状态；未单独保存时显示默认环境变量状态。</div>
         <div id="providerStatusList" class="provider-stack"></div>
       </aside>
       <section class="panel" style="grid-column:1/-1">
@@ -192,13 +192,28 @@ async function loadAll(){
 
 function renderProviderStatus(){
  const box=document.getElementById('providerStatusList');
+ const item=selectedInterface()||{};
  box.innerHTML=providers.map(function(provider){
-  const cls=provider.configured?'status-ok':'status-missing';
-  const status=provider.configured?'已配置':'未配置';
-  const env=(provider.api_key_env_names||[]).join(' / ');
-  const base=provider.base_url||'待配置';
-  return '<div class="provider-row"><div class="provider-row-head"><span>'+escHtml(provider.label)+'</span><span class="'+cls+'">'+status+'</span></div><div class="provider-row-meta">Key: '+escHtml(env)+'</div><div class="provider-row-meta">Base: '+escHtml(base)+'</div></div>';
+  const state=providerStatusForDisplay(provider,item);
+  return '<div class="provider-row"><div class="provider-row-head"><span>'+escHtml(provider.label)+'</span><span class="'+state.cls+'">'+escHtml(state.status)+'</span></div><div class="provider-row-meta">Key: '+escHtml(state.keyText)+'</div><div class="provider-row-meta">Base: '+escHtml(state.baseText)+'</div></div>';
  }).join('');
+}
+
+function providerStatusForDisplay(provider,item){
+ const usesInterfaceKey=item.provider===provider.key&&item.api_key_source==='interface'&&item.api_key_configured;
+ const usesInterfaceProvider=item.provider===provider.key;
+ const configured=usesInterfaceKey||provider.configured;
+ const env=(provider.api_key_env_names||[]).join(' / ');
+ let keyText=env||'-';
+ if(usesInterfaceKey)keyText='接口密钥 '+(item.api_key_mask||'****');
+ let baseText=provider.base_url||'待配置';
+ if(usesInterfaceProvider)baseText=item.base_url||provider.base_url||'待配置';
+ return {
+  cls:configured?'status-ok':'status-missing',
+  status:configured?'已配置':'未配置',
+  keyText:keyText,
+  baseText:baseText
+ };
 }
 
 function renderInterfaceList(){
@@ -214,6 +229,7 @@ function selectInterface(key){
  selectedInterfaceKey=key;
  renderInterfaceList();
  renderCurrentInterface();
+ renderProviderStatus();
  loadUsage();
 }
 
@@ -320,6 +336,7 @@ async function saveCurrentConfig(){
   toast('AI配置已保存','success');
   renderInterfaceList();
   renderCurrentInterface();
+  renderProviderStatus();
  }catch(error){
   toast(error.message||'保存失败','error');
  }

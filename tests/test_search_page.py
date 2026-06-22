@@ -17,8 +17,47 @@ class SearchPageTests(unittest.TestCase):
         self.assertIn('class="search-sidebar search-panel"', self.page)
         self.assertIn('class="search-results search-board search-panel"', self.page)
         self.assertIn('class="search-panel-hd search-board-hd"', self.page)
-        self.assertIn('id="topPagination"', self.page)
         self.assertIn('id="bottomPagination"', self.page)
+
+    def test_ai_understanding_lives_in_sidebar_to_expand_results(self):
+        sidebar = re.search(
+            r'<aside class="search-sidebar search-panel">(?P<body>.*?)</aside>',
+            self.page,
+            flags=re.S,
+        )
+        command = re.search(
+            r'<section class="search-command">(?P<body>.*?)</section>',
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(sidebar)
+        self.assertIsNotNone(command)
+        self.assertIn('id="aiBanner"', sidebar.group("body"))
+        self.assertNotIn('id="aiBanner"', command.group("body"))
+        self.assertIn('class="filter-ai-title"', self.page)
+
+    def test_result_header_uses_single_footer_pagination_area(self):
+        board_header = re.search(
+            r'<div class="search-panel-hd search-board-hd">(?P<body>.*?)</div>\s*</div>',
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(board_header)
+        self.assertNotIn('topPagination', board_header.group("body"))
+        self.assertIn('class="search-board-footer"', self.page)
+        self.assertIn('id="bottomPagination"', self.page)
+        self.assertNotIn('id="topPagination"', self.page)
+
+    def test_result_header_is_compact_to_give_list_more_height(self):
+        self.assertIn(".search-board-hd{align-items:center;padding:8px 14px}", self.page)
+        self.assertIn(".list-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0}", self.page)
+
+    def test_video_preview_preloads_metadata_when_modal_opens(self):
+        self.assertIn('<video class="vid-preview" controls preload="metadata">', self.page)
+        self.assertIn("const media = $('modalBody').querySelector('video,audio');", self.page)
+        self.assertIn("if (media) media.load();", self.page)
 
     def test_search_page_matches_workbench_typography_and_spacing(self):
         self.assertIn("body{overflow:hidden}", self.page)
@@ -39,7 +78,8 @@ class SearchPageTests(unittest.TestCase):
     def test_clear_states_do_not_reference_removed_pagination_node(self):
         script = self.page.split("<script>", 1)[1]
         self.assertNotIn("$('pagination')", script)
-        self.assertRegex(script, re.compile(r"function renderPagination\(\).*topPagination.*bottomPagination", re.S))
+        self.assertNotIn("$('topPagination')", script)
+        self.assertRegex(script, re.compile(r"function renderPagination\(\).*bottomPagination", re.S))
 
     def test_ai_banner_fields_are_escaped_before_inner_html(self):
         self.assertIn("escHtml(ai.keywords.join('、'))", self.page)

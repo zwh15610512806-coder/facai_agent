@@ -300,6 +300,7 @@ PROVIDER_FALLBACK_PRICING: dict[str, ModelPricing] = {
 }
 
 INSPIRATION_TOOLS_INTERFACE_KEY = "inspiration_tools"
+SCRIPT_GENERATE_INTERFACE_KEY = "script_generate"
 SCRIPT_CREATION_INTERFACE_KEY = "script_creation"
 CONTENT_ANALYSIS_INTERFACE_KEY = "content_analysis"
 
@@ -310,7 +311,6 @@ INSPIRATION_TOOL_INTERFACE_KEYS: tuple[str, ...] = (
     "inspiration_attachment",
 )
 SCRIPT_CREATION_INTERFACE_KEYS: tuple[str, ...] = (
-    "script_generate",
     "script_library_rewrite",
     "script_rewrite",
 )
@@ -340,10 +340,18 @@ AI_INTERFACES: tuple[AIInterfaceDefinition, ...] = (
         default_max_tokens=3600,
     ),
     AIInterfaceDefinition(
-        key=SCRIPT_CREATION_INTERFACE_KEY,
-        label="脚本生成改写",
+        key=SCRIPT_GENERATE_INTERFACE_KEY,
+        label="脚本生成",
         group="脚本",
-        description="脚本生成、模板库改写生成和脚本改写共用这一套模型与 API Key。",
+        description="生成脚本的 AI生成引擎，默认使用 deepseek-v4-pro，也可单独配置豆包、通义、智谱等模型、API Key 和 Base URL。",
+        default_model=DEEPSEEK_V4_PRO_MODEL,
+        default_max_tokens=3600,
+    ),
+    AIInterfaceDefinition(
+        key=SCRIPT_CREATION_INTERFACE_KEY,
+        label="脚本改写",
+        group="脚本",
+        description="模板库改写生成和脚本改写共用这一套模型与 API Key。",
         default_model=DEEPSEEK_MODEL,
         default_max_tokens=3600,
     ),
@@ -400,6 +408,31 @@ def default_model_for_interface(definition: AIInterfaceDefinition) -> str:
     return get_provider_definition(definition.default_provider).default_model()
 
 
+def _upgrade_legacy_script_generate_setting(
+    db: Session,
+    setting: AIInterfaceSetting,
+    definition: AIInterfaceDefinition,
+) -> AIInterfaceSetting:
+    if definition.key != SCRIPT_GENERATE_INTERFACE_KEY:
+        return setting
+    if (setting.provider or "").strip() != "deepseek":
+        return setting
+    legacy_models = unique_non_empty((
+        DEEPSEEK_MODEL,
+        DEEPSEEK_V4_FLASH_MODEL,
+        "deepseek-chat",
+    ))
+    if (setting.model or "").strip() not in legacy_models:
+        return setting
+
+    setting.model = DEEPSEEK_V4_PRO_MODEL
+    if int(setting.max_tokens or DEFAULT_MAX_TOKENS) == DEFAULT_MAX_TOKENS:
+        setting.max_tokens = definition.default_max_tokens
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
 def get_or_create_interface_setting(db: Session, interface_key: str) -> AIInterfaceSetting:
     definition = get_interface_definition(interface_key)
     setting = (
@@ -408,7 +441,7 @@ def get_or_create_interface_setting(db: Session, interface_key: str) -> AIInterf
         .first()
     )
     if setting:
-        return setting
+        return _upgrade_legacy_script_generate_setting(db, setting, definition)
 
     setting = AIInterfaceSetting(
         interface_key=definition.key,

@@ -15,6 +15,7 @@ class SearchLocalTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         (self.root / "\u86cb\u7cd5\u89c6\u9891.mp4").write_bytes(b"video")
+        (self.root / "large_video.mp4").write_bytes(b"v" * (2 * 1024 * 1024))
         (self.root / "\u4ea7\u54c1\u8d44\u6599.pdf").write_bytes(b"pdf")
         (self.root / "\u5b50\u76ee\u5f55").mkdir()
         (self.root / "\u5b50\u76ee\u5f55" / "\u56fe\u7247.png").write_bytes(b"png")
@@ -62,7 +63,7 @@ class SearchLocalTests(unittest.TestCase):
     def test_index_status_and_keyword_search(self):
         status = self._start_and_wait_for_index()
 
-        self.assertEqual(status["total_files"], 4)
+        self.assertEqual(status["total_files"], 5)
         self.assertIsNotNone(status["last_indexed"])
 
         search = self.client.get(
@@ -143,6 +144,43 @@ class SearchLocalTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, b"pdf")
+
+    def test_video_preview_supports_range_requests_for_browser_playback(self):
+        self._start_and_wait_for_index()
+        search = self.client.get(
+            "/api/search-proxy/search",
+            params={"q": "\u86cb\u7cd5", "type": "video"},
+        ).json()
+        file_id = search["files"][0]["id"]
+
+        response = self.client.get(
+            f"/api/search-proxy/files/{file_id}/preview",
+            headers={"Range": "bytes=0-1"},
+        )
+
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers["accept-ranges"], "bytes")
+        self.assertEqual(response.headers["content-range"], "bytes 0-1/5")
+        self.assertEqual(response.headers["content-length"], "2")
+        self.assertEqual(response.content, b"vi")
+
+    def test_open_ended_video_preview_range_is_capped_for_fast_metadata_loading(self):
+        self._start_and_wait_for_index()
+        search = self.client.get(
+            "/api/search-proxy/search",
+            params={"q": "large_video", "type": "video"},
+        ).json()
+        file_id = search["files"][0]["id"]
+
+        response = self.client.get(
+            f"/api/search-proxy/files/{file_id}/preview",
+            headers={"Range": "bytes=0-"},
+        )
+
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers["accept-ranges"], "bytes")
+        self.assertEqual(response.headers["content-range"], "bytes 0-1048575/2097152")
+        self.assertEqual(response.headers["content-length"], "1048576")
 
 
 if __name__ == "__main__":

@@ -128,6 +128,9 @@ body{overflow:hidden}
 .detail-empty{padding:18px;border:1px dashed var(--border);border-radius:var(--r);color:var(--text-3);font-size:15px;text-align:center}
 .detail-loading{padding:28px;text-align:center;color:var(--text-3);font-size:15px}
 .empty-copy{font-size:15px;line-height:1.7;color:var(--text-2)}
+.mobile-product-tabs{display:none}
+.mobile-product-tab{height:38px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text-2);font-family:var(--font-ui);font-size:13px;font-weight:900;cursor:pointer}
+.mobile-product-tab.on{border-color:var(--facai);background:var(--facai);color:#fff;box-shadow:var(--s-brand)}
 @media (max-width: 1280px){
   .products-chat-shell{grid-template-columns:280px 420px minmax(360px,1fr)}
 }
@@ -139,6 +142,27 @@ body{overflow:hidden}
   .sidebar-panel{max-height:420px}
   .chat-panel{min-height:560px}
   .detail-panel{min-height:620px}
+}
+@media (max-width: 768px){
+  body{overflow:hidden}
+  .products-page{height:calc(100dvh - 121px);max-width:100%;padding:10px 10px max(10px, env(safe-area-inset-bottom));gap:8px}
+  .mobile-product-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;flex:0 0 auto}
+  .mobile-product-tab{min-width:0}
+  .products-chat-shell{display:block;flex:1;min-height:0}
+  .products-panel{display:none;height:calc(100dvh - 142px - env(safe-area-inset-bottom));min-height:0;max-height:none;border-radius:var(--r)}
+  .products-page[data-mobile-view="list"] .sidebar-panel{display:flex}
+  .products-page[data-mobile-view="detail"] .detail-panel{display:flex}
+  .products-page[data-mobile-view="chat"] .chat-panel{display:flex}
+  .products-panel-hd{padding:12px;gap:10px}
+  .sidebar-panel,.detail-panel,.chat-panel{width:100%;max-height:none}
+  .category-tree,.selected-detail,.chat-thread{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  .chat-thread{padding:14px 12px 10px}
+  .chat-composer{padding:10px 10px;padding-bottom:max(12px, env(safe-area-inset-bottom))}
+  .chat-form{gap:6px}
+  .chat-input{font-size:16px;min-height:44px}
+  .chat-bubble{max-width:94%;font-size:14px}
+  .source-modal-box{width:100vw;max-width:100vw;max-height:calc(100dvh - env(safe-area-inset-bottom));border-radius:var(--r-lg) var(--r-lg) 0 0}
+  .source-download-link{width:100%}
 }
 @media (max-width: 640px){
   .products-page{padding:10px}
@@ -166,7 +190,12 @@ body{overflow:hidden}
 <a href="/app/ai-config" class="nav-link">AI配置</a>
 </div></div></nav>
 
-<main class="products-page">
+<main class="products-page" data-mobile-view="list">
+<div class="mobile-product-tabs" role="tablist" aria-label="产品移动端视图">
+  <button type="button" class="mobile-product-tab on" data-view="list" role="tab" aria-selected="true" onclick="setMobileProductView('list')">产品列表</button>
+  <button type="button" class="mobile-product-tab" data-view="detail" role="tab" aria-selected="false" onclick="setMobileProductView('detail')">产品详情</button>
+  <button type="button" class="mobile-product-tab" data-view="chat" role="tab" aria-selected="false" onclick="setMobileProductView('chat')">资料问答</button>
+</div>
 <section class="products-chat-shell" aria-label="产品资料问答工作台">
   <aside class="products-panel sidebar-panel">
     <div class="products-panel-hd">
@@ -262,6 +291,7 @@ body{overflow:hidden}
 
 <script src="/static/js/common.js?v=20260618"></script>
 <script>
+let mobileProductView='list';
 let products=[],categories=[],expandedCategories={},selectedProductId=null,selectedProductDetail=null,uploadProductId=null,selectedFile=null,skuPricesExpanded=false,editingProfileSections={};
 
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -274,6 +304,23 @@ function hasPending(p,field){return Array.isArray(p&&p.pending_fields)&&p.pendin
 function displayCategory(p){return hasPending(p,'category')?'待更新':(p&&p.category?p.category:'待更新');}
 function displayPrice(p){return hasPending(p,'price')?'待更新':'¥'+formatPrice(p&&p.price);}
 function toast(msg,type){const t=document.createElement('div');t.className='toast toast-'+(type==='success'?'ok':'err');t.textContent=(type==='success'?'OK ':'!! ')+msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(function(){t.remove()},300)},2200);}
+
+function setMobileProductView(view){
+ if(['list','detail','chat'].indexOf(view)<0)return;
+ mobileProductView=view;
+ syncMobileProductView();
+}
+
+function syncMobileProductView(){
+ const root=document.querySelector('.products-page');
+ if(!root)return;
+ root.setAttribute('data-mobile-view',mobileProductView);
+ document.querySelectorAll('.mobile-product-tab').forEach(function(button){
+  const active=button.getAttribute('data-view')===mobileProductView;
+  button.classList.toggle('on',button.getAttribute('data-view')===mobileProductView);
+  button.setAttribute('aria-selected',active?'true':'false');
+ });
+}
 
 function submitChatOnEnter(event,scope){
  if(event.key==='Enter'&&!event.shiftKey){
@@ -455,6 +502,7 @@ async function sendGlobalChat(event){
  const button=document.getElementById('globalChatSend');
  const query=input.value.trim();
  if(!query)return;
+ setMobileProductView('chat');
  input.value='';
  appendMessage('globalChatThread','user',query);
  button.disabled=true;
@@ -483,6 +531,7 @@ async function selectProduct(id){
  selectedProductId=id;
  selectedProductDetail=null;
  skuPricesExpanded=false;
+ setMobileProductView('detail');
  const product=products.find(function(p){return p.id===id;})||{id:id,name:'当前产品'};
  renderProductChatWelcome(product);
  renderSidebar();
@@ -503,6 +552,7 @@ async function selectProduct(id){
 function clearSelectedProduct(){
  selectedProductId=null;
  selectedProductDetail=null;
+ setMobileProductView('list');
  document.getElementById('detailProductName').textContent='选择一个产品';
  document.getElementById('detailProductSubtitle').textContent='从左侧点击产品后，这里显示资料、价格和产品内问答';
  document.getElementById('selectedProductActions').innerHTML='';
@@ -768,8 +818,10 @@ async function extractAllPoints(button){
 }
 
 renderGlobalWelcome();
+syncMobileProductView();
 loadProducts();
 document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
+window.addEventListener('resize',syncMobileProductView);
 </script>
 </body>
 </html>
