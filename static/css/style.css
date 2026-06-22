@@ -213,6 +213,13 @@ h3 { font-size: 1.1rem; font-weight: 700; }
   color: var(--text);
   overflow-wrap: anywhere;
 }
+.step2-change-product {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 
 /* =================================================================
    STEP INDICATOR
@@ -658,6 +665,7 @@ textarea.input { resize: vertical; min-height: 110px; }
   .drop { padding: 24px 16px; }
   .toast { left: 14px; right: 14px; bottom: max(16px, env(safe-area-inset-bottom)); text-align: center; justify-content: center; }
   .tip { display: none !important; }
+  .step2-change-product { margin-left: 0; flex: 1 1 100%; justify-content: center; }
   .float-bar { width: calc(100% - 28px); max-width: none; bottom: max(14px, env(safe-area-inset-bottom)); padding: 10px 12px; gap: 10px; border-radius: var(--r); align-items: stretch; flex-wrap: wrap; }
   .float-bar > span { flex: 1 1 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .float-bar .btn { flex: 1 1 118px; min-width: 0; }

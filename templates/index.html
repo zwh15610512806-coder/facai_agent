@@ -396,6 +396,9 @@
 <div class="step2-selected-box">
 <span class="step2-selected-label">已选产品</span>
 <span id="selectedProductLabel" class="step2-selected-value"></span>
+<button id="btnChangeProduct" class="btn btn-soft btn-sm step2-change-product" type="button">
+<i data-lucide="refresh-cw" style="width:14px;height:14px"></i>更换产品
+</button>
 </div>
 
 <p style="font-size:13px;color:var(--text-3);margin-bottom:10px" id="recommendHint"></p>
@@ -410,7 +413,7 @@
 <label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">引擎</label>
 <div class="engine-control-row">
 <select id="aiEngine" class="input" style="max-width:220px;font-size:13px">
-<option value="deepseek">DeepSeek AI</option>
+<option value="deepseek">AI生成</option>
 <option value="template" selected>模板库改写</option>
 </select>
 <label class="shot-design-toggle"><input id="includeShotDesign" type="checkbox"> <span>需要设计画面</span></label>
@@ -681,10 +684,12 @@ document.getElementById('btnToStep2').addEventListener('click',function(){
  document.getElementById('floatBar').classList.add('hidden');
  document.getElementById('selectedProductLabel').textContent=state.selectedProduct.name+' · '+productPriceLabel(state.selectedProduct);renderVideoTypes();
 });
-document.getElementById('btnBackToStep1').addEventListener('click',function(){
+function showProductSelection(){
  state.step=1;document.getElementById('step1').style.display='';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';
  document.getElementById('floatBar').classList.remove('hidden');
-});
+}
+document.getElementById('btnBackToStep1').addEventListener('click',showProductSelection);
+document.getElementById('btnChangeProduct').addEventListener('click',showProductSelection);
 
 function renderVideoTypes(){
  const recs=CAT_RECOMMEND[state.selectedProduct&&state.selectedProduct.category]||["机制类","痛点类","需求类"];
@@ -696,7 +701,7 @@ function renderVideoTypes(){
 function selectType(type){state.selectedType=state.selectedType===type?"":type;renderVideoTypes();document.getElementById('btnGenerate').disabled=false;}
 
 document.getElementById('aiEngine').addEventListener('change',function(){
- document.getElementById('engineHint').textContent=this.value==='deepseek'?'DeepSeek AI：已配置 API Key，创作更智能精准':'模板库改写：从脚本库匹配高成交脚本，改写为当前产品脚本';
+ document.getElementById('engineHint').textContent=this.value==='deepseek'?'AI生成：使用已配置模型和 API Key，结合产品资料与跑量逻辑创作':'模板库改写：从脚本库匹配高成交脚本，改写为当前产品脚本';
 });
 
 async function doGenerate(extra){

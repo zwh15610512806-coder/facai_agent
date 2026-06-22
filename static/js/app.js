@@ -179,7 +179,7 @@ function scriptGenerator() {
                 this.scriptContent = data.script_content;
                 this.scriptId = data.id;
             } catch (e) {
-                this.scriptContent = "❌ 生成失败：" + e.message + "\n\n请检查 DeepSeek API Key 是否已配置（.env 文件）";
+                this.scriptContent = "❌ 生成失败：" + e.message + "\n\n请检查 AI 模型 API Key 和 Base URL 是否已配置（.env 文件或 AI 配置页）";
             } finally {
                 this.generating = false;
             }

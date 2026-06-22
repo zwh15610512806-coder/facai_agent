@@ -343,7 +343,7 @@ AI_INTERFACES: tuple[AIInterfaceDefinition, ...] = (
         key=SCRIPT_GENERATE_INTERFACE_KEY,
         label="脚本生成",
         group="脚本",
-        description="生成脚本的 DeepSeek AI 引擎，默认使用 deepseek-v4-pro，可单独配置模型、API Key 和 Base URL。",
+        description="生成脚本的 AI生成引擎，默认使用 deepseek-v4-pro，也可单独配置豆包、通义、智谱等模型、API Key 和 Base URL。",
         default_model=DEEPSEEK_V4_PRO_MODEL,
         default_max_tokens=3600,
     ),

@@ -160,6 +160,28 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         self.assertIn("勾选会按每句话生成镜头说明", self.page)
         self.assertIn("include_shot_design:document.getElementById('includeShotDesign').checked", self.page)
 
+    def test_deepseek_engine_is_displayed_as_generic_ai_generation(self):
+        self.assertIn('<option value="deepseek">AI生成</option>', self.page)
+        self.assertIn("AI生成：使用已配置模型和 API Key", self.page)
+        self.assertNotIn("DeepSeek AI", self.page)
+
+    def test_selected_product_bar_can_change_product_directly(self):
+        selected_bar = re.search(
+            r'<div class="step2-selected-box">(?P<body>.*?)</div>',
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(selected_bar)
+        body = selected_bar.group("body")
+        self.assertIn('id="selectedProductLabel"', body)
+        self.assertIn('id="btnChangeProduct"', body)
+        self.assertIn('更换产品', body)
+        self.assertIn('class="btn btn-soft btn-sm step2-change-product"', body)
+        self.assertIn("function showProductSelection()", self.page)
+        self.assertIn("document.getElementById('btnBackToStep1').addEventListener('click',showProductSelection)", self.page)
+        self.assertIn("document.getElementById('btnChangeProduct').addEventListener('click',showProductSelection)", self.page)
+
     def test_custom_video_type_can_be_added_and_reused(self):
         self.assertIn('id="customVideoTypeInput"', self.page)
         self.assertIn('id="btnAddCustomType"', self.page)

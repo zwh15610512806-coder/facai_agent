@@ -173,6 +173,15 @@ class AiConfigApiTests(unittest.TestCase):
             SCRIPT_CREATION_INTERFACE_KEY,
         )
 
+    def test_script_generation_interface_description_is_provider_neutral(self):
+        response = self.client.get("/api/ai-config/interfaces")
+
+        self.assertEqual(response.status_code, 200)
+        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
+        description = by_key[SCRIPT_GENERATE_INTERFACE_KEY]["description"]
+        self.assertIn("AI生成引擎", description)
+        self.assertNotIn("DeepSeek AI 引擎", description)
+
     def test_legacy_script_generate_default_setting_upgrades_to_v4_pro(self):
         from models import AIInterfaceSetting
 
@@ -711,6 +720,15 @@ class AiConfigPageTests(unittest.TestCase):
         self.assertIn("预估花费", response.text)
         self.assertNotIn("latestStatus", response.text)
         self.assertIn("usageRecordTable", response.text)
+
+    def test_provider_status_uses_selected_interface_api_key_state(self):
+        page = (ROOT / "templates" / "ai_config.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("function providerStatusForDisplay(provider,item)", page)
+        self.assertIn("item.provider===provider.key&&item.api_key_source==='interface'", page)
+        self.assertIn("item.api_key_mask||'****'", page)
+        self.assertIn("renderProviderStatus();\n loadUsage();", page)
+        self.assertIn("renderProviderStatus();\n }catch(error)", page)
 
     def test_all_main_templates_link_to_ai_config_after_search(self):
         pages = [
