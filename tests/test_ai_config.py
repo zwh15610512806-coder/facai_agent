@@ -45,6 +45,7 @@ INSPIRATION_TOOL_KEYS = [
 SCRIPT_CREATION_KEYS = [
     "script_library_rewrite",
     "script_rewrite",
+    "seedance_prompt",
 ]
 CONTENT_ANALYSIS_KEYS = [
     "product_rag_global",
@@ -173,6 +174,17 @@ class AiConfigApiTests(unittest.TestCase):
             SCRIPT_CREATION_INTERFACE_KEY,
         )
 
+    def test_script_creation_defaults_to_deepseek_v4_pro_for_seedance_prompts(self):
+        response = self.client.get("/api/ai-config/interfaces")
+
+        self.assertEqual(response.status_code, 200)
+        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
+        self.assertIn(SCRIPT_CREATION_INTERFACE_KEY, by_key)
+        self.assertNotIn("seedance_prompt", by_key)
+        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["provider"], "deepseek")
+        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["model"], "deepseek-v4-pro")
+        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["max_tokens"], 3600)
+
     def test_script_generation_interface_description_is_provider_neutral(self):
         response = self.client.get("/api/ai-config/interfaces")
 
@@ -199,6 +211,24 @@ class AiConfigApiTests(unittest.TestCase):
         by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
         self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["model"], "deepseek-v4-pro")
         self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["max_tokens"], 3600)
+
+    def test_legacy_script_creation_default_setting_upgrades_to_v4_pro(self):
+        from models import AIInterfaceSetting
+
+        self.db.add(AIInterfaceSetting(
+            interface_key=SCRIPT_CREATION_INTERFACE_KEY,
+            provider="deepseek",
+            model="deepseek-chat",
+            max_tokens=2400,
+        ))
+        self.db.commit()
+
+        response = self.client.get("/api/ai-config/interfaces")
+
+        self.assertEqual(response.status_code, 200)
+        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
+        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["model"], "deepseek-v4-pro")
+        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["max_tokens"], 3600)
 
     def test_legacy_interface_update_resolves_to_its_screenshot_group(self):
         response = self.client.put(
@@ -551,6 +581,37 @@ class AiServiceRoutingTests(unittest.TestCase):
         result = asyncio.run(service.chat(
             [{"role": "user", "content": "rewrite this"}],
             interface_key="script_rewrite",
+            allow_fallback=False,
+            db=self.db,
+        ))
+
+        self.assertEqual(result, "AI ok")
+        self.assertEqual(fake_client.completions.payload["model"], "qwen-plus")
+        self.assertEqual(fake_client.completions.payload["max_tokens"], 2048)
+        record = self.db.query(AIUsageRecord).one()
+        self.assertEqual(record.interface_key, SCRIPT_CREATION_INTERFACE_KEY)
+        self.assertEqual(record.provider, "qwen")
+
+    def test_seedance_prompt_alias_uses_script_creation_setting(self):
+        from models import AIInterfaceSetting, AIUsageRecord
+        from services.ai_service import AIService
+
+        self.db.query(AIInterfaceSetting).delete()
+        self.db.add(AIInterfaceSetting(
+            interface_key=SCRIPT_CREATION_INTERFACE_KEY,
+            provider="qwen",
+            model="qwen-plus",
+            max_tokens=2048,
+        ))
+        self.db.commit()
+
+        service = AIService()
+        fake_client = FakeClient(FakeResponse())
+        service._clients["qwen"] = fake_client
+
+        result = asyncio.run(service.chat(
+            [{"role": "user", "content": "seedance this"}],
+            interface_key="seedance_prompt",
             allow_fallback=False,
             db=self.db,
         ))

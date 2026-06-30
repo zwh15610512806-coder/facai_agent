@@ -313,6 +313,7 @@ INSPIRATION_TOOL_INTERFACE_KEYS: tuple[str, ...] = (
 SCRIPT_CREATION_INTERFACE_KEYS: tuple[str, ...] = (
     "script_library_rewrite",
     "script_rewrite",
+    "seedance_prompt",
 )
 CONTENT_ANALYSIS_INTERFACE_KEYS: tuple[str, ...] = (
     "product_rag_global",
@@ -351,8 +352,8 @@ AI_INTERFACES: tuple[AIInterfaceDefinition, ...] = (
         key=SCRIPT_CREATION_INTERFACE_KEY,
         label="脚本改写",
         group="脚本",
-        description="模板库改写生成和脚本改写共用这一套模型与 API Key。",
-        default_model=DEEPSEEK_MODEL,
+        description="模板库改写生成、爆款脚本改写和分镜提示词生成共用这一套模型与 API Key。",
+        default_model=DEEPSEEK_V4_PRO_MODEL,
         default_max_tokens=3600,
     ),
     AIInterfaceDefinition(
@@ -408,12 +409,12 @@ def default_model_for_interface(definition: AIInterfaceDefinition) -> str:
     return get_provider_definition(definition.default_provider).default_model()
 
 
-def _upgrade_legacy_script_generate_setting(
+def _upgrade_legacy_deepseek_v4_pro_setting(
     db: Session,
     setting: AIInterfaceSetting,
     definition: AIInterfaceDefinition,
 ) -> AIInterfaceSetting:
-    if definition.key != SCRIPT_GENERATE_INTERFACE_KEY:
+    if definition.key not in {SCRIPT_GENERATE_INTERFACE_KEY, SCRIPT_CREATION_INTERFACE_KEY}:
         return setting
     if (setting.provider or "").strip() != "deepseek":
         return setting
@@ -441,7 +442,7 @@ def get_or_create_interface_setting(db: Session, interface_key: str) -> AIInterf
         .first()
     )
     if setting:
-        return _upgrade_legacy_script_generate_setting(db, setting, definition)
+        return _upgrade_legacy_deepseek_v4_pro_setting(db, setting, definition)
 
     setting = AIInterfaceSetting(
         interface_key=definition.key,

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>分镜提示词生成 — 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
+<script src="/static/vendor/lucide.min.js"></script>
+<style>
+.seedance-main{max-width:1540px}
+.seedance-workbench{display:grid;grid-template-columns:minmax(560px,1.12fr) minmax(520px,1fr);gap:18px;align-items:stretch}
+.seedance-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--s-2);padding:24px;min-width:0;display:flex;flex-direction:column}
+.seedance-panel-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+.seedance-panel-hd h2{margin:0;font-size:1.2rem}
+.seedance-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.seedance-file-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.seedance-file-name{font-size:12px;color:var(--text-3);min-width:0;overflow-wrap:anywhere}
+.seedance-script-input{width:100%;min-height:460px;flex:1 1 auto;resize:vertical;font-size:14px;line-height:1.7}
+.seedance-requirements{margin-top:14px}
+.seedance-field label{display:block;font-size:12px;font-weight:700;color:var(--text-3);margin-bottom:6px}
+.seedance-field textarea{width:100%;min-height:112px;resize:vertical;font-size:13px;line-height:1.6}
+.seedance-meta-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;color:var(--text-3);font-size:12px}
+.seedance-result-panel{min-height:640px}
+.seedance-result-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.seedance-result-title{display:flex;align-items:center;gap:8px;min-width:0}
+.seedance-source{font-size:12px;font-weight:800;color:var(--facai);background:var(--facai-ghost);border:1px solid var(--facai-subtle);border-radius:var(--r-pill);padding:4px 10px}
+.seedance-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-content:start;flex:1 1 auto}
+.seedance-card{border:1px solid var(--border-soft);border-radius:var(--r-sm);background:#fff;padding:12px;min-width:0}
+.seedance-card-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.seedance-scene{font-size:12px;font-weight:800;color:var(--facai);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seedance-prompt{font-size:12px;line-height:1.68;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere}
+.seedance-empty{border:1px dashed var(--border);border-radius:var(--r);background:var(--surface-darker);padding:42px 20px;text-align:center;color:var(--text-3);font-size:13px}
+.seedance-loading{grid-column:1/-1;min-height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--text-3);font-size:13px}
+@media (max-width: 1120px){
+  .seedance-workbench{grid-template-columns:1fr;align-items:start}
+  .seedance-script-input{min-height:340px;flex:0 0 auto}
+  .seedance-result-panel{min-height:0}
+  .seedance-loading{min-height:260px}
+}
+@media (max-width: 760px){
+  .seedance-main{padding-left:16px;padding-right:16px}
+  .seedance-panel{padding:18px}
+  .seedance-panel-hd,.seedance-result-head{flex-direction:column;align-items:stretch}
+  .seedance-actions{width:100%}
+  .seedance-actions .btn,.seedance-file-row .btn{flex:1 1 auto}
+  .seedance-list{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+<div class="nav-inner">
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<div class="nav-links">
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/seedance" class="nav-link on">分镜提示词生成</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/import" class="nav-link">数据导入</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/ai-config" class="nav-link">AI配置</a>
+</div></div></nav>
+
+<main class="page-main seedance-main" data-generate-api="/api/scripts/seedance-prompts" data-upload-api="/api/scripts/seedance-prompts/upload">
+<header class="page-hd"><h1>分镜提示词生成</h1><p>上传或粘贴脚本，生成 Seedance 2.0 可复制分镜提示词。</p></header>
+
+<section class="seedance-workbench">
+<div class="seedance-panel">
+<div class="seedance-panel-hd">
+<div><h2>脚本</h2></div>
+<div class="seedance-actions">
+<input id="seedanceFileInput" type="file" accept=".txt,.md,.json,.csv,.pdf,.docx,.xlsx" hidden>
+<button id="btnUploadSeedanceScript" class="btn btn-soft btn-sm" type="button"><i data-lucide="upload" style="width:15px;height:15px"></i>上传脚本</button>
+<button id="btnClearSeedanceScript" class="btn btn-ghost btn-sm" type="button"><i data-lucide="x" style="width:15px;height:15px"></i>清空</button>
+</div>
+</div>
+<div class="seedance-file-row">
+<span id="seedanceFileName" class="seedance-file-name">未选择文件</span>
+</div>
+<textarea id="seedanceScriptInput" class="input seedance-script-input" placeholder="粘贴需要生成分镜提示词的脚本..."></textarea>
+<div class="seedance-field seedance-requirements">
+<label for="seedanceRequirements">生成需求</label>
+<textarea id="seedanceRequirements" class="input" maxlength="2000" placeholder="例如：突出门店真实操作、减少口播感、多展示包装和成品质地"></textarea>
+</div>
+<div class="seedance-meta-row"><span id="seedanceCharCount">0 字</span><span id="seedanceStatus">待生成</span></div>
+<div style="display:flex;justify-content:flex-end;margin-top:16px">
+<button id="btnGenerateSeedancePrompts" class="btn btn-pri" type="button"><i data-lucide="sparkles" style="width:16px;height:16px"></i>生成提示词</button>
+</div>
+</div>
+
+<div class="seedance-panel seedance-result-panel">
+<div class="seedance-result-head">
+<div class="seedance-result-title"><h2 style="margin:0">Seedance 2.0 提示词</h2><span id="seedanceSource" class="seedance-source" style="display:none"></span></div>
+<div class="seedance-actions">
+<button id="btnRegenerateSeedance" class="btn btn-soft btn-sm" type="button" disabled><i data-lucide="refresh-cw" style="width:15px;height:15px"></i>重新生成</button>
+<button id="btnCopySeedanceAll" class="btn btn-soft btn-sm" type="button" disabled><i data-lucide="copy" style="width:15px;height:15px"></i>复制全部</button>
+</div>
+</div>
+<div id="seedancePromptList" class="seedance-list">
+<div class="seedance-empty">生成后在这里查看分镜提示词。</div>
+</div>
+</div>
+</section>
+</main>
+
+<script src="/static/js/common.js?v=20260616"></script>
+<script src="/static/js/seedance.js?v=20260630"></script>
+<script>document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});</script>
+</body>
+</html>

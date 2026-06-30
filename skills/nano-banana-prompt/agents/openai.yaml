@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nano Banana Prompt"
+  short_description: "Draft image prompts for product visuals."
+  default_prompt: "Use $nano-banana-prompt to create a product image prompt for:"

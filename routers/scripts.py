@@ -1,5 +1,5 @@
 """脚本生成 API — AI 驱动的核心功能"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Product, ScriptTemplate, ViralScript, GeneratedScript
@@ -7,16 +7,51 @@ from schemas import (
     ScriptGenerateRequest, ScriptGenerateResponse,
     ScriptRewriteRequest, ScriptRewriteResponse,
     ScriptShotMatchRequest, ScriptShotMatchResponse,
+    SeedancePromptGenerateRequest, SeedancePromptGenerateResponse,
+    SeedancePromptUploadResponse,
     GeneratedScriptOut, GeneratedScriptPageOut, ApiResponse
 )
 from services.script_generator import ScriptGenerator
 from services.script_rewriter import script_rewriter
+from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
+from services.seedance_prompt_generator import SeedancePromptGenerationError, seedance_prompt_generator
+from services.upload_limits import read_upload_bytes
 from typing import List, Optional
 
 router = APIRouter()
 
 # 全局脚本生成器实例
 generator = ScriptGenerator()
+
+
+@router.post("/seedance-prompts/upload", response_model=SeedancePromptUploadResponse)
+async def upload_seedance_prompt_script(file: UploadFile = File(...)):
+    """Extract script text for Seedance prompt generation without persisting it."""
+    data = await read_upload_bytes(file, max_bytes=MAX_ATTACHMENT_BYTES)
+    try:
+        attachment = extract_attachment_text(file.filename or "attachment", file.content_type or "", data)
+    except AttachmentExtractionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return SeedancePromptUploadResponse(
+        filename=attachment.filename,
+        file_type=attachment.file_type,
+        text=attachment.text,
+        char_count=attachment.char_count,
+    )
+
+
+@router.post("/seedance-prompts", response_model=SeedancePromptGenerateResponse)
+async def generate_seedance_prompts(request: SeedancePromptGenerateRequest, db: Session = Depends(get_db)):
+    """Generate Seedance 2.0 storyboard prompts from an uploaded or pasted script."""
+    try:
+        result = await seedance_prompt_generator.generate(
+            script_content=request.script_content,
+            requirements=request.requirements,
+            db=db,
+        )
+    except SeedancePromptGenerationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return SeedancePromptGenerateResponse(**result)
 
 
 @router.post("/generate", response_model=ScriptGenerateResponse)

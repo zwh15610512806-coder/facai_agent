@@ -10,29 +10,22 @@ class IndexHeroTests(unittest.TestCase):
     def setUp(self):
         self.page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8-sig")
 
-    def test_hero_is_compact_single_paragraph_intro(self):
-        self.assertIn('class="hero-copy"', self.page)
+    def test_generate_page_does_not_render_intro_hero_banner(self):
+        self.assertNotIn("<!-- ====== Hero Banner ====== -->", self.page)
+        self.assertNotIn('class="hero"', self.page)
+        self.assertNotIn('class="hero-copy"', self.page)
+        self.assertNotIn(".hero ", self.page)
+        self.assertNotIn(".hero-copy", self.page)
+
+    def test_generate_page_content_starts_without_intro_banner(self):
         self.assertRegex(
             self.page,
-            r'<section class="hero"[^>]*>\s*<div class="hero-inner">\s*<p class="hero-copy">.*?</p>\s*</div>\s*</section>',
+            r"</nav>\s*<style>\s*\.generate-main",
         )
-        self.assertIn("AI 创作引擎：", self.page)
-        self.assertIn("以创意与数据成就带货艺术", self.page)
-
-    def test_hero_removes_large_visual_and_cta_elements(self):
-        hero = re.search(
-            r"<!-- ====== Hero Banner ====== -->(?P<body>.*?)<main class=\"page-main(?: [^\"]*)?\">",
+        self.assertNotRegex(
             self.page,
-            flags=re.S,
+            r"</nav>\s*<!-- ====== Hero Banner ====== -->",
         )
-
-        self.assertIsNotNone(hero)
-        body = hero.group("body")
-        self.assertNotIn("hero-title", body)
-        self.assertNotIn("hero-visual", body)
-        self.assertNotIn("hero-img", body)
-        self.assertNotIn("hero-cta", body)
-        self.assertNotIn("hero-deco", body)
 
 
 class IndexGenerateSeedanceTests(unittest.TestCase):

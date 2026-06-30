@@ -1,6 +1,6 @@
 """Pydantic 数据校验模型"""
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 
 
@@ -209,6 +209,48 @@ class ScriptShotMatchResponse(BaseModel):
     product_name: str = Field(..., description="产品名称")
     original_script: str = Field(..., description="原始文案")
     script_content: str = Field(..., description="匹配镜头后的脚本")
+
+
+class SeedancePromptUploadResponse(BaseModel):
+    """Seedance 分镜脚本上传解析结果"""
+    filename: str = Field(..., description="上传文件名")
+    file_type: str = Field(..., description="文件类型")
+    text: str = Field(..., description="提取出的脚本文本")
+    char_count: int = Field(..., description="提取文本字数")
+
+
+class SeedancePromptItem(BaseModel):
+    """单条 Seedance 分镜提示词"""
+    scene_number: int = Field(..., description="画面序号")
+    label: str = Field(..., description="画面标签")
+    prompt: str = Field(..., description="Seedance 2.0 提示词")
+
+
+class SeedancePromptGenerateRequest(BaseModel):
+    """Seedance 分镜提示词生成请求"""
+    script_content: str = Field(..., min_length=1, max_length=24000, description="脚本内容")
+    requirements: Optional[str] = Field(None, max_length=2000, description="用户需求")
+
+    @field_validator("script_content")
+    @classmethod
+    def script_content_must_not_be_blank(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("脚本不能为空")
+        return text
+
+    @field_validator("requirements")
+    @classmethod
+    def normalize_requirements(cls, value: Optional[str]) -> Optional[str]:
+        text = (value or "").strip()
+        return text or None
+
+
+class SeedancePromptGenerateResponse(BaseModel):
+    """Seedance 分镜提示词生成结果"""
+    prompt_text: str = Field(..., description="完整可复制提示词")
+    items: List[SeedancePromptItem] = Field(default_factory=list, description="分镜提示词列表")
+    source: Literal["ai"] = Field(..., description="生成来源")
 
 
 class ScriptGenerateResponse(BaseModel):

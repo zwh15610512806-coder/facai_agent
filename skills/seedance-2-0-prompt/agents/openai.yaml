@@ -1,0 +1,4 @@
+interface:
+  display_name: "Seedance 2.0 Prompt"
+  short_description: "Draft vertical video prompts for Seedance."
+  default_prompt: "Use $seedance-2-0-prompt to create video scene prompts for:"
