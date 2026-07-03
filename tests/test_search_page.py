@@ -54,6 +54,32 @@ class SearchPageTests(unittest.TestCase):
         self.assertIn(".search-board-hd{align-items:center;padding:8px 14px}", self.page)
         self.assertIn(".list-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0}", self.page)
 
+    def test_index_status_moves_from_results_to_command_header(self):
+        command_header = re.search(
+            r'<div class="search-command-hd">(?P<body>.*?)</div>\s*<div class="search-bar-wrap">',
+            self.page,
+            flags=re.S,
+        )
+        results_panel = re.search(
+            r'<section class="search-results search-board search-panel">(?P<body>.*?)</section>',
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(command_header)
+        self.assertIsNotNone(results_panel)
+        self.assertIn('class="search-command-index"', command_header.group("body"))
+        self.assertIn('id="indexBadge"', command_header.group("body"))
+        self.assertIn('id="indexInfo"', command_header.group("body"))
+        self.assertIn('id="refreshIndexBtn"', command_header.group("body"))
+        self.assertIn('id="totalFiles"', command_header.group("body"))
+        self.assertNotIn('class="index-bar"', results_panel.group("body"))
+        self.assertNotIn('id="refreshIndexBtn"', results_panel.group("body"))
+
+    def test_command_index_status_uses_compact_header_layout(self):
+        self.assertIn(".search-command-index{display:flex;align-items:center;justify-content:flex-end", self.page)
+        self.assertIn(".search-command-index .index-refresh{height:30px", self.page)
+
     def test_video_preview_preloads_metadata_when_modal_opens(self):
         self.assertIn('<video class="vid-preview" controls preload="metadata">', self.page)
         self.assertIn("const media = $('modalBody').querySelector('video,audio');", self.page)

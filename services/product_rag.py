@@ -452,7 +452,7 @@ def _reference_product(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def find_product_context_for_inspiration(query: str, db: Session, *, limit: int = 6) -> dict[str, Any]:
+def find_product_context_for_inspiration(query: str, db: Session, *, limit: int = 6, force: bool = False) -> dict[str, Any]:
     """Return product context for creative chat without generating a product answer."""
     clean = _clean_query(query)
     if not clean:
@@ -461,7 +461,7 @@ def find_product_context_for_inspiration(query: str, db: Session, *, limit: int 
     requested_limit = max(1, min(limit, 6))
     policy = _product_query_policy(clean)
     candidates = _candidate_products(clean, db, max(requested_limit, 12))
-    if not policy.broad:
+    if not policy.broad and not force:
         candidates = [
             product for product in candidates
             if _scenario_relevance_score(product, clean, policy) > 0

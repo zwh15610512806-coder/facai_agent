@@ -20,6 +20,7 @@ import threading
 
 from config import MAX_UPLOAD_SIZE
 from services.ai_service import ai_service
+from services.product_markdown_importer import normalize_product_name
 from services.upload_limits import read_upload_bytes
 
 router = APIRouter()
@@ -196,6 +197,75 @@ def _resolve_viral_script_category(db: Session, category: str = "", product_name
     return auto_category or "烘焙配件"
 
 
+def _local_txt_path_tokens(relative_path: str) -> list[str]:
+    stem = os.path.splitext(relative_path.replace("\\", "/"))[0]
+    return [part.strip() for part in stem.split("/") if part.strip()]
+
+
+def _infer_local_txt_category_by_keywords(value: str) -> str:
+    category_keywords = [
+        ("烘焙夹心", ("夹心", "奶冻", "布蕾", "慕斯", "晶冻", "芋泥", "栗子泥")),
+        ("烘焙调味", ("果酱", "茶酱", "开心果", "焦糖", "糖浆", "香草", "杏仁", "抹茶", "可可", "斑斓", "零卡", "黑芝麻", "巧克力酱")),
+        ("烘焙调色", ("色素", "色粉", "果蔬粉", "竹炭", "红丝绒")),
+        ("烘焙装饰", ("翻糖", "拉线", "手绘", "糖珠", "脆皮", "肉松")),
+        ("烘焙配件", ("刀叉", "盒装", "纸盘", "包装", "蛋糕盒", "丝带", "保温袋", "裱花袋", "模具")),
+    ]
+    for category, keywords in category_keywords:
+        if any(keyword in value for keyword in keywords):
+            return category
+    return ""
+
+
+def _resolve_local_txt_category_from_path(db: Session, relative_path: str) -> str:
+    tokens = _local_txt_path_tokens(relative_path)
+    if not tokens:
+        return ""
+
+    token_keys = [(token, normalize_product_name(token)) for token in tokens if normalize_product_name(token)]
+    if not token_keys:
+        return ""
+
+    from models import Product
+
+    products = db.query(Product).filter(Product.status == "active").all()
+    for token, token_key in token_keys[:3]:
+        matches = [product for product in products if normalize_product_name(product.name) == token_key]
+        if len(matches) == 1 and matches[0].category:
+            return matches[0].category
+
+    candidates: list[tuple[int, int, str]] = []
+    for product in products:
+        product_key = normalize_product_name(product.name)
+        if len(product_key) < 2 or not product.category:
+            continue
+        for token, token_key in token_keys[:4]:
+            if product_key in token_key or token_key in product_key:
+                candidates.append((len(product_key), product.id, product.category))
+                break
+    if candidates:
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        top_score = candidates[0][0]
+        top_categories = {category for score, _product_id, category in candidates if score == top_score}
+        if len(top_categories) == 1:
+            return next(iter(top_categories))
+
+    return _infer_local_txt_category_by_keywords("".join(tokens[:4]))
+
+
+def _resolve_local_txt_script_category(
+    db: Session,
+    *,
+    category: str,
+    product_name: str,
+    relative_path: str,
+    path_category: str = "",
+) -> str:
+    path_category = path_category or _resolve_local_txt_category_from_path(db, relative_path)
+    if path_category:
+        return path_category
+    return _resolve_viral_script_category(db, category=category, product_name=product_name)
+
+
 def _find_existing_local_txt_script(db: Session, local_path: str, content_sha256: str):
     normalized_path = _normalized_file_path(local_path)
     for script in db.query(ViralScript).all():
@@ -240,7 +310,6 @@ async def _scan_local_txt_scripts(
     files = _discover_local_txt_files(source_dir)
     _update_local_txt_scan_state(total=len(files), message=f"发现 {len(files)} 个 txt 文件")
 
-    auto_category = _resolve_viral_script_category(db, category=category, product_name=product_name)
     for path in files:
         safe_name = path.name
         relative_path = _relative_path_for_display(path, source_dir)
@@ -254,11 +323,30 @@ async def _scan_local_txt_scripts(
                 raise ValueError("脚本内容太短")
 
             content_sha256 = _script_content_hash(script_text)
-            if _find_existing_local_txt_script(db, str(path), content_sha256):
+            path_category = _resolve_local_txt_category_from_path(db, relative_path)
+            auto_category = _resolve_local_txt_script_category(
+                db,
+                category=category,
+                product_name=product_name,
+                relative_path=relative_path,
+                path_category=path_category,
+            )
+            existing_script = _find_existing_local_txt_script(db, str(path), content_sha256)
+            if existing_script:
+                category_updated = False
+                if path_category and existing_script.category != path_category:
+                    existing_script.category = path_category
+                    db.commit()
+                    db.refresh(existing_script)
+                    _sync_viral_index(existing_script, db)
+                    category_updated = True
                 with _local_txt_scan_lock:
                     _local_txt_scan_state["skipped"] += 1
                     _local_txt_scan_state["processed"] += 1
-                    _local_txt_scan_state["message"] = f"已跳过重复脚本：{relative_path}"
+                    if category_updated:
+                        _local_txt_scan_state["message"] = f"已修正重复脚本品类：{relative_path}"
+                    else:
+                        _local_txt_scan_state["message"] = f"已跳过重复脚本：{relative_path}"
                 continue
 
             ai_analysis = await _analyze_local_txt_script(script_text, video_type)
@@ -439,10 +527,6 @@ def semantic_search_scripts(
     """语义搜索爆款脚本/参考脚本"""
     try:
         from vector_store.script_store import ScriptVectorStore
-        from vector_store import get_chroma_store
-        store = get_chroma_store()
-        if not store.is_available:
-            return []
         svs = ScriptVectorStore()
         results = svs.search(q, limit=limit, video_type=video_type)
         if not results:
@@ -482,8 +566,11 @@ def semantic_search_scripts(
             out = [s for s in out if s.get("is_high_conversion")]
         out.sort(key=lambda x: x.get("distance", 1))
         return out[:limit]
-    except Exception:
-        return []
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"脚本语义检索失败，请检查 ARK_API_KEY、ARK_BASE_URL、EMBEDDING_MODEL_NAME 和火山方舟 endpoint 权限: {e}",
+        )
 
 
 @router.post("/reindex")
@@ -492,10 +579,14 @@ def reindex_scripts(db: Session = Depends(get_db)):
     try:
         from vector_store.script_store import ScriptVectorStore
         svs = ScriptVectorStore()
+        svs.store.reset_script_collection()
         count = svs.index_all_scripts(db)
         return ApiResponse(message=f"已重建 {count} 个脚本的向量索引")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"索引重建失败: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"索引重建失败，请检查 ARK_API_KEY、ARK_BASE_URL、EMBEDDING_MODEL_NAME 和火山方舟 endpoint 权限: {e}",
+        )
 
 
 @router.post("/viral/scan-local-txt")

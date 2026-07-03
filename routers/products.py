@@ -286,14 +286,11 @@ def semantic_search_products(
     """语义搜索产品——理解意图而非精确匹配关键词"""
     try:
         from vector_store.product_store import ProductVectorStore
-        store = get_chroma_store()
-        if not store.is_available:
-            return list_products(search=q, category=category, status="active", db=db)
 
         pvs = ProductVectorStore()
         results = pvs.search(q, limit=limit, category_filter=category)
         if not results:
-            return list_products(search=q, category=category, status="active", db=db)
+            return []
 
         product_ids = [r["product_id"] for r in results]
         products = db.query(Product).filter(Product.id.in_(product_ids)).all()
@@ -316,8 +313,11 @@ def semantic_search_products(
                 selling_point_summary=summary if summary else "暂无卖点",
             ))
         return out
-    except Exception:
-        return list_products(search=q, category=category, status="active", db=db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"产品语义检索失败，请检查 ARK_API_KEY、ARK_BASE_URL、EMBEDDING_MODEL_NAME 和火山方舟 endpoint 权限: {e}",
+        )
 
 
 @router.post("/reindex")
@@ -326,10 +326,14 @@ def reindex_products(db: Session = Depends(get_db)):
     try:
         from vector_store.product_store import ProductVectorStore
         pvs = ProductVectorStore()
+        pvs.store.reset_product_collection()
         count = pvs.index_all_products(db)
         return ApiResponse(message=f"已重建 {count} 个产品的向量索引")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"索引重建失败: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"索引重建失败，请检查 ARK_API_KEY、ARK_BASE_URL、EMBEDDING_MODEL_NAME 和火山方舟 endpoint 权限: {e}",
+        )
 
 
 @router.post("/rag-chat")

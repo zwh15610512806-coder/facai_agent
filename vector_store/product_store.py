@@ -2,7 +2,7 @@
 import logging
 from sqlalchemy.orm import Session
 
-from vector_store import get_chroma_store
+from vector_store import VectorStoreError, get_chroma_store
 
 logger = logging.getLogger("vector_store.products")
 
@@ -69,8 +69,7 @@ class ProductVectorStore:
 
     def search(self, query: str, limit: int = 10, category_filter: str = None) -> list:
         """Semantic search. Returns [{product_id, name, category, price, distance}, ...]."""
-        if self.store._embedding_fn is None:
-            return []
+        self.store.require_available()
         try:
             kwargs = {"query_texts": [query], "n_results": limit * 2}
             if category_filter:
@@ -94,9 +93,11 @@ class ProductVectorStore:
                 })
             out.sort(key=lambda x: x["distance"])
             return out[:limit]
+        except VectorStoreError:
+            raise
         except Exception as e:
             logger.warning(f"Semantic product search failed: {e}")
-            return []
+            raise VectorStoreError(f"产品向量检索失败，请检查火山方舟 embedding 配置和索引维度: {e}") from e
 
     def index_all_products(self, db: Session) -> int:
         """Batch index all products from SQLite. Returns count indexed."""
@@ -125,12 +126,11 @@ class ProductVectorStore:
             return len(ids)
         except Exception as e:
             logger.error(f"Batch product indexing failed: {e}")
-            return 0
+            raise VectorStoreError(f"产品向量全量重建失败: {e}") from e
 
     def hybrid_search(self, query: str, db: Session, limit: int = 10, category_filter: str = None) -> list:
         """Vector search + keyword fallback, deduplicated."""
-        if not self.store.is_available:
-            return self._keyword_search(query, db, limit, category_filter)
+        self.store.require_available()
 
         results = self.search(query, limit=limit, category_filter=category_filter)
         if results:

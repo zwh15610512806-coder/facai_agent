@@ -15,6 +15,7 @@ from config import (
 )
 from database import get_db
 from services.ai_service import ai_service
+from services.ai_config import get_or_create_interface_setting, get_provider_definition
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
 from services import inspiration_documents
 from services.product_rag import find_product_context_for_inspiration
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 INSPIRATION_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_AI_TIMEOUT_SECONDS
 INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_THINKING_AI_TIMEOUT_SECONDS
 InspirationToolMode = Literal["chat", "thinking", "research", "analysis", "seedance"]
+ProductContextMode = Literal["auto", "always"]
 
 
 class ChatTurn(BaseModel):
@@ -68,6 +70,7 @@ class InspirationChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=40)
     tool_mode: InspirationToolMode = "chat"
+    product_context_mode: ProductContextMode = "auto"
     attachments: list[InspirationAttachment] = Field(default_factory=list, max_length=6)
 
     @field_validator("message")
@@ -183,6 +186,73 @@ def _ai_timeout_for_tool_mode(tool_mode: str) -> float:
     return INSPIRATION_AI_TIMEOUT_SECONDS
 
 
+def _tool_mode_label(tool_mode: str) -> str:
+    return {
+        "chat": "AI 对话",
+        "thinking": "思考模式",
+        "research": "深入研究",
+        "analysis": "数据分析",
+        "seedance": "分镜提示词生成",
+    }.get(tool_mode, "AI 对话")
+
+
+def _is_model_status_question(message: str) -> bool:
+    text = (message or "").strip().lower()
+    if not text:
+        return False
+    model_terms = (
+        "模型",
+        "model",
+        "deepseek",
+        "豆包",
+        "doubao",
+        "火山",
+        "方舟",
+        "qwen",
+        "通义",
+        "glm",
+        "智谱",
+        "minimax",
+    )
+    status_terms = (
+        "你用",
+        "用的是",
+        "当前",
+        "现在",
+        "这里",
+        "这个",
+        "调用",
+        "是什么",
+        "什么模型",
+        "哪个模型",
+        "是不是",
+        "还是",
+        "哪一个",
+        "哪款",
+    )
+    return any(term in text for term in model_terms) and any(term in text for term in status_terms)
+
+
+def _model_status_answer(tool_mode: str, interface_key: str, db: Session) -> tuple[str, str]:
+    setting = get_or_create_interface_setting(db, interface_key)
+    provider = get_provider_definition(setting.provider)
+    model = (setting.model or "").strip() or provider.default_model()
+    mode_label = _tool_mode_label(tool_mode)
+    comparison = (
+        "按当前 AI配置，这一轮会走 DeepSeek。"
+        if setting.provider == "deepseek"
+        else f"按当前 AI配置，这一轮会走 {provider.label}，不是 DeepSeek。"
+    )
+    answer = (
+        f"当前功能：{mode_label}\n"
+        f"服务商：{provider.label}\n"
+        f"模型：{model}\n\n"
+        f"{comparison}\n"
+        "这类模型状态问题我会直接读取本地 AI配置回答，不进入思考模式生成。"
+    )
+    return answer, model
+
+
 def _normalize_ai_result(result, model: str) -> tuple[str, str, str]:
     if isinstance(result, dict):
         return (
@@ -193,9 +263,9 @@ def _normalize_ai_result(result, model: str) -> tuple[str, str, str]:
     return str(result or ""), "", model
 
 
-def _safe_product_context(message: str, db: Session) -> dict:
+def _safe_product_context(message: str, db: Session, *, force: bool = False) -> dict:
     try:
-        return find_product_context_for_inspiration(message, db, limit=6)
+        return find_product_context_for_inspiration(message, db, limit=6, force=force)
     except Exception:
         return {"used": False, "context": "", "products": []}
 
@@ -432,12 +502,23 @@ def download_inspiration_document(filename: str):
 @router.post("/chat", response_model=InspirationChatResponse)
 async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depends(get_db)):
     message = data.message.strip()
+    interface_key = _interface_key_for_tool_mode(data.tool_mode)
+    if _is_model_status_question(message):
+        answer, model = _model_status_answer(data.tool_mode, interface_key, db)
+        return InspirationChatResponse(
+            answer=answer,
+            mode="ai",
+            model=model,
+            tool_mode=data.tool_mode,
+            product_context_used=False,
+            products=[],
+        )
     if data.tool_mode == "seedance":
         return await _chat_with_seedance(data, db)
     model_override = _model_for_tool_mode(data.tool_mode)
-    interface_key = _interface_key_for_tool_mode(data.tool_mode)
     model = ai_service.get_model_name(model_override, interface_key=interface_key, db=db)
-    product_context = _safe_product_context(message, db)
+    force_product_context = data.product_context_mode == "always"
+    product_context = _safe_product_context(message, db, force=force_product_context)
     products = product_context.get("products") or []
     product_context_used = bool(products)
     sources = await _safe_web_search(message, data.tool_mode)

@@ -2,7 +2,7 @@
 import logging
 from sqlalchemy.orm import Session
 
-from vector_store import get_chroma_store
+from vector_store import VectorStoreError, get_chroma_store
 
 logger = logging.getLogger("vector_store.scripts")
 
@@ -88,8 +88,7 @@ class ScriptVectorStore:
     def search(self, query: str, limit: int = 10, video_type: str = None,
                high_conversion_only: bool = False) -> list:
         """Semantic search across scripts. Returns list of result dicts."""
-        if self.store._embedding_fn is None:
-            return []
+        self.store.require_available()
         try:
             kwargs = {"query_texts": [query], "n_results": limit * 2}
             where_parts = []
@@ -122,16 +121,16 @@ class ScriptVectorStore:
                 })
             out.sort(key=lambda x: x["distance"])
             return out[:limit]
+        except VectorStoreError:
+            raise
         except Exception as e:
             logger.warning(f"Semantic script search failed: {e}")
-            return []
+            raise VectorStoreError(f"脚本向量检索失败，请检查火山方舟 embedding 配置和索引维度: {e}") from e
 
     def find_similar_scripts(self, product_context: dict, video_type: str,
                               db: Session = None, limit: int = 5) -> list:
-        """Vector search for scripts similar to product context.
-        Falls back to keyword search if vector store unavailable."""
-        if not self.store.is_available:
-            return _keyword_find_similar(product_context, video_type, db, limit)
+        """Vector search for scripts similar to product context."""
+        self.store.require_available()
 
         query = f"{product_context.get('name','')} {product_context.get('category','')} {product_context.get('description','')}"
         selling_points = product_context.get("selling_points", [])
@@ -169,6 +168,7 @@ class ScriptVectorStore:
                 logger.info(f"Indexed {len(ids)} viral scripts")
             except Exception as e:
                 logger.error(f"Batch viral script indexing failed: {e}")
+                raise VectorStoreError(f"爆款脚本向量全量重建失败: {e}") from e
 
         if refs:
             ids, docs, metas = [], [], []
@@ -190,6 +190,7 @@ class ScriptVectorStore:
                 logger.info(f"Indexed {len(ids)} reference scripts")
             except Exception as e:
                 logger.error(f"Batch reference script indexing failed: {e}")
+                raise VectorStoreError(f"参考脚本向量全量重建失败: {e}") from e
 
         return total
 

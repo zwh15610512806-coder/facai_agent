@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database import Base, get_db
-from models import Product, SellingPoint
+from models import AIInterfaceSetting, Product, SellingPoint
 
 
 class InspirationApiTests(unittest.TestCase):
@@ -222,6 +222,44 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["model"], "fake-interface-model")
         self.assertEqual(data["tool_mode"], "thinking")
         self.assertEqual(data["reasoning"], "先拆目标，再比较打法。")
+
+    def test_model_status_question_answers_locally_without_ai_or_product_context(self):
+        self.db.add(AIInterfaceSetting(
+            interface_key="inspiration_tools",
+            provider="doubao",
+            model="doubao-2.1-pro",
+            max_tokens=3600,
+        ))
+        self._add_product(
+            "2元盒装",
+            "烘焙配件",
+            2.03,
+            "一次性盒装配件",
+            "适合低价促销组合。",
+        )
+        self.inspiration.ai_service.client = object()
+
+        async def fail_if_called(*args, **kwargs):
+            raise AssertionError("model status questions should not call AI")
+
+        self.inspiration.ai_service.chat = fail_if_called
+
+        response = self.client.post(
+            "/api/inspiration/chat",
+            json={"message": "你用的是豆包2.1还是deepseek", "tool_mode": "thinking"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["mode"], "ai")
+        self.assertEqual(data["model"], "doubao-2.1-pro")
+        self.assertEqual(data["tool_mode"], "thinking")
+        self.assertFalse(data["product_context_used"])
+        self.assertEqual(data["products"], [])
+        self.assertIn("当前功能：思考模式", data["answer"])
+        self.assertIn("服务商：豆包 / 火山方舟", data["answer"])
+        self.assertIn("模型：doubao-2.1-pro", data["answer"])
+        self.assertIn("不是 DeepSeek", data["answer"])
 
     def test_chat_returns_fallback_when_ai_call_times_out(self):
         self.inspiration.ai_service.client = object()
@@ -651,6 +689,53 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["products"][0]["name"], "水性色素")
         self.assertIn("产品资料", captured["messages"][-1]["content"])
         self.assertIn("水性色素", captured["messages"][-1]["content"])
+
+    def test_chat_product_context_mode_always_forces_product_context_lookup(self):
+        self.inspiration.ai_service.client = object()
+        captured = {}
+        original_finder = self.inspiration.find_product_context_for_inspiration
+
+        def fake_product_context(query, db, *, limit=6, force=False):
+            captured["query"] = query
+            captured["limit"] = limit
+            captured["force"] = force
+            return {
+                "used": bool(force),
+                "context": "1. 产品：奶冻粉\n品类：烘焙夹心\n卖点：口感稳定，适合门店做奶冻夹心内容。",
+                "products": [
+                    {
+                        "product_id": 88,
+                        "name": "奶冻粉",
+                        "category": "烘焙夹心",
+                        "price": 12.71,
+                    }
+                ] if force else [],
+            }
+
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
+            captured["prompt"] = messages[-1]["content"]
+            return "已基于奶冻粉资料给出内容建议。"
+
+        self.inspiration.find_product_context_for_inspiration = fake_product_context
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            response = self.client.post(
+                "/api/inspiration/chat",
+                json={
+                    "message": "今天拍什么内容",
+                    "product_context_mode": "always",
+                },
+            )
+        finally:
+            self.inspiration.find_product_context_for_inspiration = original_finder
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(captured["force"])
+        self.assertEqual(captured["limit"], 6)
+        self.assertIn("产品资料", captured["prompt"])
+        self.assertTrue(data["product_context_used"])
+        self.assertEqual(data["products"][0]["name"], "奶冻粉")
 
     def test_chat_uses_product_context_for_product_names_and_selling_point_keywords(self):
         fondant = self._add_product(

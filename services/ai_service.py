@@ -560,12 +560,14 @@ class AIService:
                 if provider_key == "deepseek":
                     payload["reasoning_effort"] = reasoning_effort
                     payload["extra_body"] = {"thinking": {"type": "enabled"}}
+                elif provider_key == "doubao":
+                    payload["extra_body"] = {"thinking": {"type": "enabled"}}
                 else:
                     payload["temperature"] = temperature
             else:
                 payload["temperature"] = temperature
                 payload["top_p"] = 0.9
-                if provider_key == "deepseek":
+                if provider_key in {"deepseek", "doubao"}:
                     payload["extra_body"] = {"thinking": {"type": "disabled"}}
             response = await asyncio.to_thread(client.chat.completions.create, **payload)
             message = response.choices[0].message

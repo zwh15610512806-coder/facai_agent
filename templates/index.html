@@ -66,7 +66,7 @@
 <div class="product-picker-layout">
 <!-- 左侧品类栏 -->
 <div id="categorySidebar" class="category-sidebar">
-<div id="categoryAll" class="cat-item cat-on" onclick="selectCategory('')">全部品类</div>
+<div id="categoryAll" class="cat-item cat-on" data-cat="" onclick="selectCategory('')"><span class="cat-label">全部品类</span><span class="cat-count">0</span></div>
 </div>
 <!-- 右侧产品卡片 -->
 <div style="flex:1;min-width:0">
@@ -121,6 +121,10 @@
   z-index: 8;
 }
 .cat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 8px 14px;
   border-radius: var(--r-sm);
   font-size: 14px;
@@ -132,6 +136,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.cat-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cat-count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-darker);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}
 .cat-item:hover {
   background: var(--facai-ghost);
   color: var(--accent);
@@ -140,6 +162,10 @@
   background: var(--facai);
   color: #fff;
   font-weight: 600;
+}
+.cat-item.cat-on .cat-count {
+  background: rgba(255,255,255,.22);
+  color: #fff;
 }
 .cat-item.cat-on:hover {
   background: var(--facai-hover);
@@ -324,7 +350,7 @@
   #searchInput { width: 100% !important; }
   .category-sidebar { position: static; flex: 0 0 auto; width: 100%; max-height: none; overflow-x: auto; overflow-y: hidden; padding: 2px 0 8px; display: flex; flex-direction: row; gap: 8px; -webkit-overflow-scrolling: touch; }
   .category-sidebar::-webkit-scrollbar { display: none; }
-  .category-sidebar .cat-item { flex: 0 0 auto; max-width: 44vw; padding: 8px 12px; }
+  .category-sidebar .cat-item { flex: 0 0 auto; max-width: 48vw; padding: 8px 12px; }
   .product-picker-layout { flex-direction: column; align-items: stretch; gap: 12px; }
   #productGrid { grid-template-columns: 1fr; }
   #btnToStep2 { width: 100%; }
@@ -517,7 +543,7 @@ const VIDEO_TYPES=[
 ];
 const CUSTOM_VIDEO_TYPES_KEY='facai_custom_video_types';
 const DELETED_VIDEO_TYPES_KEY='facai_deleted_video_types';
-let state={products:[],categories:[],selectedProduct:null,selectedType:"",step:1,generating:false};
+let state={products:[],categories:[],categoryCounts:{},totalProductCount:0,selectedProduct:null,selectedType:"",step:1,generating:false};
 let currentScript='',currentScriptId=null;
 let currentSeedancePrompts=[];
 let customVideoTypes=loadCustomVideoTypes();
@@ -585,10 +611,30 @@ function showTip(e,summary){
 }
 function hideTip(){document.getElementById('tooltip').style.display='none';}
 
+function productCategory(p){return p&&p.category?p.category:'未分类';}
+function categoryProductCount(category){return category?state.categoryCounts[category]||0:state.totalProductCount||0;}
+function categoryItemHtml(label,category){return '<span class="cat-label">'+esc(label)+'</span><span class="cat-count">'+categoryProductCount(category)+'</span>';}
+function updateCategoryCountBadges(){
+ const all=document.getElementById('categoryAll');
+ if(all)all.innerHTML=categoryItemHtml('全部品类','');
+ document.querySelectorAll('#categorySidebar .cat-item[data-cat]').forEach(function(el){
+  if(el.id==='categoryAll')return;
+  const category=el.dataset.cat||'';
+  el.innerHTML=categoryItemHtml(category||'未分类',category);
+ });
+}
+function updateCategoryCountsFromProducts(products){
+ const counts={};
+ (products||[]).forEach(function(p){const category=productCategory(p);counts[category]=(counts[category]||0)+1;});
+ state.categoryCounts=counts;
+ state.totalProductCount=(products||[]).length;
+ updateCategoryCountBadges();
+}
+
 async function loadProducts(){
  const s=document.getElementById('searchInput').value;
  let u='/api/products/?';if(currentCategory)u+='category='+encodeURIComponent(currentCategory)+'&';if(s)u+='search='+encodeURIComponent(s)+'&';
- try{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);state.products=await r.json();renderProducts();}
+ try{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);state.products=await r.json();if(!currentCategory&&!s)updateCategoryCountsFromProducts(state.products);renderProducts();}
  catch(e){document.getElementById('productGrid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)"><i data-lucide="wifi-off" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4"></i><div style="font-weight:600;margin-bottom:4px">服务器未启动</div><div style="font-size:14px">请双击 run.bat 启动服务，然后刷新页面</div></div>';if(window.lucide)lucide.createIcons();}
 }
 let currentCategory='';
@@ -607,7 +653,8 @@ function selectCategory(cat){
 async function loadCategories(){
  try{const r=await fetch('/api/products/categories');state.categories=await r.json();
   const sb=document.getElementById('categorySidebar');
-  state.categories.forEach(function(c){const d=document.createElement('div');d.className='cat-item';d.dataset.cat=c;d.textContent=c;d.onclick=function(){selectCategory(c);};sb.appendChild(d);});
+  state.categories.forEach(function(c){const d=document.createElement('div');d.className='cat-item';d.dataset.cat=c;d.innerHTML=categoryItemHtml(c,c);d.onclick=function(){selectCategory(c);};sb.appendChild(d);});
+  updateCategoryCountBadges();
  }catch(e){}
 }
 

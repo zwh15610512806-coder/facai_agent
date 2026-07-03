@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database import Base
-from models import ViralScript
+from models import Product, ViralScript
 from routers import templates as templates_router
 
 
@@ -225,6 +225,53 @@ class TxtBatchScriptUploadTests(unittest.TestCase):
         self.assertGreater(script.performance_data["file_size"], 0)
         self.assertEqual(script.performance_data["ai_structure"], "钩子→展示→成交")
         self.assertEqual(script.performance_data["ai_viral_points"], "情绪利益点清晰")
+
+    def test_local_txt_scan_uses_relative_product_category_over_default_form_category(self):
+        self.db.add(Product(name="茶酱", category="烘焙调味", price=46.94, status="active"))
+        self.db.commit()
+        nested = self.local_source / "调味茶酱" / "脚本" / "品质"
+        nested.mkdir(parents=True)
+        nested.joinpath("6.24需求.txt").write_text(
+            "调味茶酱应该按照产品路径识别为烘焙调味，而不是沿用页面默认的烘焙配件品类。",
+            encoding="utf-8",
+        )
+
+        response = self.client.post("/api/templates/viral/scan-local-txt", data={"category": "烘焙配件"})
+        self.assertEqual(response.status_code, 200)
+        status = self._wait_for_local_scan()
+
+        self.assertEqual(status["success"], 1)
+        script = self.db.query(ViralScript).one()
+        self.assertEqual(script.title, "调味茶酱 / 脚本 / 品质 / 6.24需求")
+        self.assertEqual(script.category, "烘焙调味")
+
+    def test_local_txt_scan_updates_duplicate_script_category_from_relative_path(self):
+        self.db.add(Product(name="茶酱", category="烘焙调味", price=46.94, status="active"))
+        self.db.commit()
+        nested = self.local_source / "调味茶酱" / "脚本"
+        nested.mkdir(parents=True)
+        script_path = nested / "6.24需求.txt"
+        body = "调味茶酱已经导入过一次，但旧数据品类错误，重新扫描时应该只修正品类不重复新增。"
+        script_path.write_text(body, encoding="utf-8")
+        existing = ViralScript(
+            category="烘焙配件",
+            video_type="机制类",
+            title="旧标题",
+            script_content=templates_router.format_script(body),
+            performance_data={"source": "本地TXT扫描", "local_path": str(script_path)},
+        )
+        self.db.add(existing)
+        self.db.commit()
+
+        response = self.client.post("/api/templates/viral/scan-local-txt", data={"category": "烘焙配件"})
+        self.assertEqual(response.status_code, 200)
+        status = self._wait_for_local_scan()
+
+        self.assertEqual(status["success"], 0)
+        self.assertEqual(status["skipped"], 1)
+        self.assertEqual(self.db.query(ViralScript).count(), 1)
+        self.db.refresh(existing)
+        self.assertEqual(existing.category, "烘焙调味")
 
     def test_local_txt_scan_skips_duplicate_path_or_content_without_calling_ai_again(self):
         source_file = self.local_source / "first.txt"

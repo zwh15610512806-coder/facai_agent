@@ -22,8 +22,8 @@ ARK_API_KEY = os.getenv("ARK_API_KEY", "")
 ARK_BASE_URL = os.getenv("ARK_BASE_URL", "")
 ARK_MODEL = os.getenv("ARK_MODEL", "")
 DOUBAO_API_KEY = ARK_API_KEY or os.getenv("DOUBAO_API_KEY", "")
-DOUBAO_BASE_URL = ARK_BASE_URL or os.getenv("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
-DOUBAO_MODEL = ARK_MODEL or os.getenv("DOUBAO_MODEL", "ep-20260703160153-h5cx5")
+DOUBAO_BASE_URL = ARK_BASE_URL or os.getenv("DOUBAO_BASE_URL") or "https://ark.cn-beijing.volces.com/api/v3"
+DOUBAO_MODEL = ARK_MODEL or os.getenv("DOUBAO_MODEL") or "ep-20260703160153-h5cx5"
 
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
 MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1")
@@ -44,7 +44,10 @@ CHROMA_COLLECTION_PRODUCTS = os.getenv("CHROMA_COLLECTION_PRODUCTS", "products")
 CHROMA_COLLECTION_SCRIPTS = os.getenv("CHROMA_COLLECTION_SCRIPTS", "scripts")
 
 # Embedding 模型配置
-EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5")
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER") or "volcengine_ark"
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME") or "ark-4e8d208b-a896-43b4-9b77-eda0ceac0370-0a2ef"
+EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY") or ARK_API_KEY or DOUBAO_API_KEY
+EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL") or ARK_BASE_URL or DOUBAO_BASE_URL
 
 # 应用配置
 APP_TITLE = "法采新媒体运营 Agent"

@@ -858,6 +858,37 @@ class AiServiceRoutingTests(unittest.TestCase):
         self.assertEqual(record.provider, "doubao")
         self.assertNotIn("ark-env-secret", record.error_summary or "")
 
+    def test_doubao_non_thinking_chat_disables_provider_reasoning(self):
+        from models import AIInterfaceSetting
+        from services.ai_service import AIService
+
+        self.db.query(AIInterfaceSetting).delete()
+        self.db.add(AIInterfaceSetting(
+            interface_key="inspiration_chat",
+            provider="doubao",
+            model="ep-unit-test",
+            max_tokens=2400,
+        ))
+        self.db.commit()
+
+        service = AIService()
+        fake_client = FakeClient(FakeResponse())
+        service._clients["doubao"] = fake_client
+
+        result = asyncio.run(service.chat(
+            [{"role": "user", "content": "hello"}],
+            interface_key="inspiration_chat",
+            allow_fallback=False,
+            thinking=False,
+            db=self.db,
+        ))
+
+        self.assertEqual(result, "AI ok")
+        self.assertEqual(
+            fake_client.completions.payload.get("extra_body"),
+            {"thinking": {"type": "disabled"}},
+        )
+
     def test_chat_prefers_interface_api_key_and_base_url_over_env_defaults(self):
         from models import AIInterfaceSetting
         from services import ai_service as ai_module

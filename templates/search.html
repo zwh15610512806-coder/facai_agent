@@ -341,8 +341,11 @@ body{overflow:hidden}
 .search-command-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .search-page-title{font-family:var(--font-display);font-size:1.45rem;font-weight:800;line-height:1.15;margin:0;color:var(--text)}
 .search-page-subtitle{font-size:13px;line-height:1.55;color:var(--text-2);margin-top:4px}
-.search-mode-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--facai-subtle);background:var(--facai-ghost);color:var(--facai);border-radius:var(--r-pill);padding:5px 11px;font-family:var(--font-ui);font-size:12px;font-weight:800;white-space:nowrap}
-.search-mode-pill svg,.search-mode-pill i{width:14px;height:14px}
+.search-command-index{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;min-width:0;max-width:min(760px,58vw);font-family:var(--font-ui);font-size:12px;color:var(--text-2)}
+.search-command-index .index-badge{height:30px;display:inline-flex;align-items:center}
+.search-command-index #indexInfo{white-space:nowrap;color:var(--text-2)}
+.search-command-index .index-refresh{height:30px;margin-left:0;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:0 11px}
+.search-command-index .command-total-files{font-size:12px;color:var(--text-3);white-space:nowrap}
 .search-command .search-bar-wrap{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;max-width:none;width:100%;margin:0;background:var(--bg);border-radius:var(--r);box-shadow:none;border:1px solid var(--border);padding:4px}
 .search-command .search-input-main{width:100%;padding:10px 13px;font-size:14px;min-height:40px}
 .search-command .search-bar-btn{height:40px;margin:0;padding:0 15px;border-radius:var(--r-sm);align-items:center;justify-content:center}
@@ -381,7 +384,6 @@ body{overflow:hidden}
 .list-title h2{font-family:var(--font-ui);font-size:15px;font-weight:800;line-height:1.35;margin:0}
 .results-count{font-size:12px;line-height:1.5}
 .list-range{font-size:12px;color:var(--text-3)}
-.search-board .index-bar{flex:0 0 auto;margin:12px 14px 0;background:var(--surface-darker);border-color:var(--border-soft);border-radius:var(--r-sm)}
 .folder-crumb{flex:0 0 auto;margin:12px 14px 0}
 .file-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:12px 14px 14px}
 .file-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:14px;padding:13px 14px;border-radius:var(--r);box-shadow:var(--s-1)}
@@ -413,7 +415,8 @@ body{overflow:hidden}
   .search-page{padding:10px calc(10px + env(safe-area-inset-left)) calc(72px + env(safe-area-inset-bottom))}
   .search-command{padding:12px}
   .search-command-hd{flex-direction:column}
-  .search-mode-pill{width:max-content}
+  .search-command-index{width:100%;max-width:100%;justify-content:flex-start}
+  .search-command-index .index-refresh{width:auto}
   .search-command .search-bar-wrap{grid-template-columns:1fr;gap:6px;padding:6px}
   .search-command .search-input-main{font-size:16px}
   .search-command .search-bar-btn{width:100%}
@@ -422,9 +425,10 @@ body{overflow:hidden}
   .filter-chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
   .filter-chips::-webkit-scrollbar{display:none}
   .fchip{flex:0 0 auto}
-  .search-board .index-bar{flex-wrap:wrap;gap:8px;margin:10px 12px 0}
   .index-refresh{width:100%;margin-left:0}
   #totalFiles{width:100%;margin-left:0!important}
+  .search-command-index .index-refresh{width:auto}
+  .search-command-index #totalFiles{width:auto!important;margin-left:0!important}
   .search-board-hd{gap:10px}
   .summary-btn{width:100%;justify-content:center}
   .folder-crumb{align-items:flex-start;flex-wrap:wrap;margin:10px 12px 0}
@@ -460,7 +464,14 @@ body{overflow:hidden}
       <h1 class="search-page-title">文件检索</h1>
       <div class="search-page-subtitle">按自然语言、关键词、类型、日期快速定位共享盘文件。</div>
     </div>
-    <span class="search-mode-pill"><i data-lucide="folder-search"></i><span>共享盘检索</span></span>
+    <div class="search-command-index">
+      <span class="index-badge" id="indexBadge">
+        <span>📡</span><span id="indexBadgeText">加载中...</span>
+      </span>
+      <span id="indexInfo">索引更新时间：--</span>
+      <button class="index-refresh" id="refreshIndexBtn" onclick="triggerIndex()"><i data-lucide="refresh-cw"></i>手动更新索引</button>
+      <span class="command-total-files" id="totalFiles">--</span>
+    </div>
   </div>
   <div class="search-bar-wrap">
     <input type="text" class="search-input-main" id="searchInput"
@@ -532,16 +543,6 @@ body{overflow:hidden}
         <div class="results-count" id="resultsCount">找到 <strong>0</strong> 个文件</div>
         <span class="list-range" id="resultRangeHint">等待搜索</span>
       </div>
-    </div>
-
-    <!-- 索引状态 -->
-    <div class="index-bar">
-      <span class="index-badge" id="indexBadge">
-        <span>📡</span><span id="indexBadgeText">加载中...</span>
-      </span>
-      <span id="indexInfo">索引更新时间：--</span>
-      <button class="index-refresh" id="refreshIndexBtn" onclick="triggerIndex()"><i data-lucide="refresh-cw"></i>手动更新索引</button>
-      <span style="font-size:12px;color:var(--text-3);margin-left:auto" id="totalFiles">--</span>
     </div>
 
     <div class="folder-crumb" id="folderBreadcrumb">
