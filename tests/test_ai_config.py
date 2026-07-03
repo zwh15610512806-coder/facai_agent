@@ -16,8 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 PROVIDER_ENV_KEYS = [
+    "ARK_API_KEY",
+    "ARK_BASE_URL",
+    "ARK_MODEL",
     "DEEPSEEK_API_KEY",
     "DOUBAO_API_KEY",
+    "DOUBAO_BASE_URL",
+    "DOUBAO_MODEL",
     "MINIMAX_API_KEY",
     "GLM_API_KEY",
     "ZAI_API_KEY",
@@ -55,6 +60,8 @@ CONTENT_ANALYSIS_KEYS = [
     "reference_script_analyze",
 ]
 MERGED_AI_INTERFACE_KEYS = INSPIRATION_TOOL_KEYS + SCRIPT_CREATION_KEYS + CONTENT_ANALYSIS_KEYS
+ARK_DEFAULT_MODEL = "ep-20260703160153-h5cx5"
+ARK_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
 
 class AiConfigApiTests(unittest.TestCase):
@@ -113,6 +120,23 @@ class AiConfigApiTests(unittest.TestCase):
         self.assertNotIn("qwen-secret-value", response.text)
         self.assertIn("qwen-plus", providers["qwen"]["preset_models"])
         self.assertIn("MiniMax-M3", providers["minimax"]["preset_models"])
+
+    def test_doubao_provider_prefers_ark_key_and_endpoint_defaults(self):
+        os.environ["ARK_API_KEY"] = "ark-secret-value"
+        os.environ["DOUBAO_API_KEY"] = "legacy-doubao-secret"
+
+        response = self.client.get("/api/ai-config/providers")
+
+        self.assertEqual(response.status_code, 200)
+        providers = {provider["key"]: provider for provider in response.json()["providers"]}
+        doubao = providers["doubao"]
+        self.assertTrue(doubao["configured"])
+        self.assertEqual(doubao["configured_env"], "ARK_API_KEY")
+        self.assertEqual(doubao["base_url"], ARK_DEFAULT_BASE_URL)
+        self.assertEqual(doubao["default_model"], ARK_DEFAULT_MODEL)
+        self.assertIn("ARK_API_KEY", doubao["api_key_env_names"])
+        self.assertNotIn("ark-secret-value", response.text)
+        self.assertNotIn("legacy-doubao-secret", response.text)
         self.assertIn("glm-5.2", providers["glm"]["preset_models"])
 
     def test_interface_settings_can_be_updated_and_validated(self):
@@ -160,30 +184,21 @@ class AiConfigApiTests(unittest.TestCase):
         for legacy_key in MERGED_AI_INTERFACE_KEYS:
             self.assertNotIn(legacy_key, keys)
 
-    def test_script_generation_has_separate_deepseek_v4_pro_interface(self):
+    def test_default_work_interfaces_use_volcengine_ark(self):
         response = self.client.get("/api/ai-config/interfaces")
 
         self.assertEqual(response.status_code, 200)
         by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
-        self.assertIn(SCRIPT_GENERATE_INTERFACE_KEY, by_key)
-        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["provider"], "deepseek")
-        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["model"], "deepseek-v4-pro")
+        for key in ["inspiration_chat", INSPIRATION_TOOLS_INTERFACE_KEY, SCRIPT_GENERATE_INTERFACE_KEY, SCRIPT_CREATION_INTERFACE_KEY]:
+            self.assertEqual(by_key[key]["provider"], "doubao")
+            self.assertEqual(by_key[key]["model"], ARK_DEFAULT_MODEL)
+            self.assertEqual(by_key[key]["base_url"], ARK_DEFAULT_BASE_URL)
+        self.assertEqual(by_key["inspiration_chat"]["max_tokens"], 2400)
+        self.assertEqual(by_key[INSPIRATION_TOOLS_INTERFACE_KEY]["max_tokens"], 3600)
         self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["max_tokens"], 3600)
-        self.assertNotEqual(
-            by_key[SCRIPT_GENERATE_INTERFACE_KEY]["interface_key"],
-            SCRIPT_CREATION_INTERFACE_KEY,
-        )
-
-    def test_script_creation_defaults_to_deepseek_v4_pro_for_seedance_prompts(self):
-        response = self.client.get("/api/ai-config/interfaces")
-
-        self.assertEqual(response.status_code, 200)
-        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
-        self.assertIn(SCRIPT_CREATION_INTERFACE_KEY, by_key)
-        self.assertNotIn("seedance_prompt", by_key)
-        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["provider"], "deepseek")
-        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["model"], "deepseek-v4-pro")
         self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["max_tokens"], 3600)
+        self.assertEqual(by_key[CONTENT_ANALYSIS_INTERFACE_KEY]["provider"], "deepseek")
+        self.assertNotIn("seedance_prompt", by_key)
 
     def test_script_generation_interface_description_is_provider_neutral(self):
         response = self.client.get("/api/ai-config/interfaces")
@@ -194,41 +209,84 @@ class AiConfigApiTests(unittest.TestCase):
         self.assertIn("AI生成引擎", description)
         self.assertNotIn("DeepSeek AI 引擎", description)
 
-    def test_legacy_script_generate_default_setting_upgrades_to_v4_pro(self):
+    def test_legacy_default_deepseek_work_setting_upgrades_to_volcengine_ark(self):
         from models import AIInterfaceSetting
 
-        self.db.add(AIInterfaceSetting(
+        self.db.add_all([
+            AIInterfaceSetting(
+                interface_key="inspiration_chat",
+                provider="deepseek",
+                model="deepseek-v4-flash",
+                max_tokens=2400,
+            ),
+            AIInterfaceSetting(
+                interface_key=INSPIRATION_TOOLS_INTERFACE_KEY,
+                provider="deepseek",
+                model="deepseek-v4-flash",
+                max_tokens=2400,
+            ),
+            AIInterfaceSetting(
+                interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+                provider="deepseek",
+                model="deepseek-chat",
+                max_tokens=2400,
+            ),
+            AIInterfaceSetting(
+                interface_key=SCRIPT_CREATION_INTERFACE_KEY,
+                provider="deepseek",
+                model="deepseek-v4-pro",
+                max_tokens=3600,
+            ),
+        ])
+        self.db.commit()
+
+        response = self.client.get("/api/ai-config/interfaces")
+
+        self.assertEqual(response.status_code, 200)
+        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
+        for key in ["inspiration_chat", INSPIRATION_TOOLS_INTERFACE_KEY, SCRIPT_GENERATE_INTERFACE_KEY, SCRIPT_CREATION_INTERFACE_KEY]:
+            self.assertEqual(by_key[key]["provider"], "doubao")
+            self.assertEqual(by_key[key]["model"], ARK_DEFAULT_MODEL)
+        self.assertEqual(by_key[INSPIRATION_TOOLS_INTERFACE_KEY]["max_tokens"], 3600)
+        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["max_tokens"], 3600)
+        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["max_tokens"], 3600)
+
+    def test_manual_interface_settings_are_not_overwritten_by_ark_default_migration(self):
+        from models import AIInterfaceSetting
+
+        custom_key = AIInterfaceSetting(
+            interface_key="inspiration_chat",
+            provider="deepseek",
+            model="deepseek-chat",
+            max_tokens=1234,
+        )
+        custom_key.api_key_secret = "manual-deepseek-key"
+        custom_base_url = AIInterfaceSetting(
             interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
             provider="deepseek",
             model="deepseek-chat",
-            max_tokens=2400,
-        ))
-        self.db.commit()
-
-        response = self.client.get("/api/ai-config/interfaces")
-
-        self.assertEqual(response.status_code, 200)
-        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
-        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["model"], "deepseek-v4-pro")
-        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["max_tokens"], 3600)
-
-    def test_legacy_script_creation_default_setting_upgrades_to_v4_pro(self):
-        from models import AIInterfaceSetting
-
-        self.db.add(AIInterfaceSetting(
+            max_tokens=1234,
+        )
+        custom_base_url.base_url_override = "https://api.deepseek.com"
+        manual_provider = AIInterfaceSetting(
             interface_key=SCRIPT_CREATION_INTERFACE_KEY,
-            provider="deepseek",
-            model="deepseek-chat",
-            max_tokens=2400,
-        ))
+            provider="qwen",
+            model="qwen-plus",
+            max_tokens=2048,
+        )
+        self.db.add_all([custom_key, custom_base_url, manual_provider])
         self.db.commit()
 
         response = self.client.get("/api/ai-config/interfaces")
 
         self.assertEqual(response.status_code, 200)
         by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
-        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["model"], "deepseek-v4-pro")
-        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["max_tokens"], 3600)
+        self.assertEqual(by_key["inspiration_chat"]["provider"], "deepseek")
+        self.assertEqual(by_key["inspiration_chat"]["model"], "deepseek-chat")
+        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["provider"], "deepseek")
+        self.assertEqual(by_key[SCRIPT_GENERATE_INTERFACE_KEY]["model"], "deepseek-chat")
+        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["provider"], "qwen")
+        self.assertEqual(by_key[SCRIPT_CREATION_INTERFACE_KEY]["model"], "qwen-plus")
 
     def test_legacy_interface_update_resolves_to_its_screenshot_group(self):
         response = self.client.put(
@@ -679,6 +737,53 @@ class AiServiceRoutingTests(unittest.TestCase):
         record = self.db.query(AIUsageRecord).one()
         self.assertEqual(record.interface_key, SCRIPT_GENERATE_INTERFACE_KEY)
         self.assertEqual(record.provider, "qwen")
+
+    def test_default_ark_interfaces_create_volcengine_client_from_ark_env(self):
+        from models import AIInterfaceSetting, AIUsageRecord
+        from services import ai_service as ai_module
+
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+        os.environ["ARK_API_KEY"] = "ark-env-secret"
+        os.environ["ARK_BASE_URL"] = "https://ark.example.test/api/v3"
+        os.environ["ARK_MODEL"] = "ep-unit-test"
+        self.db.query(AIInterfaceSetting).delete()
+        self.db.commit()
+
+        original_openai = ai_module.OpenAI
+        created_clients = []
+
+        class CapturingOpenAI:
+            def __init__(self, api_key, base_url, timeout):
+                self.api_key = api_key
+                self.base_url = base_url
+                self.timeout = timeout
+                self.completions = FakeCompletions(FakeResponse())
+                self.chat = type("Chat", (), {"completions": self.completions})()
+                created_clients.append(self)
+
+        ai_module.OpenAI = CapturingOpenAI
+        try:
+            service = ai_module.AIService()
+            service.client = None
+            service._clients = {}
+            self.assertTrue(service.is_interface_available(SCRIPT_GENERATE_INTERFACE_KEY, db=self.db))
+            result = asyncio.run(service.chat(
+                [{"role": "user", "content": "generate this"}],
+                interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+                allow_fallback=False,
+                db=self.db,
+            ))
+        finally:
+            ai_module.OpenAI = original_openai
+
+        ark_client = next(client for client in created_clients if client.base_url == "https://ark.example.test/api/v3")
+        self.assertEqual(result, "AI ok")
+        self.assertEqual(ark_client.api_key, "ark-env-secret")
+        self.assertEqual(ark_client.completions.payload["model"], "ep-unit-test")
+        record = self.db.query(AIUsageRecord).one()
+        self.assertEqual(record.interface_key, SCRIPT_GENERATE_INTERFACE_KEY)
+        self.assertEqual(record.provider, "doubao")
+        self.assertNotIn("ark-env-secret", record.error_summary or "")
 
     def test_chat_prefers_interface_api_key_and_base_url_over_env_defaults(self):
         from models import AIInterfaceSetting

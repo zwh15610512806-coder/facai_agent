@@ -115,13 +115,23 @@ class InspirationPageTests(unittest.TestCase):
     def test_inspiration_composer_has_tool_modes_and_upload(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
-        for label in ["上传文件", "思考模式", "深入研究", "数据分析"]:
+        for label in ["上传文件", "思考模式", "深入研究", "数据分析", "分镜提示词生成"]:
             self.assertIn(label, page)
         self.assertIn('id="inspirationFileInput"', page)
         self.assertIn('accept=".txt,.md,.json,.csv,.pdf,.docx,.xlsx"', page)
+        self.assertIn('data-tool-mode="seedance"', page)
         self.assertIn("function setInspirationMode(mode)", page)
         self.assertIn("function uploadInspirationFiles(files)", page)
         self.assertIn("fetch('/api/inspiration/attachments'", page)
+
+    def test_inspiration_seedance_mode_updates_label_and_placeholder(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("seedance:'分镜提示词生成 · DeepSeek V4 Pro'", page)
+        self.assertIn("seedance:'粘贴脚本，或上传脚本文件后填写生成要求...'", page)
+        self.assertIn("function updateInspirationPlaceholder()", page)
+        self.assertIn("updateInspirationPlaceholder()", page)
+        self.assertIn("seedance:'分镜提示词生成 · '+(data.model||'DeepSeek V4 Pro')", page)
 
     def test_inspiration_chat_request_sends_tool_mode_and_attachments(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
@@ -202,6 +212,7 @@ class InspirationNavigationTests(unittest.TestCase):
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
             self.assertIn('href="/app"', page, name)
             self.assertIn('href="/app/generate"', page, name)
+            self.assertNotIn('href="/app/seedance"', page, name)
             self.assertNotIn('>灵感</a>', page, name)
             self.assertRegex(
                 page,

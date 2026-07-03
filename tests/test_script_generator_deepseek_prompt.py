@@ -19,6 +19,18 @@ class PromptCaptureAI:
         return self.response
 
 
+class InterfaceAvailableAI(PromptCaptureAI):
+    is_available = False
+
+    def __init__(self, response="生成脚本正文"):
+        super().__init__(response)
+        self.checked_interface = None
+
+    def is_interface_available(self, interface_key):
+        self.checked_interface = interface_key
+        return interface_key == "script_generate"
+
+
 def make_product(**overrides):
     product = {
         "name": "袋装刀叉",
@@ -48,6 +60,23 @@ def make_template():
 
 
 class DeepSeekPromptTests(unittest.TestCase):
+    def test_generation_uses_interface_availability_instead_of_deepseek_global_flag(self):
+        ai = InterfaceAvailableAI("火山方舟生成脚本正文")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate(
+            product=make_product(),
+            template=None,
+            video_type="需求类",
+            tone="直接",
+            include_shot_design=False,
+        ))
+
+        self.assertEqual(ai.checked_interface, "script_generate")
+        self.assertIsNotNone(ai.messages)
+        self.assertIn("火山方舟生成脚本正文", result)
+
     def test_plain_deepseek_prompt_adds_run_rate_self_check_and_keeps_plain_rules(self):
         ai = PromptCaptureAI("法采袋装刀叉很适合门店打包，左下角看看。")
         generator = ScriptGenerator()
@@ -179,6 +208,37 @@ class DeepSeekPromptTests(unittest.TestCase):
         self.assertIn("售价：待更新", prompt)
         self.assertIn("价格待更新时不得编造价格", prompt)
         self.assertNotIn("售价：0元", prompt)
+
+    def test_ai_inferred_type_prompt_chooses_angle_without_template_references(self):
+        ai = PromptCaptureAI("门店打包先看刀叉是不是独立袋装。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate(
+            product=make_product(),
+            template=make_template(),
+            video_type="AI智能生成",
+            tone="直接",
+            reference_scripts=[
+                {
+                    "title": "不应进入 prompt 的模板库脚本",
+                    "content": "推荐开头钩子：姐妹们这个模板不要进来",
+                    "video_type": "机制类",
+                    "category": "烘焙配件",
+                    "is_high_conversion": True,
+                }
+            ],
+            include_shot_design=False,
+        ))
+
+        prompt = "\n".join(message["content"] for message in ai.messages)
+
+        self.assertIn("视频类型：AI智能生成", prompt)
+        self.assertIn("根据产品资料、价格状态、卖点强弱和抖音跑量逻辑自动选择最适合的生成角度", prompt)
+        self.assertNotIn("推荐开头钩子", prompt)
+        self.assertNotIn("推荐CTA话术", prompt)
+        self.assertNotIn("模板库示例脚本", prompt)
+        self.assertNotIn("不应进入 prompt 的模板库脚本", prompt)
 
     def test_deepseek_prompt_ignores_template_and_reference_script_content(self):
         ai = PromptCaptureAI("姐妹们，别等恢复原价了才后悔。")

@@ -346,6 +346,15 @@ class AIService:
     def is_available(self) -> bool:
         return self._get_provider_client("deepseek") is not None
 
+    def is_interface_available(self, interface_key: str = "default", db=None) -> bool:
+        provider_key, _, _, api_key_override, base_url_override = self._resolve_chat_config(
+            interface_key,
+            None,
+            None,
+            db,
+        )
+        return self._get_provider_client(provider_key, api_key_override, base_url_override) is not None
+
     def _client_cache_key(self, provider_key: str, api_key: str, base_url: str) -> str:
         digest = hashlib.sha256(f"{api_key}|{base_url}".encode("utf-8")).hexdigest()[:16]
         return f"{provider_key}:{digest}"

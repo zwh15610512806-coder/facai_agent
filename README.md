@@ -57,6 +57,9 @@ pip install -r requirements.txt
 DEEPSEEK_API_KEY=你的 DeepSeek Key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
+ARK_API_KEY=你的火山方舟 API Key
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+ARK_MODEL=ep-20260703160153-h5cx5
 DATABASE_URL=sqlite:///./data/script_agent.db
 CHROMA_PERSIST_DIR=./data/chroma_db
 ```

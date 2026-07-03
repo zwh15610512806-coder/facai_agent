@@ -66,7 +66,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
     engine = request.engine or "template"
     video_type = request.video_type
     template = None
-    auto_high_library = not video_type and not request.template_id
+    auto_high_library = False
 
     if request.template_id:
         template = db.query(ScriptTemplate).filter(
@@ -77,12 +77,14 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             auto_high_library = False
 
     if not video_type:
-        video_type = "高成交模板库" if auto_high_library else "机制类"
-        if auto_high_library:
-            engine = "template"
+        if engine == "template":
+            video_type = "高成交模板库"
+            auto_high_library = True
+        else:
+            video_type = "AI智能生成"
 
     # 获取相关模板（如果没指定）—— 随机选一个，避免每次生成结果相同
-    if not template and not auto_high_library:
+    if engine == "template" and not template and not auto_high_library:
         all_templates = db.query(ScriptTemplate).filter(
             ScriptTemplate.video_type == video_type
         ).all()

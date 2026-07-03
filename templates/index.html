@@ -15,7 +15,6 @@
 <a href="/app" class="nav-link">AI工作</a>
 <a href="/app/generate" class="nav-link on">生成脚本</a>
 <a href="/app/rewrite" class="nav-link">爆款脚本改写</a>
-<a href="/app/seedance" class="nav-link">分镜提示词生成</a>
 <a href="/app/products" class="nav-link">产品知识库</a>
 <a href="/app/import" class="nav-link">数据导入</a>
 <a href="/app/templates" class="nav-link">脚本模板库</a>
@@ -381,7 +380,7 @@
 <input id="customVideoTypeInput" type="text" class="input" maxlength="20" placeholder="输入自定义视频类型">
 <button id="btnAddCustomType" class="btn btn-soft btn-sm" type="button">添加类型</button>
 </div>
-<p style="font-size:12px;color:var(--text-3);margin:8px 0 18px">不选类型时自动用高成交模板库生成。</p>
+<p style="font-size:12px;color:var(--text-3);margin:8px 0 18px">AI生成未选类型会由 AI 自动推断；模板库改写未选类型会自动用高成交模板库。</p>
 
 <div style="margin-bottom:22px">
 <label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">引擎</label>
@@ -688,7 +687,7 @@ async function doGenerate(extra){
  document.getElementById('btnGenerateSeedance').disabled=true;
  try{
   const selectedType=state.selectedType||'';
-  const engine=selectedType?document.getElementById('aiEngine').value:'template';
+  const engine=document.getElementById('aiEngine').value;
   const body={product_id:state.selectedProduct.id,engine:engine,include_shot_design:document.getElementById('includeShotDesign').checked};
   if(selectedType)saveCustomVideoType(selectedType);
   if(selectedType)body.video_type=selectedType;

@@ -10,8 +10,6 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from config import (
-    DEEPSEEK_V4_FLASH_MODEL,
-    DEEPSEEK_V4_PRO_MODEL,
     INSPIRATION_AI_TIMEOUT_SECONDS as CONFIG_INSPIRATION_AI_TIMEOUT_SECONDS,
     INSPIRATION_THINKING_AI_TIMEOUT_SECONDS as CONFIG_INSPIRATION_THINKING_AI_TIMEOUT_SECONDS,
 )
@@ -20,6 +18,11 @@ from services.ai_service import ai_service
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
 from services import inspiration_documents
 from services.product_rag import find_product_context_for_inspiration
+from services.seedance_prompt_generator import (
+    SEEDANCE_INTERFACE_KEY,
+    SeedancePromptGenerationError,
+    seedance_prompt_generator,
+)
 from services.upload_limits import read_upload_bytes
 from services.web_research import search_web
 
@@ -28,6 +31,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 INSPIRATION_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_AI_TIMEOUT_SECONDS
 INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_THINKING_AI_TIMEOUT_SECONDS
+InspirationToolMode = Literal["chat", "thinking", "research", "analysis", "seedance"]
 
 
 class ChatTurn(BaseModel):
@@ -63,7 +67,7 @@ class ProductReference(BaseModel):
 class InspirationChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=40)
-    tool_mode: Literal["chat", "thinking", "research", "analysis"] = "chat"
+    tool_mode: InspirationToolMode = "chat"
     attachments: list[InspirationAttachment] = Field(default_factory=list, max_length=6)
 
     @field_validator("message")
@@ -79,7 +83,7 @@ class InspirationChatResponse(BaseModel):
     answer: str
     mode: Literal["ai", "fallback"]
     model: str
-    tool_mode: Literal["chat", "thinking", "research", "analysis"] = "chat"
+    tool_mode: InspirationToolMode = "chat"
     reasoning: str = ""
     sources: list[WebSource] = Field(default_factory=list)
     attachments_used: list[InspirationAttachment] = Field(default_factory=list)
@@ -159,11 +163,13 @@ def _fallback_answer_with_products(
     return answer + f"\n\n已先匹配到可参考产品：{names}。AI 响应恢复后可以继续把这些资料整理成完整创意方案。"
 
 
-def _model_for_tool_mode(tool_mode: str) -> str:
-    return DEEPSEEK_V4_PRO_MODEL if tool_mode == "thinking" else DEEPSEEK_V4_FLASH_MODEL
+def _model_for_tool_mode(tool_mode: str) -> str | None:
+    return None
 
 
 def _interface_key_for_tool_mode(tool_mode: str) -> str:
+    if tool_mode == "seedance":
+        return SEEDANCE_INTERFACE_KEY
     return {
         "thinking": "inspiration_thinking",
         "research": "inspiration_research",
@@ -311,8 +317,9 @@ def _document_user_payload(data: InspirationDocumentRequest) -> str:
 
 async def _build_document_content(data: InspirationDocumentRequest, db: Session) -> str:
     fallback = data.answer.strip()
-    if not ai_service.is_available:
+    if not ai_service.is_interface_available("inspiration_chat", db=db):
         return fallback
+    document_model = ai_service.get_model_name(interface_key="inspiration_chat", db=db)
     try:
         result = await asyncio.wait_for(
             ai_service.chat(
@@ -325,17 +332,52 @@ async def _build_document_content(data: InspirationDocumentRequest, db: Session)
                 ],
                 temperature=0.4,
                 allow_fallback=False,
-                model=DEEPSEEK_V4_FLASH_MODEL,
+                model=None,
                 interface_key="inspiration_chat",
                 db=db,
             ),
             timeout=INSPIRATION_AI_TIMEOUT_SECONDS,
         )
-        content, _, _ = _normalize_ai_result(result, DEEPSEEK_V4_FLASH_MODEL)
+        content, _, _ = _normalize_ai_result(result, document_model)
         return content.strip() or fallback
     except Exception as exc:
         logger.warning("Inspiration document AI formatting failed: %s", exc)
         return fallback
+
+
+def _seedance_payload_from_chat(data: InspirationChatRequest) -> tuple[str, str | None, list[InspirationAttachment]]:
+    attachments_used = [attachment for attachment in data.attachments if (attachment.text or "").strip()]
+    if attachments_used:
+        script_content = "\n\n".join((attachment.text or "").strip() for attachment in attachments_used)
+        requirements = data.message.strip() or None
+        return script_content, requirements, attachments_used
+    return data.message.strip(), None, []
+
+
+async def _chat_with_seedance(data: InspirationChatRequest, db: Session) -> InspirationChatResponse:
+    script_content, requirements, attachments_used = _seedance_payload_from_chat(data)
+    model = ai_service.get_model_name(interface_key=SEEDANCE_INTERFACE_KEY, db=db)
+    try:
+        result = await seedance_prompt_generator.generate(
+            script_content=script_content,
+            requirements=requirements,
+            db=db,
+        )
+    except SeedancePromptGenerationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    answer = str(result.get("prompt_text") or "").strip()
+    if not answer:
+        raise HTTPException(status_code=502, detail="DeepSeek V4 Pro 未返回可用的 Seedance 分镜提示词，请重试。")
+    return InspirationChatResponse(
+        answer=answer,
+        mode="ai",
+        model=model,
+        tool_mode="seedance",
+        attachments_used=attachments_used,
+        product_context_used=False,
+        products=[],
+        sources=[],
+    )
 
 
 @router.post("/attachments", response_model=InspirationAttachment)
@@ -390,15 +432,17 @@ def download_inspiration_document(filename: str):
 @router.post("/chat", response_model=InspirationChatResponse)
 async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depends(get_db)):
     message = data.message.strip()
-    selected_model = _model_for_tool_mode(data.tool_mode)
+    if data.tool_mode == "seedance":
+        return await _chat_with_seedance(data, db)
+    model_override = _model_for_tool_mode(data.tool_mode)
     interface_key = _interface_key_for_tool_mode(data.tool_mode)
-    model = ai_service.get_model_name(selected_model, interface_key=interface_key, db=db)
+    model = ai_service.get_model_name(model_override, interface_key=interface_key, db=db)
     product_context = _safe_product_context(message, db)
     products = product_context.get("products") or []
     product_context_used = bool(products)
     sources = await _safe_web_search(message, data.tool_mode)
     attachments_used = [attachment for attachment in data.attachments if (attachment.text or "").strip()]
-    if not ai_service.is_available:
+    if not ai_service.is_interface_available(interface_key, db=db):
         return InspirationChatResponse(
             answer=_fallback_answer_with_products(message, products),
             mode="fallback",
@@ -428,7 +472,7 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
                 messages,
                 temperature=0.7,
                 allow_fallback=False,
-                model=selected_model,
+                model=model_override,
                 interface_key=interface_key,
                 db=db,
                 thinking=data.tool_mode == "thinking",
@@ -441,8 +485,8 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
     except TimeoutError:
         timed_out = True
         logger.warning("Inspiration chat AI call timed out after %.1fs", timeout_seconds)
-        result = {"content": "", "reasoning": "", "model": selected_model}
-    answer, reasoning, result_model = _normalize_ai_result(result, selected_model)
+        result = {"content": "", "reasoning": "", "model": model}
+    answer, reasoning, result_model = _normalize_ai_result(result, model)
     answer = answer.strip()
     if not answer:
         return InspirationChatResponse(

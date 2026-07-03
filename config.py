@@ -18,9 +18,12 @@ INSPIRATION_AI_TIMEOUT_SECONDS = float(os.getenv("INSPIRATION_AI_TIMEOUT_SECONDS
 INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = float(os.getenv("INSPIRATION_THINKING_AI_TIMEOUT_SECONDS", "240"))
 
 # OpenAI-compatible LLM provider configuration
-DOUBAO_API_KEY = os.getenv("DOUBAO_API_KEY", "")
-DOUBAO_BASE_URL = os.getenv("DOUBAO_BASE_URL", "")
-DOUBAO_MODEL = os.getenv("DOUBAO_MODEL", "")
+ARK_API_KEY = os.getenv("ARK_API_KEY", "")
+ARK_BASE_URL = os.getenv("ARK_BASE_URL", "")
+ARK_MODEL = os.getenv("ARK_MODEL", "")
+DOUBAO_API_KEY = ARK_API_KEY or os.getenv("DOUBAO_API_KEY", "")
+DOUBAO_BASE_URL = ARK_BASE_URL or os.getenv("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+DOUBAO_MODEL = ARK_MODEL or os.getenv("DOUBAO_MODEL", "ep-20260703160153-h5cx5")
 
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
 MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1")

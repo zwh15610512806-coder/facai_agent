@@ -71,6 +71,7 @@ class FakeDeepSeekGenerator:
         self.generate_called = False
         self.reference_scripts = None
         self.template = None
+        self.video_type = None
 
     def get_model_name(self, interface_key="script_generate"):
         return "fake-model"
@@ -109,6 +110,7 @@ class FakeDeepSeekGenerator:
         self.generate_called = True
         self.template = template
         self.reference_scripts = reference_scripts
+        self.video_type = video_type
         return "DeepSeek 只结合产品资料和跑量逻辑生成的脚本"
 
 
@@ -131,10 +133,28 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         Base.metadata.drop_all(bind=self.engine)
         self.engine.dispose()
 
-    def test_generate_without_video_type_forces_template_high_conversion_library(self):
-        fake = FakeTemplateLibraryGenerator()
+    def test_ai_generation_without_video_type_uses_ai_inferred_type_without_template_library(self):
+        fake = FakeDeepSeekGenerator()
         scripts_router.generator = fake
         request = ScriptGenerateRequest(product_id=self.product.id, engine="deepseek", video_type=None)
+
+        response = asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertTrue(fake.generate_called)
+        self.assertFalse(fake.similar_called)
+        self.assertFalse(fake.high_only_called)
+        self.assertEqual(fake.reference_scripts, [])
+        self.assertIsNone(fake.template)
+        self.assertEqual(fake.video_type, "AI智能生成")
+        self.assertEqual(response.video_type, "AI智能生成")
+        record = self.db.query(scripts_router.GeneratedScript).first()
+        self.assertEqual(record.video_type, "AI智能生成")
+        self.assertEqual(record.ai_model, "AI生成 · fake-model")
+
+    def test_template_generation_without_video_type_forces_template_high_conversion_library(self):
+        fake = FakeTemplateLibraryGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(product_id=self.product.id, engine="template", video_type=None)
 
         response = asyncio.run(scripts_router.generate_script(request, db=self.db))
 

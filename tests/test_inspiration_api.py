@@ -1,5 +1,6 @@
 import asyncio
 import io
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,12 @@ class InspirationApiTests(unittest.TestCase):
         self.original_client = inspiration.ai_service.client
         self.original_chat = inspiration.ai_service.chat
         self.original_model = inspiration.ai_service.model
+        self.original_clients = dict(getattr(inspiration.ai_service, "_clients", {}))
+        self.original_provider_env = {
+            key: os.environ.get(key)
+            for key in ("ARK_API_KEY", "ARK_BASE_URL", "ARK_MODEL", "DEEPSEEK_API_KEY")
+        }
+        self.original_seedance_prompt_generator = getattr(inspiration, "seedance_prompt_generator", None)
         self.temp_documents = tempfile.TemporaryDirectory()
         self.original_document_dir = None
         if hasattr(inspiration, "inspiration_documents"):
@@ -56,6 +63,18 @@ class InspirationApiTests(unittest.TestCase):
         self.inspiration.ai_service.client = self.original_client
         self.inspiration.ai_service.chat = self.original_chat
         self.inspiration.ai_service.model = self.original_model
+        if hasattr(self.inspiration.ai_service, "_clients"):
+            self.inspiration.ai_service._clients = dict(self.original_clients)
+        for key, value in self.original_provider_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        if self.original_seedance_prompt_generator is None:
+            if hasattr(self.inspiration, "seedance_prompt_generator"):
+                delattr(self.inspiration, "seedance_prompt_generator")
+        else:
+            self.inspiration.seedance_prompt_generator = self.original_seedance_prompt_generator
         if self.original_document_dir is not None and hasattr(self.inspiration, "inspiration_documents"):
             self.inspiration.inspiration_documents.DOCUMENT_OUTPUT_DIR = self.original_document_dir
         self.temp_documents.cleanup()
@@ -91,6 +110,50 @@ class InspirationApiTests(unittest.TestCase):
         self.db.commit()
         return product
 
+    def _clear_provider_runtime(self):
+        for key in ("ARK_API_KEY", "ARK_BASE_URL", "ARK_MODEL", "DEEPSEEK_API_KEY"):
+            os.environ.pop(key, None)
+        self.inspiration.ai_service.client = None
+        self.inspiration.ai_service._clients = {}
+
+    def test_chat_uses_interface_availability_when_only_ark_key_is_configured(self):
+        original_env = {
+            "ARK_API_KEY": os.environ.get("ARK_API_KEY"),
+            "ARK_BASE_URL": os.environ.get("ARK_BASE_URL"),
+            "ARK_MODEL": os.environ.get("ARK_MODEL"),
+            "DEEPSEEK_API_KEY": os.environ.get("DEEPSEEK_API_KEY"),
+        }
+        os.environ["ARK_API_KEY"] = "ark-only-secret"
+        os.environ["ARK_BASE_URL"] = "https://ark.example.test/api/v3"
+        os.environ["ARK_MODEL"] = "ep-unit-test"
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+        self.inspiration.ai_service.client = None
+        self.inspiration.ai_service._clients = {}
+
+        async def fake_chat(*args, **kwargs):
+            self.assertEqual(kwargs.get("interface_key"), "inspiration_chat")
+            self.assertIsNone(kwargs.get("model"))
+            return {"content": "火山方舟正常回复", "reasoning": "", "model": "ep-unit-test"}
+
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            response = self.client.post(
+                "/api/inspiration/chat",
+                json={"message": "帮我生成一个活动选题", "tool_mode": "chat"},
+            )
+        finally:
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["mode"], "ai")
+        self.assertEqual(data["answer"], "火山方舟正常回复")
+        self.assertEqual(data["model"], "ep-unit-test")
+
     def test_chat_requires_non_empty_message(self):
         response = self.client.post("/api/inspiration/chat", json={"message": "   "})
 
@@ -102,13 +165,13 @@ class InspirationApiTests(unittest.TestCase):
 
         async def fake_chat(messages, temperature=0.7, allow_fallback=False, model=None, thinking=False, return_reasoning=False, **kwargs):
             self.assertFalse(allow_fallback)
-            self.assertEqual(model, "deepseek-v4-flash")
+            self.assertIsNone(model)
             self.assertFalse(thinking)
             self.assertTrue(return_reasoning)
             self.assertEqual(messages[0]["role"], "system")
             self.assertIn("法采新媒体运营AI工作助手", messages[0]["content"])
             self.assertEqual(messages[-1], {"role": "user", "content": "帮我想 3 个新品短视频开头"})
-            return {"content": "这里是 3 个开头。", "reasoning": "", "model": model}
+            return {"content": "这里是 3 个开头。", "reasoning": "", "model": "fake-interface-model"}
 
         self.inspiration.ai_service.chat = fake_chat
 
@@ -121,7 +184,7 @@ class InspirationApiTests(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["answer"], "这里是 3 个开头。")
         self.assertEqual(data["mode"], "ai")
-        self.assertEqual(data["model"], "deepseek-v4-flash")
+        self.assertEqual(data["model"], "fake-interface-model")
         self.assertFalse(data["product_context_used"])
         self.assertEqual(data["products"], [])
         self.assertEqual(data["tool_mode"], "chat")
@@ -129,7 +192,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["sources"], [])
         self.assertEqual(data["attachments_used"], [])
 
-    def test_chat_thinking_mode_uses_v4_pro_and_returns_reasoning(self):
+    def test_chat_thinking_mode_uses_interface_default_model_and_returns_reasoning(self):
         self.inspiration.ai_service.client = object()
         captured = {}
 
@@ -139,7 +202,7 @@ class InspirationApiTests(unittest.TestCase):
             captured["reasoning_effort"] = reasoning_effort
             captured["return_reasoning"] = return_reasoning
             captured["messages"] = messages
-            return {"content": "这是思考后的方案。", "reasoning": "先拆目标，再比较打法。", "model": model}
+            return {"content": "这是思考后的方案。", "reasoning": "先拆目标，再比较打法。", "model": "fake-interface-model"}
 
         self.inspiration.ai_service.chat = fake_chat
 
@@ -150,13 +213,13 @@ class InspirationApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(captured["model"], "deepseek-v4-pro")
+        self.assertIsNone(captured["model"])
         self.assertTrue(captured["thinking"])
         self.assertEqual(captured["reasoning_effort"], "high")
         self.assertTrue(captured["return_reasoning"])
         self.assertIn("思考模式", captured["messages"][0]["content"])
         self.assertEqual(data["answer"], "这是思考后的方案。")
-        self.assertEqual(data["model"], "deepseek-v4-pro")
+        self.assertEqual(data["model"], "fake-interface-model")
         self.assertEqual(data["tool_mode"], "thinking")
         self.assertEqual(data["reasoning"], "先拆目标，再比较打法。")
 
@@ -240,7 +303,7 @@ class InspirationApiTests(unittest.TestCase):
             captured["messages"] = messages
             captured["model"] = model
             captured["thinking"] = thinking
-            return {"content": "结合外网资料的研究结论。", "reasoning": "", "model": model}
+            return {"content": "结合外网资料的研究结论。", "reasoning": "", "model": "fake-interface-model"}
 
         self.inspiration.search_web = fake_search
         self.inspiration.ai_service.chat = fake_chat
@@ -257,7 +320,7 @@ class InspirationApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(captured["model"], "deepseek-v4-flash")
+        self.assertIsNone(captured["model"])
         self.assertFalse(captured["thinking"])
         self.assertIn("外网搜索结果", captured["messages"][-1]["content"])
         self.assertIn("烘焙内容趋势", captured["messages"][-1]["content"])
@@ -309,6 +372,106 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["tool_mode"], "analysis")
         self.assertEqual(data["attachments_used"][0]["filename"], "投放数据.csv")
         self.assertEqual(data["sources"][0]["title"], "行业均值")
+
+    def test_seedance_mode_uses_message_as_script_without_attachments(self):
+        class FakeSeedanceGenerator:
+            def __init__(self):
+                self.calls = []
+
+            async def generate(self, *, script_content, requirements=None, db=None):
+                self.calls.append({
+                    "script_content": script_content,
+                    "requirements": requirements,
+                    "db": db,
+                })
+                return {
+                    "prompt_text": "画面1：竖屏9:16，真人口播展示糖珠，无字幕无水印。",
+                    "items": [],
+                    "source": "ai",
+                }
+
+        fake = FakeSeedanceGenerator()
+        self.inspiration.seedance_prompt_generator = fake
+        self.inspiration.ai_service.client = None
+
+        response = self.client.post(
+            "/api/inspiration/chat",
+            json={"message": "（口播）介绍这款糖珠不用挑尺寸。", "tool_mode": "seedance"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["mode"], "ai")
+        self.assertEqual(data["tool_mode"], "seedance")
+        self.assertEqual(data["answer"], "画面1：竖屏9:16，真人口播展示糖珠，无字幕无水印。")
+        self.assertEqual(fake.calls[0]["script_content"], "（口播）介绍这款糖珠不用挑尺寸。")
+        self.assertIsNone(fake.calls[0]["requirements"])
+        self.assertIs(fake.calls[0]["db"], self.db)
+
+    def test_seedance_mode_uses_attachment_text_as_script_and_message_as_requirements(self):
+        class FakeSeedanceGenerator:
+            def __init__(self):
+                self.calls = []
+
+            async def generate(self, *, script_content, requirements=None, db=None):
+                self.calls.append({
+                    "script_content": script_content,
+                    "requirements": requirements,
+                    "db": db,
+                })
+                return {
+                    "prompt_text": "画面1：竖屏9:16，展示新品包装，无字幕无水印。",
+                    "items": [],
+                    "source": "ai",
+                }
+
+        fake = FakeSeedanceGenerator()
+        self.inspiration.seedance_prompt_generator = fake
+
+        response = self.client.post(
+            "/api/inspiration/chat",
+            json={
+                "message": "生成时突出门店真实口播",
+                "tool_mode": "seedance",
+                "attachments": [
+                    {
+                        "filename": "脚本.txt",
+                        "file_type": "txt",
+                        "text": "（主播出镜）这款糖珠拆开就能用。",
+                        "char_count": 18,
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["mode"], "ai")
+        self.assertEqual(data["tool_mode"], "seedance")
+        self.assertEqual(data["attachments_used"][0]["filename"], "脚本.txt")
+        self.assertEqual(fake.calls[0]["script_content"], "（主播出镜）这款糖珠拆开就能用。")
+        self.assertEqual(fake.calls[0]["requirements"], "生成时突出门店真实口播")
+
+    def test_seedance_mode_returns_generation_error_without_chat_fallback(self):
+        from services.seedance_prompt_generator import SeedancePromptGenerationError
+
+        class FailingSeedanceGenerator:
+            async def generate(self, *, script_content, requirements=None, db=None):
+                raise SeedancePromptGenerationError(503, "DeepSeek V4 Pro / 脚本改写配置不可用")
+
+        async def fail_if_called(*args, **kwargs):
+            raise AssertionError("Seedance mode should not call regular inspiration chat")
+
+        self.inspiration.seedance_prompt_generator = FailingSeedanceGenerator()
+        self.inspiration.ai_service.chat = fail_if_called
+
+        response = self.client.post(
+            "/api/inspiration/chat",
+            json={"message": "（口播）介绍糖珠", "tool_mode": "seedance"},
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("DeepSeek V4 Pro", response.json()["detail"])
 
     def test_attachment_upload_extracts_text_file(self):
         response = self.client.post(
@@ -380,7 +543,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
 
     def test_document_export_creates_downloadable_word_file(self):
-        self.inspiration.ai_service.client = None
+        self._clear_provider_runtime()
 
         response = self.client.post(
             "/api/inspiration/documents",
@@ -435,7 +598,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertIn("活动节奏.docx", combined)
 
     def test_document_export_accepts_long_answer_history(self):
-        self.inspiration.ai_service.client = None
+        self._clear_provider_runtime()
         long_answer = "战役流程优化建议\n" + ("监控计划执行、数据表现、风险状态和资源占用。\n" * 180)
 
         response = self.client.post(
@@ -526,7 +689,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertIn(puree.id, [item["product_id"] for item in puree_response.json()["products"]])
 
     def test_chat_returns_local_fallback_when_ai_unavailable(self):
-        self.inspiration.ai_service.client = None
+        self._clear_provider_runtime()
 
         response = self.client.post(
             "/api/inspiration/chat",
@@ -547,7 +710,7 @@ class InspirationApiTests(unittest.TestCase):
             "适合蛋糕调色和翻糖上色",
             "少量即可上色，适合烘焙门店做调色备货。",
         )
-        self.inspiration.ai_service.client = None
+        self._clear_provider_runtime()
 
         response = self.client.post(
             "/api/inspiration/chat",

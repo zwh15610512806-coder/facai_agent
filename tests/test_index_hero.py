@@ -128,10 +128,13 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         self.assertNotIn("rgba(245,243,240,0)", body)
         self.assertNotIn("linear-gradient(to bottom,rgba", body)
 
-    def test_generate_can_run_without_video_type_using_template_library(self):
-        self.assertIn("不选类型时自动用高成交模板库生成", self.page)
+    def test_generate_without_video_type_respects_selected_engine(self):
+        self.assertIn("AI生成未选类型会由 AI 自动推断", self.page)
+        self.assertIn("模板库改写未选类型会自动用高成交模板库", self.page)
+        self.assertNotIn("不选类型时自动用高成交模板库生成", self.page)
         self.assertIn("const selectedType=state.selectedType||''", self.page)
-        self.assertIn("const engine=selectedType?document.getElementById('aiEngine').value:'template'", self.page)
+        self.assertIn("const engine=document.getElementById('aiEngine').value", self.page)
+        self.assertNotIn("const engine=selectedType?document.getElementById('aiEngine').value:'template'", self.page)
         self.assertIn("if(selectedType)body.video_type=selectedType", self.page)
         self.assertIn("document.getElementById('btnGenerate').disabled=false", self.page)
         self.assertNotIn("document.getElementById('btnGenerate').disabled=!state.selectedType", self.page)

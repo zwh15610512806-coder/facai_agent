@@ -27,6 +27,7 @@ class ScriptGenerator:
         "对比类": "对比问题 → 同屏对照 → 差异解释 → 结论推荐 → CTA。核心是让差异一眼可见",
         "情绪类": "情绪引入 → 场景共鸣 → 产品释放 → 情绪收尾 → CTA。核心是用成就感、焦虑缓解或惊喜推动行动",
         "场景类": "场景建立 → 动作展示 → 成品呈现 → 场景转化 → CTA。核心是让用户看见自己会在何处使用",
+        "AI智能生成": "根据产品资料、价格状态、卖点强弱和抖音跑量逻辑自动选择最适合的生成角度，可以在机制、痛点、需求、认知、场景、对比之间择优组合，但必须输出一个清晰主线",
     }
 
     DEEPSEEK_OPENING_STRATEGIES = (
@@ -48,6 +49,12 @@ class ScriptGenerator:
             if "interface_key" not in str(exc):
                 raise
             return self.ai.get_model_name()
+
+    def _ai_available_for_interface(self, interface_key: str) -> bool:
+        checker = getattr(self.ai, "is_interface_available", None)
+        if checker:
+            return bool(checker(interface_key))
+        return bool(getattr(self.ai, "is_available", False))
 
     async def _chat_with_interface(self, messages: List[Dict], temperature: float, interface_key: str) -> str:
         try:
@@ -485,7 +492,7 @@ class ScriptGenerator:
             reference_scripts: 参考爆款脚本列表
         """
         # 如果 AI 不可用，直接用法采模板引擎
-        if not self.ai.is_available:
+        if not self._ai_available_for_interface("script_generate"):
             return self._post_process_script_output(
                 build_faicai_script(product, tone),
                 include_shot_design,
@@ -666,7 +673,7 @@ class ScriptGenerator:
         3. 使用 TEMPLATE_REWRITE_SYSTEM_PROMPT（改写专用）
         4. Prompt 指令是"改写"而非"创作"
         """
-        if not self.ai.is_available:
+        if not self._ai_available_for_interface("script_library_rewrite"):
             return self._post_process_script_output(
                 build_faicai_script(product, tone),
                 include_shot_design,

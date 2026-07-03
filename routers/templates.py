@@ -2,21 +2,51 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Form, UploadFile, File
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from database import get_db
+from database import get_db, SessionLocal
 from models import ScriptTemplate, ViralScript
 from schemas import (
     ScriptTemplateCreate, ScriptTemplateOut,
     ViralScriptCreate, ViralScriptOut, ViralScriptPageOut, ApiResponse
 )
 from typing import List, Optional
+from datetime import datetime
+from pathlib import Path
+import asyncio
+import hashlib
+import os
 import re
 import json
+import threading
 
 from config import MAX_UPLOAD_SIZE
 from services.ai_service import ai_service
 from services.upload_limits import read_upload_bytes
 
 router = APIRouter()
+
+LOCAL_TXT_SCRIPT_SOURCE_DIR = os.getenv(
+    "LOCAL_TXT_SCRIPT_SOURCE_DIR",
+    r"\\192.168.0.118\法采共享盘2026\视频素材\源素材",
+)
+LOCAL_TXT_SCAN_SESSION_FACTORY = SessionLocal
+LOCAL_TXT_SCAN_ERROR_LIMIT = 50
+
+_local_txt_scan_lock = threading.RLock()
+_local_txt_scan_state = {
+    "is_running": False,
+    "source_dir": LOCAL_TXT_SCRIPT_SOURCE_DIR,
+    "recursive": True,
+    "total": 0,
+    "processed": 0,
+    "success": 0,
+    "skipped": 0,
+    "error_count": 0,
+    "errors": [],
+    "ids": [],
+    "started_at": None,
+    "finished_at": None,
+    "message": "待扫描",
+}
 
 
 def format_script(text: str) -> str:
@@ -83,6 +113,215 @@ def _title_from_filename(filename: str | None) -> str:
     if "." in name:
         name = name.rsplit(".", 1)[0]
     return name.strip() or "导入脚本"
+
+
+def _reset_local_txt_scan_state() -> None:
+    with _local_txt_scan_lock:
+        _local_txt_scan_state.update({
+            "is_running": False,
+            "source_dir": LOCAL_TXT_SCRIPT_SOURCE_DIR,
+            "recursive": True,
+            "total": 0,
+            "processed": 0,
+            "success": 0,
+            "skipped": 0,
+            "error_count": 0,
+            "errors": [],
+            "ids": [],
+            "started_at": None,
+            "finished_at": None,
+            "message": "待扫描",
+        })
+
+
+def _local_txt_scan_snapshot() -> dict:
+    with _local_txt_scan_lock:
+        snapshot = dict(_local_txt_scan_state)
+        snapshot["errors"] = list(_local_txt_scan_state["errors"])
+        snapshot["ids"] = list(_local_txt_scan_state["ids"])
+        return snapshot
+
+
+def _update_local_txt_scan_state(**changes) -> None:
+    with _local_txt_scan_lock:
+        _local_txt_scan_state.update(changes)
+
+
+def _append_local_txt_scan_error(message: str) -> None:
+    with _local_txt_scan_lock:
+        _local_txt_scan_state["error_count"] += 1
+        if len(_local_txt_scan_state["errors"]) < LOCAL_TXT_SCAN_ERROR_LIMIT:
+            _local_txt_scan_state["errors"].append(message)
+
+
+def _normalized_file_path(path: str | os.PathLike[str]) -> str:
+    return os.path.normcase(os.path.abspath(os.path.normpath(str(path))))
+
+
+def _script_content_hash(script_text: str) -> str:
+    return hashlib.sha256((script_text or "").encode("utf-8")).hexdigest()
+
+
+def _relative_path_for_display(path: Path, source_dir: Path) -> str:
+    try:
+        relative_path = os.path.relpath(str(path), str(source_dir))
+    except ValueError:
+        relative_path = path.name
+    return relative_path.replace("\\", "/")
+
+
+def _title_from_relative_path(relative_path: str) -> str:
+    stem = os.path.splitext(relative_path.replace("\\", "/"))[0]
+    title = " / ".join(part for part in stem.split("/") if part).strip()
+    if not title:
+        title = "导入脚本"
+    if len(title) > 300:
+        title = "..." + title[-297:]
+    return title
+
+
+def _combine_tags(base_tags: str, ai_tags: str) -> str:
+    parts = [part.strip() for part in (base_tags or "").split(",") if part.strip()]
+    parts.extend(part.strip() for part in (ai_tags or "").split(",") if part.strip())
+    return ",".join(dict.fromkeys(parts))
+
+
+def _resolve_viral_script_category(db: Session, category: str = "", product_name: str = "") -> str:
+    auto_category = category or ""
+    if product_name and not auto_category:
+        from models import Product
+        matched = db.query(Product).filter(Product.name == product_name).first()
+        if matched:
+            auto_category = matched.category
+    return auto_category or "烘焙配件"
+
+
+def _find_existing_local_txt_script(db: Session, local_path: str, content_sha256: str):
+    normalized_path = _normalized_file_path(local_path)
+    for script in db.query(ViralScript).all():
+        data = script.performance_data if isinstance(script.performance_data, dict) else {}
+        existing_path = data.get("local_path")
+        if existing_path and _normalized_file_path(existing_path) == normalized_path:
+            return script
+        if data.get("content_sha256") == content_sha256:
+            return script
+        if _script_content_hash(script.script_content or "") == content_sha256:
+            return script
+    return None
+
+
+async def _analyze_local_txt_script(script_text: str, video_type: str) -> dict:
+    try:
+        return await analyze_script_ai(script_text, video_type)
+    except Exception:
+        return {}
+
+
+def _discover_local_txt_files(source_dir: Path) -> list[Path]:
+    files: list[Path] = []
+    for current_root, _dir_names, file_names in os.walk(source_dir):
+        file_names.sort()
+        for name in file_names:
+            if name.lower().endswith(".txt"):
+                files.append(Path(current_root) / name)
+    files.sort(key=lambda item: _relative_path_for_display(item, source_dir).lower())
+    return files
+
+
+async def _scan_local_txt_scripts(
+    *,
+    source_dir: Path,
+    category: str,
+    video_type: str,
+    tags: str,
+    product_name: str,
+    db: Session,
+) -> None:
+    files = _discover_local_txt_files(source_dir)
+    _update_local_txt_scan_state(total=len(files), message=f"发现 {len(files)} 个 txt 文件")
+
+    auto_category = _resolve_viral_script_category(db, category=category, product_name=product_name)
+    for path in files:
+        safe_name = path.name
+        relative_path = _relative_path_for_display(path, source_dir)
+        try:
+            stat = path.stat()
+            if stat.st_size > MAX_UPLOAD_SIZE:
+                raise ValueError(f"文件过大，请控制在 {MAX_UPLOAD_SIZE // (1024 * 1024)}MB 以内。")
+
+            script_text = format_script(_decode_txt(path.read_bytes()))
+            if len(script_text) < 20:
+                raise ValueError("脚本内容太短")
+
+            content_sha256 = _script_content_hash(script_text)
+            if _find_existing_local_txt_script(db, str(path), content_sha256):
+                with _local_txt_scan_lock:
+                    _local_txt_scan_state["skipped"] += 1
+                    _local_txt_scan_state["processed"] += 1
+                    _local_txt_scan_state["message"] = f"已跳过重复脚本：{relative_path}"
+                continue
+
+            ai_analysis = await _analyze_local_txt_script(script_text, video_type)
+            viral = ViralScript(
+                category=auto_category,
+                video_type=ai_analysis.get("video_type") or video_type or "机制类",
+                title=_title_from_relative_path(relative_path),
+                script_content=script_text,
+                tags=_combine_tags(tags or "本地txt", ai_analysis.get("tags", "")),
+                performance_data={
+                    "source": "本地TXT扫描",
+                    "local_path": str(path),
+                    "relative_path": relative_path,
+                    "filename": safe_name,
+                    "content_sha256": content_sha256,
+                    "file_size": stat.st_size,
+                    "file_modified": datetime.fromtimestamp(stat.st_mtime).replace(microsecond=0).isoformat(),
+                    "ai_structure": ai_analysis.get("structure", ""),
+                    "ai_viral_points": ai_analysis.get("viral_points", ""),
+                },
+            )
+            db.add(viral)
+            db.commit()
+            db.refresh(viral)
+            _sync_viral_index(viral, db)
+            with _local_txt_scan_lock:
+                _local_txt_scan_state["success"] += 1
+                _local_txt_scan_state["processed"] += 1
+                _local_txt_scan_state["ids"].append(viral.id)
+                _local_txt_scan_state["message"] = f"已导入：{relative_path}"
+        except Exception as exc:
+            db.rollback()
+            with _local_txt_scan_lock:
+                _local_txt_scan_state["skipped"] += 1
+                _local_txt_scan_state["processed"] += 1
+                _local_txt_scan_state["message"] = f"跳过：{relative_path}"
+            _append_local_txt_scan_error(f"{relative_path}: {exc}")
+
+
+def _run_local_txt_scan(source_dir: str, category: str, video_type: str, tags: str, product_name: str) -> None:
+    db = LOCAL_TXT_SCAN_SESSION_FACTORY()
+    try:
+        asyncio.run(_scan_local_txt_scripts(
+            source_dir=Path(source_dir),
+            category=category,
+            video_type=video_type,
+            tags=tags,
+            product_name=product_name,
+            db=db,
+        ))
+        snapshot = _local_txt_scan_snapshot()
+        _update_local_txt_scan_state(
+            message=(
+                f"扫描完成：新增 {snapshot['success']}，跳过 {snapshot['skipped']}，"
+                f"错误 {snapshot['error_count']}"
+            )
+        )
+    except Exception as exc:
+        _append_local_txt_scan_error(str(exc))
+        _update_local_txt_scan_state(message=f"扫描失败：{exc}")
+    finally:
+        db.close()
+        _update_local_txt_scan_state(is_running=False, finished_at=datetime.now().replace(microsecond=0).isoformat())
 
 
 # ========== 脚本模板管理 ==========
@@ -257,6 +496,53 @@ def reindex_scripts(db: Session = Depends(get_db)):
         return ApiResponse(message=f"已重建 {count} 个脚本的向量索引")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"索引重建失败: {e}")
+
+
+@router.post("/viral/scan-local-txt")
+def start_local_txt_scan(
+    category: str = Form(""),
+    video_type: str = Form(""),
+    tags: str = Form(""),
+    product_name: str = Form(""),
+):
+    """Start a background scan of the configured local TXT script directory."""
+    source_dir = LOCAL_TXT_SCRIPT_SOURCE_DIR
+    if not os.path.exists(source_dir):
+        raise HTTPException(status_code=404, detail=f"路径不可访问：{source_dir}")
+
+    with _local_txt_scan_lock:
+        if _local_txt_scan_state["is_running"]:
+            return ApiResponse(message="本地脚本扫描正在运行", data=_local_txt_scan_snapshot())
+        _local_txt_scan_state.update({
+            "is_running": True,
+            "source_dir": source_dir,
+            "recursive": True,
+            "total": 0,
+            "processed": 0,
+            "success": 0,
+            "skipped": 0,
+            "error_count": 0,
+            "errors": [],
+            "ids": [],
+            "started_at": datetime.now().replace(microsecond=0).isoformat(),
+            "finished_at": None,
+            "message": "扫描启动中",
+        })
+
+    thread = threading.Thread(
+        target=_run_local_txt_scan,
+        args=(source_dir, category, video_type, tags or "本地txt", product_name),
+        name="facai-local-txt-scan",
+        daemon=True,
+    )
+    thread.start()
+    return ApiResponse(message="本地脚本扫描已启动", data=_local_txt_scan_snapshot())
+
+
+@router.get("/viral/scan-local-txt/status")
+def local_txt_scan_status():
+    """Return the latest local TXT script scan status."""
+    return ApiResponse(message="ok", data=_local_txt_scan_snapshot())
 
 
 @router.get("/viral/{script_id}", response_model=ViralScriptOut)

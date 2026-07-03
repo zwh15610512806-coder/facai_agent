@@ -221,14 +221,14 @@ AI_PROVIDERS: dict[str, AIProviderDefinition] = {
     "doubao": AIProviderDefinition(
         key="doubao",
         label="豆包 / 火山方舟",
-        api_key_env_names=("DOUBAO_API_KEY",),
-        base_url_env="DOUBAO_BASE_URL",
+        api_key_env_names=("ARK_API_KEY", "DOUBAO_API_KEY"),
+        base_url_env="ARK_BASE_URL",
         default_base_url=DOUBAO_BASE_URL,
-        model_env="DOUBAO_MODEL",
+        model_env="ARK_MODEL",
         default_model_name=DOUBAO_MODEL,
         preset_models=unique_non_empty((DOUBAO_MODEL,)),
         docs_url="https://www.volcengine.com/docs/82379/1330626",
-        note="豆包模型通常填写火山方舟 Endpoint ID；Base URL 请在 DOUBAO_BASE_URL 中配置。",
+        note="豆包模型通常填写火山方舟 Endpoint ID；Base URL 可用 ARK_BASE_URL 或 DOUBAO_BASE_URL 配置。",
     ),
     "minimax": AIProviderDefinition(
         key="minimax",
@@ -330,22 +330,22 @@ AI_INTERFACES: tuple[AIInterfaceDefinition, ...] = (
         label="灵感聊天",
         group="灵感",
         description="灵感页普通对话、脚本创意、选题和运营表达。",
-        default_model=DEEPSEEK_V4_FLASH_MODEL,
+        default_provider="doubao",
     ),
     AIInterfaceDefinition(
         key=INSPIRATION_TOOLS_INTERFACE_KEY,
         label="灵感工具模式",
         group="灵感",
         description="灵感思考模式、深入研究、数据分析和附件分析占位共用这一套模型与 API Key。",
-        default_model=DEEPSEEK_V4_FLASH_MODEL,
+        default_provider="doubao",
         default_max_tokens=3600,
     ),
     AIInterfaceDefinition(
         key=SCRIPT_GENERATE_INTERFACE_KEY,
         label="脚本生成",
         group="脚本",
-        description="生成脚本的 AI生成引擎，默认使用 deepseek-v4-pro，也可单独配置豆包、通义、智谱等模型、API Key 和 Base URL。",
-        default_model=DEEPSEEK_V4_PRO_MODEL,
+        description="生成脚本的 AI生成引擎，默认使用豆包 / 火山方舟，也可单独配置通义、智谱、MiniMax 等模型、API Key 和 Base URL。",
+        default_provider="doubao",
         default_max_tokens=3600,
     ),
     AIInterfaceDefinition(
@@ -353,7 +353,7 @@ AI_INTERFACES: tuple[AIInterfaceDefinition, ...] = (
         label="脚本改写",
         group="脚本",
         description="模板库改写生成、爆款脚本改写和分镜提示词生成共用这一套模型与 API Key。",
-        default_model=DEEPSEEK_V4_PRO_MODEL,
+        default_provider="doubao",
         default_max_tokens=3600,
     ),
     AIInterfaceDefinition(
@@ -409,26 +409,40 @@ def default_model_for_interface(definition: AIInterfaceDefinition) -> str:
     return get_provider_definition(definition.default_provider).default_model()
 
 
-def _upgrade_legacy_deepseek_v4_pro_setting(
+ARK_DEFAULT_INTERFACE_KEYS = {
+    "inspiration_chat",
+    INSPIRATION_TOOLS_INTERFACE_KEY,
+    SCRIPT_GENERATE_INTERFACE_KEY,
+    SCRIPT_CREATION_INTERFACE_KEY,
+}
+
+
+def _upgrade_default_work_interface_setting(
     db: Session,
     setting: AIInterfaceSetting,
     definition: AIInterfaceDefinition,
 ) -> AIInterfaceSetting:
-    if definition.key not in {SCRIPT_GENERATE_INTERFACE_KEY, SCRIPT_CREATION_INTERFACE_KEY}:
+    if definition.key not in ARK_DEFAULT_INTERFACE_KEYS:
         return setting
     if (setting.provider or "").strip() != "deepseek":
+        return setting
+    if is_configured_secret(getattr(setting, "api_key_secret", None)):
+        return setting
+    if (getattr(setting, "base_url_override", None) or "").strip():
         return setting
     legacy_models = unique_non_empty((
         DEEPSEEK_MODEL,
         DEEPSEEK_V4_FLASH_MODEL,
+        DEEPSEEK_V4_PRO_MODEL,
         "deepseek-chat",
+        "deepseek-reasoner",
     ))
     if (setting.model or "").strip() not in legacy_models:
         return setting
 
-    setting.model = DEEPSEEK_V4_PRO_MODEL
-    if int(setting.max_tokens or DEFAULT_MAX_TOKENS) == DEFAULT_MAX_TOKENS:
-        setting.max_tokens = definition.default_max_tokens
+    setting.provider = "doubao"
+    setting.model = default_model_for_interface(definition)
+    setting.max_tokens = definition.default_max_tokens
     db.commit()
     db.refresh(setting)
     return setting
@@ -442,7 +456,7 @@ def get_or_create_interface_setting(db: Session, interface_key: str) -> AIInterf
         .first()
     )
     if setting:
-        return _upgrade_legacy_deepseek_v4_pro_setting(db, setting, definition)
+        return _upgrade_default_work_interface_setting(db, setting, definition)
 
     setting = AIInterfaceSetting(
         interface_key=definition.key,
