@@ -298,7 +298,7 @@ class InspirationNavigationTests(unittest.TestCase):
 
         self.assertIn('<a href="/app" class="nav-link on">AI工作</a>', page)
 
-    def test_rewrite_top_nav_label_is_viral_script_rewrite(self):
+    def test_rewrite_top_nav_label_is_script_rewrite(self):
         pages = [
             "index.html",
             "rewrite.html",
@@ -318,8 +318,8 @@ class InspirationNavigationTests(unittest.TestCase):
                 flags=re.S,
             )
             self.assertIsNotNone(nav_links, name)
-            self.assertRegex(nav_links.group("body"), r'href="/app/rewrite"[^>]*>爆款脚本改写</a>', name)
-            self.assertNotIn(">脚本改写</a>", nav_links.group("body"), name)
+            self.assertRegex(nav_links.group("body"), r'href="/app/rewrite"[^>]*>脚本改写</a>', name)
+            self.assertNotIn(">爆款脚本改写</a>", nav_links.group("body"), name)
 
 
 if __name__ == "__main__":
