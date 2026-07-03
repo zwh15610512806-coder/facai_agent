@@ -508,6 +508,7 @@ class AIService:
         thinking: bool = False,
         reasoning_effort: str = "high",
         return_reasoning: bool = False,
+        request_timeout: Optional[float] = None,
     ):
         start_time = time.perf_counter()
         provider_key, selected_model, selected_max_tokens, api_key_override, base_url_override = self._resolve_chat_config(
@@ -544,6 +545,8 @@ class AIService:
                 "messages": messages,
                 "max_tokens": selected_max_tokens,
             }
+            if request_timeout is not None:
+                payload["timeout"] = max(1.0, float(request_timeout))
             if thinking:
                 if provider_key == "deepseek":
                     payload["reasoning_effort"] = reasoning_effort

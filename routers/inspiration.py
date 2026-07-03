@@ -9,7 +9,12 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from config import DEEPSEEK_V4_FLASH_MODEL, DEEPSEEK_V4_PRO_MODEL
+from config import (
+    DEEPSEEK_V4_FLASH_MODEL,
+    DEEPSEEK_V4_PRO_MODEL,
+    INSPIRATION_AI_TIMEOUT_SECONDS as CONFIG_INSPIRATION_AI_TIMEOUT_SECONDS,
+    INSPIRATION_THINKING_AI_TIMEOUT_SECONDS as CONFIG_INSPIRATION_THINKING_AI_TIMEOUT_SECONDS,
+)
 from database import get_db
 from services.ai_service import ai_service
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
@@ -21,8 +26,8 @@ from services.web_research import search_web
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-INSPIRATION_AI_TIMEOUT_SECONDS = 45.0
-INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = 120.0
+INSPIRATION_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_AI_TIMEOUT_SECONDS
+INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_THINKING_AI_TIMEOUT_SECONDS
 
 
 class ChatTurn(BaseModel):
@@ -429,6 +434,7 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
                 thinking=data.tool_mode == "thinking",
                 reasoning_effort="high",
                 return_reasoning=True,
+                request_timeout=timeout_seconds,
             ),
             timeout=timeout_seconds,
         )

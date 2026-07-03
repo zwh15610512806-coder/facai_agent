@@ -561,6 +561,24 @@ class AiServiceRoutingTests(unittest.TestCase):
         self.assertEqual(record.usage_source, "provider")
         self.assertEqual(record.status, "success")
 
+    def test_chat_passes_request_timeout_to_provider_call(self):
+        from services.ai_service import AIService
+
+        service = AIService()
+        fake_client = FakeClient(FakeResponse())
+        service._clients["qwen"] = fake_client
+
+        result = asyncio.run(service.chat(
+            [{"role": "user", "content": "hello"}],
+            interface_key="inspiration_chat",
+            allow_fallback=False,
+            request_timeout=240.0,
+            db=self.db,
+        ))
+
+        self.assertEqual(result, "AI ok")
+        self.assertEqual(fake_client.completions.payload["timeout"], 240.0)
+
     def test_legacy_interface_chat_uses_its_screenshot_group_setting(self):
         from models import AIInterfaceSetting, AIUsageRecord
         from services.ai_service import AIService

@@ -109,14 +109,16 @@ h3 { font-size: 1.1rem; font-weight: 700; }
   position: sticky; top: 0; z-index: 100;
 }
 .nav-inner {
-  max-width: 1280px; margin: 0 auto; padding: 0 40px;
-  height: 68px; display: flex; align-items: center; gap: 32px;
+  width: 100%; max-width: none; margin: 0; padding: 0 clamp(24px, 3.4vw, 64px);
+  height: 68px; display: grid; align-items: center; gap: 24px;
+  grid-template-columns: minmax(260px, 1fr) auto minmax(260px, 1fr);
 }
 .nav-brand {
   display: flex; align-items: center; gap: 12px;
   font-family: var(--font-display); font-weight: 700;
   font-size: 18px; color: var(--text); text-decoration: none; white-space: nowrap;
-  flex-shrink: 0;
+  flex-shrink: 0; grid-column: 1; justify-self: start;
+  min-width: 0; max-width: min(34vw, 340px);
 }
 .nav-brand-mark {
   width: auto; height: 32px;
@@ -126,7 +128,10 @@ h3 { font-size: 1.1rem; font-weight: 700; }
 .nav-brand-mark img {
   height: 100%; width: auto; object-fit: contain;
 }
-.nav-links { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.nav-links {
+  display: flex; align-items: center; gap: 4px;
+  grid-column: 2; justify-self: center; min-width: 0; max-width: 100%;
+}
 .nav-link {
   padding: 8px 16px; border-radius: var(--r-sm);
   font-family: var(--font-ui); font-size: 15px; font-weight: 500;
@@ -136,6 +141,20 @@ h3 { font-size: 1.1rem; font-weight: 700; }
 .nav-link:hover { background: var(--facai-ghost); color: var(--facai); }
 .nav-link.on { background: var(--facai); color: #ffffff; font-weight: 700; }
 .nav-link.on:hover { background: var(--facai-hover); color: #ffffff; }
+
+@media (min-width: 769px) and (max-width: 1439px) {
+  .nav-inner {
+    padding: 0 28px;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .nav-brand { max-width: 300px; }
+  .nav-brand span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .nav-links {
+    width: 100%; justify-content: center; overflow-x: auto;
+    scroll-padding-inline: 16px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .nav-links::-webkit-scrollbar { display: none; }
+}
 
 /* =================================================================
    LAYOUT
@@ -632,7 +651,7 @@ textarea.input { resize: vertical; min-height: 110px; }
   .page-hd > div { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important; }
   .page-hd .btn { width: 100%; }
   .page-hd p { line-height: 1.6; }
-  .nav-inner { height: auto; min-height: 66px; padding: 8px 14px 10px; gap: 8px; flex-direction: column; align-items: stretch; overflow: hidden; }
+  .nav-inner { height: auto; min-height: 66px; padding: 8px 14px 10px; gap: 8px; display: flex; flex-direction: column; align-items: stretch; overflow: hidden; }
   .nav-brand { width: 100%; min-width: 0; gap: 8px; font-size: 17px; }
   .nav-brand span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav-brand-mark { height: 28px; }

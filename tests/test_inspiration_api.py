@@ -204,6 +204,26 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["answer"], "thinking answer")
         self.assertEqual(data["tool_mode"], "thinking")
 
+    def test_thinking_mode_passes_extended_request_timeout_to_ai_service(self):
+        self.inspiration.ai_service.client = object()
+        self.inspiration.INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = 240.0
+        captured = {}
+
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
+            captured["request_timeout"] = kwargs.get("request_timeout")
+            return {"content": "thinking answer", "reasoning": "", "model": "deepseek-v4-pro"}
+
+        self.inspiration.ai_service.chat = fake_chat
+
+        response = self.client.post(
+            "/api/inspiration/chat",
+            json={"message": "thinking timeout test", "tool_mode": "thinking"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["mode"], "ai")
+        self.assertEqual(captured["request_timeout"], 240.0)
+
     def test_research_mode_adds_web_sources_to_prompt(self):
         self.inspiration.ai_service.client = object()
         captured = {}
