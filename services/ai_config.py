@@ -626,11 +626,21 @@ def usage_record_to_dict(record: AIUsageRecord) -> dict:
     }
 
 
+def display_model_for_interface(setting: AIInterfaceSetting, latest: AIUsageRecord | None) -> str:
+    if not latest or not latest.model:
+        return setting.model
+    if latest.created_at and setting.updated_at and latest.created_at < setting.updated_at:
+        return setting.model
+    return latest.model
+
+
 def interface_to_dict(db: Session, definition: AIInterfaceDefinition) -> dict:
     setting = get_or_create_interface_setting(db, definition.key)
     latest = latest_usage(db, definition.key)
     provider = get_provider_definition(setting.provider)
     connection = resolve_interface_connection(setting, provider)
+    latest_model = latest.model if latest else ""
+    display_model = display_model_for_interface(setting, latest)
     return {
         "interface_key": definition.key,
         "label": definition.label,
@@ -641,6 +651,8 @@ def interface_to_dict(db: Session, definition: AIInterfaceDefinition) -> dict:
         "provider_label": provider.label,
         "provider_configured": connection["configured"],
         "model": setting.model,
+        "latest_model": latest_model,
+        "display_model": display_model,
         "max_tokens": setting.max_tokens,
         "api_key_configured": connection["api_key_configured"],
         "api_key_source": connection["api_key_source"],

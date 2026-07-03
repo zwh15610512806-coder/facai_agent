@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>AI配置 - 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260630">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260703-data-import">
 <script src="/static/vendor/lucide.min.js"></script>
 <script src="/static/js/common.js?v=20260618"></script>
 <style>
@@ -61,9 +61,12 @@ body{background:var(--bg)}
 <body>
 <nav class="nav">
 <div class="nav-inner">
+<div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<a href="/app/import" class="nav-import-btn">数据导入</a>
+</div>
 <div class="nav-links">
-<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/import" class="nav-link">数据导入</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/ai-config" class="nav-link on active">AI配置</a>
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/ai-config" class="nav-link on active">AI配置</a>
 </div></div></nav>
 <main class="page-main ai-config-main">
   <div class="ai-config-head">
@@ -114,6 +117,7 @@ body{background:var(--bg)}
           </div>
         </div>
         <div class="status-row">
+          <div class="status-line"><span>调用模型</span><span id="callModelStatus" class="status-value"></span></div>
           <div class="status-line"><span>API Key 状态</span><span id="apiKeyStatus" class="status-value"></span></div>
           <div class="status-line"><span>默认环境变量</span><span id="apiKeyEnvNames" class="status-value"></span></div>
           <div class="status-line"><span>实际 Base URL</span><span id="baseUrlStatus" class="status-value"></span></div>
@@ -163,6 +167,7 @@ function renderIcons(){if(window.lucide)window.lucide.createIcons();}
 function fmtNumber(value){return Number(value||0).toLocaleString('zh-CN');}
 function fmtTime(value){if(!value)return '-';const d=new Date(value);return Number.isNaN(d.getTime())?value:d.toLocaleString('zh-CN',{hour12:false});}
 function selectedInterface(){return interfaces.find(function(item){return item.interface_key===selectedInterfaceKey;})||interfaces[0]||null;}
+function modelForDisplay(item){return item.display_model||item.latest_model||item.model||'';}
 
 async function fetchJson(url,options){
  const response=await fetch(url,options);
@@ -221,7 +226,7 @@ function renderInterfaceList(){
  list.innerHTML=interfaces.map(function(item){
   const active=item.interface_key===selectedInterfaceKey?' is-active':'';
   const status=item.latest_status?item.latest_status:'未调用';
-  return '<button class="interface-item'+active+'" type="button" onclick="selectInterface(\''+escHtml(item.interface_key)+'\')"><span class="interface-name"><span>'+escHtml(item.label)+'</span><span class="interface-pill">'+escHtml(item.group)+'</span></span><span class="interface-desc">'+escHtml(item.description||'')+'</span><span class="interface-meta"><span class="interface-pill">'+escHtml(item.provider_label||item.provider)+'</span><span class="interface-pill">'+escHtml(item.model)+'</span><span class="interface-pill">'+escHtml(status)+'</span></span></button>';
+  return '<button class="interface-item'+active+'" type="button" onclick="selectInterface(\''+escHtml(item.interface_key)+'\')"><span class="interface-name"><span>'+escHtml(item.label)+'</span><span class="interface-pill">'+escHtml(item.group)+'</span></span><span class="interface-desc">'+escHtml(item.description||'')+'</span><span class="interface-meta"><span class="interface-pill">'+escHtml(item.provider_label||item.provider)+'</span><span class="interface-pill">'+escHtml(modelForDisplay(item))+'</span><span class="interface-pill">'+escHtml(status)+'</span></span></button>';
  }).join('');
 }
 
@@ -245,6 +250,7 @@ function renderCurrentInterface(){
  document.getElementById('apiKeyInput').value='';
  clearApiKeyOnSave=false;
  document.getElementById('implementedState').textContent=item.implemented?'已接入真实调用':'配置占位，当前不直接调用大模型';
+ document.getElementById('callModelStatus').textContent=modelForDisplay(item)||'-';
  renderModelOptions(item.model);
  renderProviderDetail();
  renderInterfaceMetrics(item);

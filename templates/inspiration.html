@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>AI工作 · 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260630">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260703-data-import">
 <script src="/static/vendor/lucide.min.js"></script>
 <script src="/static/js/common.js?v=20260618"></script>
 <style>
@@ -31,7 +31,8 @@ body{overflow:hidden}
 .inspiration-main{background:linear-gradient(180deg,#fff 0%,#fff 62%,#fbfaf8 100%)}
 .inspiration-hd{flex:0 0 auto;padding:14px 18px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between;gap:12px}
 .inspiration-title{font-family:var(--font-display);font-size:1.25rem;margin:0}
-.model-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--facai-subtle);background:var(--facai-ghost);color:var(--facai);border-radius:var(--r-pill);padding:4px 10px;font-size:12px;font-weight:800}
+.model-pill{min-width:0;max-width:min(520px,46vw);display:inline-flex;align-items:center;gap:6px;border:1px solid var(--facai-subtle);background:var(--facai-ghost);color:var(--facai);border-radius:var(--r-pill);padding:4px 10px;font-size:12px;font-weight:800}
+.model-pill span{min-width:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .model-pill svg,.model-pill i,.inspiration-new svg,.inspiration-new i{width:14px;height:14px}
 .inspiration-thread{flex:1;min-height:0;overflow:auto;padding:22px 18px 14px;display:flex;flex-direction:column;gap:14px}
 .inspiration-empty{max-width:680px;margin:auto;text-align:center;color:var(--text-2);display:grid;gap:14px}
@@ -99,6 +100,7 @@ body{overflow:hidden}
 @media (max-width: 640px){
   .inspiration-page{height:auto;padding:10px}
   .inspiration-hd{align-items:flex-start;flex-direction:column}
+  .model-pill{max-width:100%}
   .prompt-list{grid-template-columns:1fr}
   .inspiration-thread{padding:16px 12px 10px}
   .chat-bubble{max-width:92%}
@@ -110,9 +112,12 @@ body{overflow:hidden}
 <body>
 <nav class="nav">
 <div class="nav-inner">
+<div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<a href="/app/import" class="nav-import-btn">数据导入</a>
+</div>
 <div class="nav-links">
-<a href="/app" class="nav-link on">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/import" class="nav-link">数据导入</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/ai-config" class="nav-link">AI配置</a>
+<a href="/app" class="nav-link on">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/ai-config" class="nav-link">AI配置</a>
 </div></div></nav>
 <main class="inspiration-page">
 <section class="inspiration-shell" aria-label="AI工作对话工作台">
@@ -162,6 +167,10 @@ let conversations=[];
 let activeConversationId='';
 let activeInspirationMode='chat';
 let selectedAttachments=[];
+let inspirationModelInterfaces={};
+let inspirationModelConfigLoaded=false;
+const INSPIRATION_MODE_LABELS={chat:'AI 对话',thinking:'思考模式',seedance:'分镜提示词生成',research:'深入研究',analysis:'数据分析'};
+const INSPIRATION_MODE_INTERFACE_KEYS={chat:'inspiration_chat',thinking:'inspiration_tools',seedance:'script_creation',research:'inspiration_tools',analysis:'inspiration_tools'};
 const INSPIRATION_PLACEHOLDERS={
  chat:'问点什么，例如：帮我想一个奶冻粉的短视频脚本方向...',
  thinking:'问点什么，例如：帮我认真分析这场活动怎么做...',
@@ -323,8 +332,48 @@ function renderConversationHistory(){
  });
 }
 function setModelPillLabel(text){
+ const labelText=String(text||'AI 对话');
+ const modelPill=document.getElementById('modelPill');
  const label=document.querySelector('#modelPill span');
- if(label)label.textContent=text;
+ if(label)label.textContent=labelText;
+ if(modelPill)modelPill.title=labelText;
+}
+function modelPillModeLabel(mode){
+ return INSPIRATION_MODE_LABELS[mode]||INSPIRATION_MODE_LABELS.chat;
+}
+function interfaceConfigForMode(mode){
+ const key=INSPIRATION_MODE_INTERFACE_KEYS[mode]||INSPIRATION_MODE_INTERFACE_KEYS.chat;
+ return inspirationModelInterfaces[key]||null;
+}
+function modelPillTextForMode(mode,overrideModel,productContextUsed){
+ const label=modelPillModeLabel(mode);
+ const config=interfaceConfigForMode(mode);
+ const provider=config&&(config.provider_label||config.provider)?(config.provider_label||config.provider):'';
+ const model=overrideModel||(config&&(config.display_model||config.model))||'';
+ const parts=[label];
+ if(provider)parts.push(provider);
+ parts.push(model||(inspirationModelConfigLoaded?'模型未配置':'模型读取中'));
+ if(productContextUsed)parts.push('产品资料');
+ return parts.join(' · ');
+}
+function updateModelPillForMode(mode,overrideModel,productContextUsed){
+ setModelPillLabel(modelPillTextForMode(mode||getActiveInspirationMode(),overrideModel,productContextUsed));
+}
+async function loadInspirationModelConfig(){
+ try{
+  const response=await fetch('/api/ai-config/interfaces');
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.detail||data.message||'模型配置读取失败');
+  inspirationModelInterfaces={};
+  (data.interfaces||[]).forEach(function(item){
+   if(item&&item.interface_key)inspirationModelInterfaces[item.interface_key]=item;
+  });
+  inspirationModelConfigLoaded=true;
+ }catch(error){
+  inspirationModelConfigLoaded=false;
+ }finally{
+  updateModelPillForMode(getActiveInspirationMode());
+ }
 }
 function renderConversation(){
  const conversation=ensureActiveConversation();
@@ -339,7 +388,7 @@ function renderConversation(){
  });
  thread.scrollTop=thread.scrollHeight;
  const hasProductContext=conversation.messages.some(function(message){return message.products&&message.products.length;});
- setModelPillLabel(hasProductContext?'产品资料 + AI 对话':'AI 对话');
+ updateModelPillForMode(getActiveInspirationMode(),null,hasProductContext);
  renderIcons();
 }
 function selectConversation(id){
@@ -380,7 +429,7 @@ function startNewConversation(){
  document.getElementById('inspirationInput').value='';
  selectedAttachments=[];
  renderSelectedAttachments();
- setModelPillLabel('AI 对话');
+ updateModelPillForMode(getActiveInspirationMode());
  renderWelcome();
  renderConversationHistory();
  saveConversations();
@@ -396,7 +445,7 @@ function clearCurrentConversation(){
  document.getElementById('inspirationInput').value='';
  selectedAttachments=[];
  renderSelectedAttachments();
- setModelPillLabel('AI 对话');
+ updateModelPillForMode(getActiveInspirationMode());
  renderWelcome();
  renderConversationHistory();
 }
@@ -456,8 +505,7 @@ function updateInspirationPlaceholder(){
 function setInspirationMode(mode){
  activeInspirationMode=activeInspirationMode===mode?'chat':mode;
  renderInspirationMode();
- const labels={chat:'AI 对话',thinking:'思考模式 · DeepSeek V4 Pro',seedance:'分镜提示词生成 · DeepSeek V4 Pro',research:'深入研究 · 联网搜索',analysis:'数据分析 · 联网搜索'};
- setModelPillLabel(labels[activeInspirationMode]||'AI 对话');
+ updateModelPillForMode(activeInspirationMode);
  updateInspirationPlaceholder();
 }
 function renderSelectedAttachments(){
@@ -631,8 +679,7 @@ async function sendInspirationChat(event){
   if(!response.ok)throw new Error(data.detail||data.message||'发送失败');
   addConversationMessage('assistant',data.answer||'',{products:data.products,reasoning:data.reasoning,sources:data.sources});
   const referenceProductsHtml=renderReferenceProducts(data.products);
-  const modeLabels={thinking:'思考模式 · '+(data.model||'DeepSeek V4 Pro'),seedance:'分镜提示词生成 · '+(data.model||'DeepSeek V4 Pro'),research:'深入研究 · 联网搜索',analysis:'数据分析 · 联网搜索'};
-  setModelPillLabel(data.product_context_used?'产品资料 + AI 对话':(data.mode==='fallback'?'离线提示':(modeLabels[data.tool_mode]||data.model||'AI 对话')));
+  updateModelPillForMode(data.tool_mode||getActiveInspirationMode(),data.model,data.product_context_used);
  appendMessage('assistant',data.answer||'没有收到回复',{products:data.products,referenceProductsHtml:referenceProductsHtml,reasoning:data.reasoning,sources:data.sources});
  }catch(error){
   loading.remove();
@@ -651,6 +698,7 @@ renderConversationHistory();
 renderInspirationMode();
 updateInspirationPlaceholder();
 renderSelectedAttachments();
+loadInspirationModelConfig();
 document.getElementById('inspirationFileInput').addEventListener('change',function(event){
  uploadInspirationFiles(event.target.files);
  event.target.value='';

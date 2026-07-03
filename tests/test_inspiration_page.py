@@ -10,6 +10,7 @@ from main import app
 
 
 ROOT = Path(__file__).resolve().parents[1]
+NAV_STYLE_VERSION = "nav-20260703-data-import"
 
 
 class InspirationPageTests(unittest.TestCase):
@@ -97,7 +98,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("参考产品", page)
         self.assertIn("renderReferenceProducts(data.products)", page)
         self.assertIn("if(!products||!products.length)return ''", page)
-        self.assertIn("产品资料 + AI 对话", page)
+        self.assertIn("product_context_used", page)
 
     def test_inspiration_template_can_generate_word_document_from_answer(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
@@ -127,11 +128,27 @@ class InspirationPageTests(unittest.TestCase):
     def test_inspiration_seedance_mode_updates_label_and_placeholder(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
-        self.assertIn("seedance:'分镜提示词生成 · DeepSeek V4 Pro'", page)
         self.assertIn("seedance:'粘贴脚本，或上传脚本文件后填写生成要求...'", page)
         self.assertIn("function updateInspirationPlaceholder()", page)
         self.assertIn("updateInspirationPlaceholder()", page)
-        self.assertIn("seedance:'分镜提示词生成 · '+(data.model||'DeepSeek V4 Pro')", page)
+        self.assertIn("seedance:'分镜提示词生成'", page)
+        self.assertNotIn("DeepSeek V4 Pro", page)
+
+    def test_inspiration_model_pill_loads_configured_interface_models(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("fetch('/api/ai-config/interfaces'", page)
+        self.assertIn("function loadInspirationModelConfig()", page)
+        self.assertIn("const INSPIRATION_MODE_INTERFACE_KEYS={chat:'inspiration_chat',thinking:'inspiration_tools',seedance:'script_creation',research:'inspiration_tools',analysis:'inspiration_tools'}", page)
+        self.assertIn("provider_label", page)
+        self.assertIn("display_model", page)
+
+    def test_inspiration_model_pill_uses_response_model_after_chat(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("function updateModelPillForMode(mode,overrideModel,productContextUsed)", page)
+        self.assertIn("updateModelPillForMode(data.tool_mode||getActiveInspirationMode(),data.model,data.product_context_used)", page)
+        self.assertIn("modelPill.title=labelText", page)
 
     def test_inspiration_chat_request_sends_tool_mode_and_attachments(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
@@ -207,6 +224,7 @@ class InspirationNavigationTests(unittest.TestCase):
             "history.html",
             "search.html",
             "inspiration.html",
+            "ai_config.html",
         ]
         for name in pages:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
@@ -220,10 +238,88 @@ class InspirationNavigationTests(unittest.TestCase):
                 name,
             )
 
+    def test_data_import_is_brand_side_button_not_main_nav_item(self):
+        pages = [
+            "index.html",
+            "rewrite.html",
+            "products.html",
+            "import.html",
+            "templates.html",
+            "history.html",
+            "search.html",
+            "inspiration.html",
+            "ai_config.html",
+        ]
+        for name in pages:
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+            brand_group = re.search(
+                r'<div class="nav-brand-group">(?P<body>.*?)</div>\s*<div class="nav-links">',
+                page,
+                flags=re.S,
+            )
+            self.assertIsNotNone(brand_group, name)
+            self.assertIn('class="nav-import-btn', brand_group.group("body"), name)
+            self.assertIn('href="/app/import"', brand_group.group("body"), name)
+            self.assertIn(">数据导入</a>", brand_group.group("body"), name)
+
+            nav_links = re.search(
+                r'<div class="nav-links">(?P<body>.*?)</div></div></nav>',
+                page,
+                flags=re.S,
+            )
+            self.assertIsNotNone(nav_links, name)
+            self.assertNotIn(">数据导入</a>", nav_links.group("body"), name)
+
+            if name == "import.html":
+                self.assertIn('class="nav-import-btn on"', brand_group.group("body"), name)
+            else:
+                self.assertNotIn('class="nav-import-btn on"', brand_group.group("body"), name)
+
+    def test_data_import_nav_button_uses_fresh_shared_css_version(self):
+        pages = [
+            "index.html",
+            "rewrite.html",
+            "products.html",
+            "import.html",
+            "templates.html",
+            "history.html",
+            "search.html",
+            "inspiration.html",
+            "ai_config.html",
+        ]
+        for name in pages:
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+
+            self.assertIn(f'/static/css/style.css?v={NAV_STYLE_VERSION}', page, name)
+            self.assertNotIn("/static/css/style.css?v=nav-20260630", page, name)
+
     def test_ai_work_nav_is_active_only_on_ai_work_page(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
         self.assertIn('<a href="/app" class="nav-link on">AI工作</a>', page)
+
+    def test_rewrite_top_nav_label_is_viral_script_rewrite(self):
+        pages = [
+            "index.html",
+            "rewrite.html",
+            "products.html",
+            "import.html",
+            "templates.html",
+            "history.html",
+            "search.html",
+            "inspiration.html",
+            "ai_config.html",
+        ]
+        for name in pages:
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+            nav_links = re.search(
+                r'<div class="nav-links">(?P<body>.*?)</div></div></nav>',
+                page,
+                flags=re.S,
+            )
+            self.assertIsNotNone(nav_links, name)
+            self.assertRegex(nav_links.group("body"), r'href="/app/rewrite"[^>]*>爆款脚本改写</a>', name)
+            self.assertNotIn(">脚本改写</a>", nav_links.group("body"), name)
 
 
 if __name__ == "__main__":

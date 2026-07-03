@@ -1,6 +1,7 @@
 import asyncio
 import os
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -440,6 +441,78 @@ class AiConfigApiTests(unittest.TestCase):
         self.assertEqual(data["totals"]["calls"], 2)
         self.assertEqual(len(data["records"]), 2)
         self.assertEqual(data["records"][0]["interface_key"], "script_rewrite")
+
+    def test_interface_payload_exposes_latest_called_model_for_display(self):
+        from models import AIInterfaceSetting, AIUsageRecord
+
+        self.db.add(
+            AIInterfaceSetting(
+                interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+                provider="doubao",
+                model="configured-model",
+                max_tokens=3600,
+            )
+        )
+        self.db.add(
+            AIUsageRecord(
+                interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+                provider="doubao",
+                model="called-model",
+                prompt_tokens=10,
+                completion_tokens=4,
+                total_tokens=14,
+                usage_source="provider",
+                latency_ms=120,
+                status="success",
+            )
+        )
+        self.db.commit()
+
+        response = self.client.get("/api/ai-config/interfaces")
+
+        self.assertEqual(response.status_code, 200)
+        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
+        script_generate = by_key[SCRIPT_GENERATE_INTERFACE_KEY]
+        self.assertEqual(script_generate["model"], "configured-model")
+        self.assertEqual(script_generate["latest_model"], "called-model")
+        self.assertEqual(script_generate["display_model"], "called-model")
+
+    def test_display_model_uses_configured_model_when_latest_call_is_stale(self):
+        from models import AIInterfaceSetting, AIUsageRecord
+
+        now = datetime.now()
+        self.db.add(
+            AIInterfaceSetting(
+                interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+                provider="doubao",
+                model="new-configured-model",
+                max_tokens=3600,
+                updated_at=now,
+            )
+        )
+        self.db.add(
+            AIUsageRecord(
+                interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+                provider="doubao",
+                model="old-called-model",
+                prompt_tokens=10,
+                completion_tokens=4,
+                total_tokens=14,
+                usage_source="provider",
+                latency_ms=120,
+                status="success",
+                created_at=now - timedelta(minutes=5),
+            )
+        )
+        self.db.commit()
+
+        response = self.client.get("/api/ai-config/interfaces")
+
+        self.assertEqual(response.status_code, 200)
+        by_key = {item["interface_key"]: item for item in response.json()["interfaces"]}
+        script_generate = by_key[SCRIPT_GENERATE_INTERFACE_KEY]
+        self.assertEqual(script_generate["latest_model"], "old-called-model")
+        self.assertEqual(script_generate["display_model"], "new-configured-model")
 
     def test_screenshot_group_usage_includes_only_its_legacy_records(self):
         from models import AIUsageRecord
@@ -913,6 +986,15 @@ class AiConfigPageTests(unittest.TestCase):
         self.assertIn("item.api_key_mask||'****'", page)
         self.assertIn("renderProviderStatus();\n loadUsage();", page)
         self.assertIn("renderProviderStatus();\n }catch(error)", page)
+
+    def test_ai_config_page_displays_latest_called_model(self):
+        page = (ROOT / "templates" / "ai_config.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn('id="callModelStatus"', page)
+        self.assertIn("function modelForDisplay(item)", page)
+        self.assertIn("item.display_model||item.latest_model||item.model", page)
+        self.assertIn("document.getElementById('callModelStatus').textContent=modelForDisplay(item)||'-';", page)
+        self.assertIn("escHtml(modelForDisplay(item))", page)
 
     def test_all_main_templates_link_to_ai_config_after_search(self):
         pages = [
