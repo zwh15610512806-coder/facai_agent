@@ -50,10 +50,19 @@
 .script-card-actions i,.script-card-actions svg{width:12px;height:12px;flex:0 0 12px}
 .script-card-actions .btn-danger{border:1.5px solid rgba(220,38,38,.16)}
 .script-card-actions .btn-danger:hover:not(:disabled){border-color:var(--danger);color:var(--danger)}
-.script-card-image-hint{display:flex;align-items:center;gap:8px;margin:8px 0 2px;padding:6px 8px;border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--muted);font-size:12px;color:var(--text-2)}
-.script-card-image-hint img{width:34px;height:34px;object-fit:cover;border-radius:var(--r-xs);border:1px solid var(--border)}
-.script-card-image-hint span{display:inline-flex;align-items:center;gap:4px;font-weight:700;color:var(--facai)}
-.script-card-image-hint svg{width:13px;height:13px}
+.script-card-time{flex:0 0 auto;font-size:12px;color:var(--text-3);white-space:nowrap;margin-right:auto}
+.script-card-date{flex:0 0 auto;font-size:12px;color:var(--text-3);white-space:nowrap;margin-right:auto}
+.script-card-top{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:10px;align-items:start;margin-bottom:8px}
+.script-card-top.no-image{grid-template-columns:1fr}
+.script-card-copy{min-width:0}
+.script-card-meta{display:flex;gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap}
+.script-card-image-area,.script-card-reference-preview{position:relative;width:112px;aspect-ratio:1.58/1;margin:0;padding:0;overflow:hidden;border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--muted);font-size:12px;color:var(--text-2)}
+.script-card-image-area img,.script-card-reference-preview img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border:0;background:var(--surface)}
+.script-card-image-placeholder{display:none;position:absolute;inset:0;border:1px dashed var(--border);background:var(--surface);color:var(--text-3);font-size:11px;font-weight:700;align-items:center;justify-content:center}
+.script-card-image-area.is-fallback img,.script-card-reference-preview.is-fallback img{display:none}
+.script-card-image-area.is-fallback .script-card-image-placeholder,.script-card-reference-preview.is-fallback .script-card-image-placeholder{display:flex}
+.script-card-image-count{position:absolute;left:6px;bottom:5px;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:var(--r-pill);background:rgba(255,255,255,.88);box-shadow:0 1px 4px rgba(0,0,0,.08);font-size:11px;font-weight:800;color:var(--facai)}
+.script-card-image-count svg{width:13px;height:13px}
 .script-cake-gallery{display:none;margin-bottom:12px;border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--muted);padding:10px}
 .script-cake-gallery h4{margin:0 0 8px;font-size:12px;color:var(--text-3);font-family:var(--font-ui);font-weight:800}
 .script-cake-gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
@@ -71,9 +80,16 @@ html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-beh
 .script-preview-content{flex:1;min-height:0;max-height:none!important;margin-bottom:14px;overflow-y:auto}
 .script-preview-actions{display:flex;gap:8px;flex-wrap:wrap}
 .qianchuan-performance-panel{display:flex;flex-direction:column;min-width:0;min-height:0;padding:24px;background:var(--surface)}
-.qianchuan-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
-.qianchuan-panel-head h4{margin:0;font-family:var(--font-display);font-size:1.05rem}
+.qianchuan-panel-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px;margin-bottom:14px}
+.qianchuan-title-block{min-width:0}
+.qianchuan-title-row{display:flex;align-items:center;gap:10px;min-width:0}
+.qianchuan-panel-head h4{margin:0;font-family:var(--font-display);font-size:1.05rem;flex:0 0 auto}
 .qianchuan-panel-head p{margin:4px 0 0;font-size:12px;color:var(--text-3)}
+.qianchuan-bound-source{flex:1 1 250px;min-width:180px;max-width:320px;border:1.5px solid var(--border);border-radius:var(--r-sm);padding:7px 10px;background:var(--surface);font-size:12px;color:var(--text-2);line-height:1.35}
+.qianchuan-bound-source.empty{color:var(--text-3);background:var(--muted)}
+.qianchuan-bound-source strong{display:block;color:var(--text);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qianchuan-bound-source-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:3px;color:var(--text-3)}
+.qianchuan-bound-source .btn{min-height:24px;padding:3px 8px;font-size:11px}
 .qianchuan-actions{display:flex;gap:8px;align-items:center;flex:0 0 auto}
 .qianchuan-status{font-size:12px;color:var(--text-3);min-height:18px;margin-bottom:10px}
 .qianchuan-scroll{flex:1;min-height:0;overflow-y:auto;padding-right:4px}
@@ -91,13 +107,13 @@ html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-beh
 .qianchuan-material-stats{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2)}
 .qianchuan-material-stats b{color:var(--text);font-weight:700}
 .qianchuan-empty{font-size:12px;color:var(--text-3);padding:16px;border:1px dashed var(--border);border-radius:var(--r-sm);background:var(--muted)}
-.rewrite-product-bar{border-top:1px solid var(--border-soft);padding:12px 24px 14px;background:var(--muted);min-width:0;flex:0 0 clamp(118px,18vh,210px);display:grid;grid-template-columns:minmax(320px,1.4fr) minmax(360px,1fr);gap:22px;align-items:start;overflow:hidden}
+.rewrite-product-bar{border-top:1px solid var(--border-soft);padding:12px 24px 14px;background:var(--muted);min-width:0;flex:0 0 112px;height:112px;min-height:112px;max-height:112px;display:grid;grid-template-columns:minmax(320px,1.4fr) minmax(360px,1fr);gap:22px;align-items:stretch;overflow:hidden}
 .modal-product-toolbar{display:block;margin-bottom:0;min-width:0}
 .modal-product-toolbar .input{width:100%;font-size:13px}
-.modal-product-list{display:none;gap:10px;overflow-x:auto;overflow-y:hidden;min-height:0;max-height:104px;padding:2px 2px 6px;min-width:0}
+.modal-product-list{display:none;gap:10px;overflow-x:auto;overflow-y:hidden;min-height:0;max-height:88px;padding:2px 2px 6px;min-width:0;align-items:stretch}
 .modal-product-list.has-results{display:flex}
 .modal-product-card{border-radius:var(--r);border:1px solid var(--border);padding:10px;cursor:pointer;background:var(--surface);transition:all var(--normal) var(--ease);position:relative}
-.modal-product-list .modal-product-card{flex:0 0 184px;min-height:88px}
+.modal-product-list .modal-product-card{flex:0 0 184px;min-height:88px;height:88px}
 .modal-product-card:hover{border-color:var(--facai);background:var(--facai-ghost)}
 .modal-product-card.sel{border-color:var(--facai);background:var(--facai-ghost);box-shadow:0 0 0 2px var(--facai-subtle)}
 .modal-product-card.rewriting{border-color:var(--facai);background:var(--facai-soft);box-shadow:0 0 0 2px var(--facai-subtle)}
@@ -150,7 +166,7 @@ html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-beh
   .qianchuan-performance-panel { display:block; min-height:auto; padding:16px; border-bottom:1px solid var(--border-soft); }
   .qianchuan-scroll { overflow:visible; min-height:auto; }
   .qianchuan-summary-grid { grid-template-columns:1fr 1fr; }
-  .rewrite-product-bar { display:grid; grid-template-columns:1fr; flex:initial; max-height:none; overflow:visible; padding:16px; gap:10px; }
+  .rewrite-product-bar { display:grid; grid-template-columns:1fr; flex:initial; height:auto; min-height:0; max-height:none; overflow:visible; padding:16px; gap:10px; }
   .modal-product-toolbar { display:block; }
   .modal-product-list.has-results { display:grid; grid-template-columns:1fr; max-height:none; min-height:0; overflow:visible; }
   .modal-product-list .modal-product-card { flex:initial; }
@@ -234,7 +250,7 @@ html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-beh
 </section>
 <section class="qianchuan-performance-panel">
 <div class="qianchuan-panel-head">
-<div><h4>千川表现</h4><p>绑定素材后同步脚本跑量表现</p></div>
+<div class="qianchuan-title-block"><div class="qianchuan-title-row"><h4>千川表现</h4><div id="qianchuanBoundSource" class="qianchuan-bound-source empty"><strong>未绑定素材</strong><div class="qianchuan-bound-source-meta"><span>可从候选素材中绑定</span></div></div></div><p>绑定素材后同步脚本跑量表现</p></div>
 <div class="qianchuan-actions">
 <input id="qianchuanFileInput" type="file" accept=".xlsx,.xls" style="position:absolute;width:1px;height:1px;opacity:0" onchange="uploadQianchuanFile(this.files)">
 <button class="btn btn-pri btn-sm" onclick="openQianchuanUpload()">新增千川数据表</button>
@@ -243,11 +259,11 @@ html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-beh
 <div class="qianchuan-status" id="qianchuanStatus">等待加载&hellip;</div>
 <div class="qianchuan-scroll">
 <div id="qianchuanSummary" class="qianchuan-summary-grid"></div>
-<div class="qianchuan-section">
+<div class="qianchuan-section" id="qianchuanBoundSection">
 <div class="qianchuan-section-title"><span>已绑定素材</span></div>
 <div id="qianchuanBoundList" class="qianchuan-material-list"></div>
 </div>
-<div class="qianchuan-section">
+<div class="qianchuan-section" id="qianchuanCandidateSection">
 <div class="qianchuan-section-title"><span>候选素材</span><span>点击绑定后才计入脚本表现</span></div>
 <div id="qianchuanCandidateList" class="qianchuan-material-list"></div>
 </div>
@@ -401,15 +417,16 @@ var onclick=' onclick="viewScript(\''+s._source+'\','+s.id+')"';
 if(batchMode&&resultMode!=='search')onclick='';
 var html='<div class="scard'+(hh?' hi':'')+'"'+onclick+'>';
 if(batchMode&&resultMode!=='search')html+='<div style="position:absolute;top:14px;left:14px;z-index:10"><input type="checkbox" style="width:16px;height:16px;accent-color:var(--facai)"'+(checked?' checked':'')+' onclick="event.stopPropagation();toggleSelect(\''+ck+'\')"></div>';
-html+='<div style="display:flex;gap:6px;margin-bottom:8px;align-items:center'+(batchMode&&resultMode!=='search'?';margin-left:28px':'')+'">'+badge;
+html+='<div class="script-card-body"><div class="script-card-top'+(cakeImages.length?'':' no-image')+'"><div class="script-card-copy"><div class="script-card-meta"'+(batchMode&&resultMode!=='search'?' style="margin-left:28px"':'')+'>'+badge;
 if(s.video_type)html+='<span class="badge badge-t">'+escHtml(s.video_type)+'</span>';
 if(s._scoreText)html+='<span style="margin-left:auto;font-size:12px;color:var(--facai);font-weight:700">'+s._scoreText+'</span>';
-else if(time)html+='<span style="margin-left:auto;font-size:12px;color:var(--text-3)">'+time+'</span>';
-html+='</div><div class="script-card-body"><h4 style="font-weight:600;font-size:13px;margin-bottom:6px'+(batchMode&&resultMode!=='search'?';margin-left:28px':'')+'">'+escHtml(s.title||'无标题')+'</h4>';
+html+='</div><h4 style="font-weight:600;font-size:13px;margin-bottom:6px'+(batchMode&&resultMode!=='search'?';margin-left:28px':'')+'">'+escHtml(s.title||'无标题')+'</h4>';
 if(s.video_url&&resultMode!=='search'&&!batchMode)html+='<div style="font-size:12px;margin-top:4px" class="trunc"><a href="'+escAttr(s.video_url)+'" style="color:var(--text-3)" target="_blank" rel="noopener noreferrer">'+escHtml(s.video_url.substring(0,50))+'</a></div>';
-if(cakeImages.length)html+='<div class="script-card-image-hint"><img src="'+escAttr(cakeImages[0].url)+'" alt="蛋糕参考图" loading="lazy"><span><i data-lucide="image"></i>'+cakeImages.length+' 张图</span></div>';
+html+='</div>';
+if(cakeImages.length)html+='<div class="script-card-reference-preview script-card-image-area"><img src="'+escAttr(cakeImages[0].url)+'" alt="蛋糕参考图" loading="lazy" onerror="this.onerror=null;this.closest(\'.script-card-reference-preview\').classList.add(\'is-fallback\')"><span class="script-card-image-placeholder">参考图</span><span class="script-card-image-count"><i data-lucide="image"></i>共 '+cakeImages.length+' 张</span></div>';
+html+='</div>';
 html+='<p style="font-size:12px;color:var(--text-2);line-height:1.55;margin-top:6px" class="lc2">'+escHtml((s.script_content||'').substring(0,150))+'</p></div>';
-if(!batchMode)html+='<div class="script-card-actions"><button class="btn btn-soft btn-sm" onclick="event.stopPropagation();toggleHighOne(\''+s._source+'\','+s.id+')"><i data-lucide="badge-check"></i>'+(hh?'取消高成交':'标记高成交')+'</button><button class="btn btn-danger btn-sm" onclick="event.stopPropagation();delOne(\''+s._source+'\','+s.id+')"><i data-lucide="trash-2"></i>删除</button></div>';
+if(!batchMode)html+='<div class="script-card-actions">'+(time?'<span class="script-card-date script-card-time">'+time+'</span>':'')+'<button class="btn btn-soft btn-sm" onclick="event.stopPropagation();toggleHighOne(\''+s._source+'\','+s.id+')"><i data-lucide="badge-check"></i>'+(hh?'取消高成交':'标记高成交')+'</button><button class="btn btn-danger btn-sm" onclick="event.stopPropagation();delOne(\''+s._source+'\','+s.id+')"><i data-lucide="trash-2"></i>删除</button></div>';
 html+='</div>';
 return html;
 }
@@ -527,8 +544,12 @@ document.getElementById('qianchuanStatus').textContent=message||'等待加载...
 document.getElementById('qianchuanSummary').innerHTML='';
 document.getElementById('qianchuanBoundList').innerHTML='<div class="qianchuan-empty">暂无绑定素材</div>';
 document.getElementById('qianchuanCandidateList').innerHTML='<div class="qianchuan-empty">暂无候选素材</div>';
+renderQianchuanBoundSource([]);
+var boundSection=document.getElementById('qianchuanBoundSection');if(boundSection)boundSection.style.display='none';
+var candidateSection=document.getElementById('qianchuanCandidateSection');if(candidateSection)candidateSection.style.display='';
 }
 function qianchuanMetric(label,value,hint){return '<div class="qianchuan-metric"><span>'+escHtml(label)+'</span><b>'+escHtml(value)+'</b>'+(hint?'<span>'+escHtml(hint)+'</span>':'')+'</div>';}
+function qianchuanAverageOrderValue(summary){summary=summary||{};if(summary.average_order_value!==undefined&&summary.average_order_value!==null)return summary.average_order_value;var orders=Number(summary.order_count||0);return orders>0?Number(summary.transaction_amount||0)/orders:0;}
 function renderQianchuanSummary(summary){
 summary=summary||{};
 var h='';
@@ -537,8 +558,18 @@ h+=qianchuanMetric('整体消耗',qianchuanMoney(summary.spend),'ROI '+qianchuan
 h+=qianchuanMetric('展示 / 点击',qianchuanNumber(summary.impressions)+' / '+qianchuanNumber(summary.clicks),'CTR '+qianchuanPercent(summary.ctr));
 h+=qianchuanMetric('成交订单',qianchuanNumber(summary.order_count),'转化率 '+qianchuanPercent(summary.cvr));
 h+=qianchuanMetric('3秒 / 10秒播放',qianchuanPercent(summary.play_3s_rate)+' / '+qianchuanPercent(summary.play_10s_rate),'完播 '+qianchuanPercent(summary.completion_rate));
-h+=qianchuanMetric('素材数量',qianchuanNumber(summary.material_count||0),'明细 '+qianchuanNumber(summary.row_count||0)+' 行');
+h+=qianchuanMetric('成交客单价',qianchuanMoney(qianchuanAverageOrderValue(summary)),'成交金额 / 成交订单数');
 document.getElementById('qianchuanSummary').innerHTML=h;
+}
+function renderQianchuanBoundSource(bindings){
+bindings=bindings||[];
+var box=document.getElementById('qianchuanBoundSource');if(!box)return;
+if(!bindings.length){box.classList.add('empty');box.innerHTML='<strong>未绑定素材</strong><div class="qianchuan-bound-source-meta"><span>可从候选素材中绑定</span></div>';return;}
+box.classList.remove('empty');
+var item=bindings[0]||{};
+var extra=bindings.length>1?'<span>+'+(bindings.length-1)+' 条</span>':'';
+var action=item.id?'<button class="btn btn-soft btn-sm" onclick="unbindQianchuanMaterial('+item.id+')">解绑</button>':'';
+box.innerHTML='<strong title="'+escAttr(item.material_name||'未命名素材')+'">'+escHtml(item.material_name||'未命名素材')+'</strong><div class="qianchuan-bound-source-meta"><span>ID '+escHtml(item.material_id||'-')+'</span><span>成交 '+qianchuanMoney(item.transaction_amount)+'</span><span>ROI '+qianchuanRatio(item.roi)+'</span>'+extra+action+'</div>';
 }
 function renderQianchuanMaterial(item,mode){
 var action=mode==='bound'
@@ -551,8 +582,12 @@ function renderQianchuanPerformance(data){
 qianchuanPerformance=data||{};
 var summary=qianchuanPerformance.summary||{};
 renderQianchuanSummary(summary);
-document.getElementById('qianchuanStatus').textContent=summary.material_count?('已绑定 '+summary.material_count+' 个素材，成交 '+qianchuanMoney(summary.transaction_amount)):'还没有绑定素材，可从候选素材中选择';
 var bindings=qianchuanPerformance.bindings||[];
+var hasBindings=bindings.length>0;
+renderQianchuanBoundSource(bindings);
+document.getElementById('qianchuanStatus').textContent=hasBindings?('当前展示已绑定素材的跑量表现，成交 '+qianchuanMoney(summary.transaction_amount)):'还没有绑定素材，可从候选素材中选择';
+var boundSection=document.getElementById('qianchuanBoundSection');if(boundSection)boundSection.style.display='none';
+var candidateSection=document.getElementById('qianchuanCandidateSection');if(candidateSection)candidateSection.style.display=hasBindings?'none':'';
 document.getElementById('qianchuanBoundList').innerHTML=bindings.length?bindings.map(function(item){return renderQianchuanMaterial(item,'bound');}).join(''):'<div class="qianchuan-empty">暂无绑定素材。绑定后才会计入该脚本表现，并触发高成交规则。</div>';
 var candidates=qianchuanPerformance.candidates||[];
 document.getElementById('qianchuanCandidateList').innerHTML=candidates.length?candidates.map(function(item){return renderQianchuanMaterial(item,'candidate');}).join(''):'<div class="qianchuan-empty">暂无候选素材。可以先新增千川数据表，或确认素材命名里包含脚本产品/日期/类型线索。</div>';

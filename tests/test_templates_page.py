@@ -108,12 +108,73 @@ class TemplatesPageTests(unittest.TestCase):
         self.assertIn("删除", body)
         self.assertIn("event.stopPropagation()", body)
 
+    def test_script_card_shows_reference_image_in_top_right_and_moves_time_to_actions(self):
+        build_card = re.search(
+            r"function buildScriptCard\(s\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(build_card)
+        body = build_card.group("body")
+        self.assertIn("script-card-image-area", body)
+        self.assertIn("script-card-image-count", body)
+        self.assertIn("script-card-image-placeholder", body)
+        self.assertIn("script-card-time", body)
+        self.assertIn("cakeImages[0].url", body)
+        self.assertIn("script-card-top", body)
+        self.assertLess(body.index("script-card-top"), body.index("script-card-image-area"))
+        self.assertLess(body.index("script-card-image-area"), body.index("<p style="))
+        self.assertLess(body.index("script-card-time"), body.index("toggleHighOne"))
+        self.assertNotIn("else if(time)html+='<span style=\"margin-left:auto", body)
+
     def test_script_card_action_icons_are_compact(self):
         self.assertIn(".script-card-actions .btn{", self.page)
         self.assertIn("min-height:30px", self.page)
         self.assertIn("padding:5px 8px", self.page)
         self.assertIn("gap:4px", self.page)
         self.assertIn(".script-card-actions i,.script-card-actions svg{width:12px;height:12px;flex:0 0 12px}", self.page)
+        self.assertIn(".script-card-time{", self.page)
+
+    def test_script_card_shows_cake_reference_preview_in_top_right(self):
+        build_card = re.search(
+            r"function buildScriptCard\(s\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(build_card)
+        body = build_card.group("body")
+        self.assertIn("getScriptCakeImages(s)", body)
+        self.assertIn("script-card-reference-preview", body)
+        self.assertIn("cakeImages[0].url", body)
+        self.assertIn("共 '+cakeImages.length+' 张", body)
+        self.assertIn("onerror=\"this.onerror=null;this.closest", body)
+        self.assertIn("script-card-reference-preview", body)
+        self.assertIn("classList.add", body)
+        self.assertIn("is-fallback", body)
+        self.assertIn(".script-card-top{display:grid;grid-template-columns:minmax(0,1fr) 112px", self.page)
+        self.assertIn(".script-card-reference-preview{position:relative", self.page)
+        self.assertRegex(
+            body,
+            r"<div class=\"script-card-top[\s\S]*if\(cakeImages\.length\)html\+='<div class=\"script-card-reference-preview[^\"]*\"",
+        )
+
+    def test_script_card_date_moves_to_actions_before_high_button(self):
+        build_card = re.search(
+            r"function buildScriptCard\(s\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(build_card)
+        body = build_card.group("body")
+        self.assertNotIn("else if(time)html+='<span style=\"margin-left:auto;font-size:12px;color:var(--text-3)\">'+time+'</span>'", body)
+        self.assertIn("script-card-date", body)
+        self.assertRegex(
+            body,
+            r"<div class=\"script-card-actions\">'\+\(time\?'<span class=\"script-card-date script-card-time\">'\+time\+'</span>':''\)\+'<button class=\"btn btn-soft btn-sm\"",
+        )
 
     def test_script_card_badges_hide_brand_and_high_conversion_label(self):
         build_card = re.search(
@@ -160,8 +221,11 @@ class TemplatesPageTests(unittest.TestCase):
         self.assertIn('class="qianchuan-performance-panel"', self.page)
         self.assertIn('id="qianchuanFileInput"', self.page)
         self.assertIn('新增千川数据表', self.page)
+        self.assertIn('id="qianchuanBoundSource"', self.page)
         self.assertIn('id="qianchuanSummary"', self.page)
+        self.assertIn('id="qianchuanBoundSection"', self.page)
         self.assertIn('id="qianchuanCandidateList"', self.page)
+        self.assertIn('id="qianchuanCandidateSection"', self.page)
         self.assertIn('class="rewrite-product-bar"', self.page)
         self.assertIn('class="modal-product-toolbar"', self.page)
         self.assertNotIn('class="modal-product-action"', self.page)
@@ -203,12 +267,24 @@ class TemplatesPageTests(unittest.TestCase):
         self.assertIn("/api/templates/qianchuan/import", self.page)
         self.assertIn("/performance/bind", self.page)
 
+    def test_qianchuan_panel_uses_average_order_value_and_compact_bound_source(self):
+        self.assertIn("function renderQianchuanBoundSource", self.page)
+        self.assertIn("qianchuanMetric('成交客单价'", self.page)
+        self.assertIn("'成交金额 / 成交订单数'", self.page)
+        self.assertNotIn("qianchuanMetric('素材数量'", self.page)
+        self.assertIn("var hasBindings=bindings.length>0", self.page)
+        self.assertIn("boundSection.style.display='none'", self.page)
+        self.assertIn("candidateSection.style.display=hasBindings?'none':''", self.page)
+        self.assertIn("可从候选素材中绑定", self.page)
+        self.assertIn("+' 条</span>'", self.page)
+
     def test_view_modal_product_search_uses_two_slot_click_to_rewrite_layout(self):
         self.assertIn(
             ".modal-product-toolbar{display:block;margin-bottom:0;min-width:0}",
             self.page,
         )
-        self.assertIn(".modal-product-list{display:none;gap:10px;overflow-x:auto;overflow-y:hidden;min-height:0;max-height:104px;padding:2px 2px 6px;min-width:0}", self.page)
+        self.assertIn(".modal-product-list{display:none;gap:10px;overflow-x:auto;overflow-y:hidden;min-height:0;max-height:88px;padding:2px 2px 6px;min-width:0;align-items:stretch}", self.page)
+        self.assertIn(".modal-product-list .modal-product-card{flex:0 0 184px;min-height:88px;height:88px}", self.page)
         self.assertIn(".modal-product-card.rewriting{border-color:var(--facai);background:var(--facai-soft);box-shadow:0 0 0 2px var(--facai-subtle)}", self.page)
         self.assertIn(".modal-product-card.rewriting:after{content:'改写中...';position:absolute;right:10px;bottom:10px;font-size:12px;font-weight:800;color:var(--facai)}", self.page)
         self.assertNotIn(".modal-product-action", self.page)
@@ -230,9 +306,10 @@ class TemplatesPageTests(unittest.TestCase):
         )
         self.assertIn(".qianchuan-scroll{flex:1;min-height:0;overflow-y:auto", self.page)
         self.assertIn(
-            ".rewrite-product-bar{border-top:1px solid var(--border-soft);padding:12px 24px 14px;background:var(--muted);min-width:0;flex:0 0 clamp(118px,18vh,210px);display:grid;grid-template-columns:minmax(320px,1.4fr) minmax(360px,1fr);gap:22px;align-items:start;overflow:hidden}",
+            ".rewrite-product-bar{border-top:1px solid var(--border-soft);padding:12px 24px 14px;background:var(--muted);min-width:0;flex:0 0 112px;height:112px;min-height:112px;max-height:112px;display:grid;grid-template-columns:minmax(320px,1.4fr) minmax(360px,1fr);gap:22px;align-items:stretch;overflow:hidden}",
             self.page,
         )
+        self.assertIn(".rewrite-product-bar { display:grid; grid-template-columns:1fr; flex:initial; height:auto; min-height:0; max-height:none; overflow:visible; padding:16px; gap:10px; }", self.page)
         self.assertNotIn(".rewrite-product-bar{position:absolute", self.page)
         self.assertIn("html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-behavior:none}", self.page)
         self.assertIn("var modalScrollY=0", self.page)

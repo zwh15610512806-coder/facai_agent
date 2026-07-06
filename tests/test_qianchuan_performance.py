@@ -9,7 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database import Base
-from models import ViralScript
+from models import (
+    QianchuanImportBatch,
+    QianchuanMaterialPerformance,
+    QianchuanScriptBinding,
+    ViralScript,
+)
 from routers import templates as templates_router
 from services.qianchuan_importer import parse_qianchuan_workbook
 
@@ -127,6 +132,60 @@ class QianchuanPerformanceApiTests(unittest.TestCase):
         self.db.close()
         Base.metadata.drop_all(bind=self.engine)
         self.engine.dispose()
+
+    def _add_qianchuan_material(
+        self,
+        material_id,
+        material_name,
+        transaction_amount=0,
+        order_count=0,
+    ):
+        batch = self.db.query(QianchuanImportBatch).first()
+        if not batch:
+            batch = QianchuanImportBatch(
+                filename="seed.xlsx",
+                file_sha256=f"seed-{material_id}",
+                row_count=0,
+                imported_count=0,
+                skipped_count=0,
+                amount_field="净成交金额",
+            )
+            self.db.add(batch)
+            self.db.flush()
+        material = QianchuanMaterialPerformance(
+            batch_id=batch.id,
+            material_id=material_id,
+            material_name=material_name,
+            amount_field="净成交金额",
+            transaction_amount=transaction_amount,
+            order_count=order_count,
+        )
+        self.db.add(material)
+        self.db.commit()
+        return material
+
+    def test_summary_includes_average_order_value_and_zero_order_fallback(self):
+        material = self._add_qianchuan_material(
+            "avg-001",
+            "需求-26.5.8-调味茶酱-法采-姜妈5.mp4",
+            transaction_amount=2580,
+            order_count=18,
+        )
+
+        summary = templates_router._summarize_qianchuan_materials([material])
+
+        self.assertEqual(summary["average_order_value"], 143.33)
+
+        zero_order_material = self._add_qianchuan_material(
+            "avg-002",
+            "需求-26.5.9-调味茶酱-法采-姜妈6.mp4",
+            transaction_amount=1200,
+            order_count=0,
+        )
+
+        zero_order_summary = templates_router._summarize_qianchuan_materials([zero_order_material])
+
+        self.assertEqual(zero_order_summary["average_order_value"], 0)
 
     def test_import_bind_and_auto_high_conversion_from_transaction_amount(self):
         script = ViralScript(
@@ -302,6 +361,148 @@ class QianchuanPerformanceApiTests(unittest.TestCase):
         self.assertEqual(first.json()["data"]["imported"], 1)
         self.assertEqual(second.json()["data"]["imported"], 0)
         self.assertTrue(second.json()["data"]["duplicate_file"])
+
+    def test_auto_match_dry_run_returns_alias_matches_without_creating_bindings(self):
+        script = ViralScript(
+            category="烘焙调味",
+            video_type="需求类",
+            title="茶酱 / 脚本 / 26.5.8需求 / 文案",
+            script_content="茶酱用于调味茶饮和面包夹心，强调出餐稳定。",
+            is_high_conversion=0,
+        )
+        self.db.add(script)
+        self.db.commit()
+        self._add_qianchuan_material(
+            "tea-jam-001",
+            "需求-26.5.8-调味果酱-法采-姜妈5.mp4",
+            transaction_amount=2300,
+            order_count=16,
+        )
+
+        response = self.client.post(
+            "/api/templates/qianchuan/bindings/auto-match",
+            json={"mode": "dry_run"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["mode"], "dry_run")
+        self.assertEqual(data["created"], 0)
+        self.assertEqual(data["planned"], 1)
+        self.assertEqual(data["matches"][0]["script_id"], script.id)
+        self.assertEqual(data["matches"][0]["material_id"], "tea-jam-001")
+        self.assertIn("茶酱", data["matches"][0]["matched_aliases"])
+        self.assertEqual(self.db.query(QianchuanScriptBinding).count(), 0)
+
+    def test_auto_match_apply_is_idempotent_preserves_bindings_and_rejects_category_only(self):
+        existing_script = ViralScript(
+            category="烘焙调味",
+            video_type="机制类",
+            title="已绑定脚本",
+            script_content="已有人工绑定，不应该被全量匹配重建或覆盖。",
+        )
+        alias_script = ViralScript(
+            category="烘焙调色",
+            video_type="需求类",
+            title="果蔬粉 / 脚本 / 26.6.1需求 / 文案",
+            script_content="果蔬粉做蛋糕调色，讲果蔬色素上色自然。",
+        )
+        generic_script = ViralScript(
+            category="烘焙配件",
+            video_type="需求类",
+            title="烘焙配件 / 脚本 / 26.6.2需求 / 文案",
+            script_content="只提到烘焙配件大类，没有明确产品名。",
+        )
+        self.db.add_all([existing_script, alias_script, generic_script])
+        self.db.commit()
+        self._add_qianchuan_material("manual-001", "机制-26.5.1-茶酱-法采.mp4", 800, 3)
+        self._add_qianchuan_material("color-001", "需求-26.6.1-果蔬色素-法采.mp4", 2600, 18)
+        self._add_qianchuan_material("generic-001", "需求-26.6.2-烘焙配件-法采.mp4", 3000, 21)
+        self.db.add(QianchuanScriptBinding(
+            script_id=existing_script.id,
+            material_id="manual-001",
+            material_name="机制-26.5.1-茶酱-法采.mp4",
+        ))
+        self.db.commit()
+
+        first = self.client.post(
+            "/api/templates/qianchuan/bindings/auto-match",
+            json={"mode": "apply"},
+        )
+        second = self.client.post(
+            "/api/templates/qianchuan/bindings/auto-match",
+            json={"mode": "apply"},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["data"]["created"], 1)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["data"]["created"], 0)
+        bindings = self.db.query(QianchuanScriptBinding).order_by(
+            QianchuanScriptBinding.material_id
+        ).all()
+        self.assertEqual([item.material_id for item in bindings], ["color-001", "manual-001"])
+        status = self.client.get("/api/templates/qianchuan/bindings/auto-match/status")
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["data"]["last_result"]["mode"], "apply")
+
+    def test_auto_match_keeps_ambiguous_alias_materials_as_candidates(self):
+        script = ViralScript(
+            category="烘焙造型",
+            video_type="机制类",
+            title="翻糖膏 / 脚本 / 26.5.3机制 / 文案",
+            script_content="翻糖膏用于蛋糕造型，强调延展性和稳定性。",
+        )
+        self.db.add(script)
+        self.db.commit()
+        self._add_qianchuan_material("fondant-001", "机制-26.5.3-翻糖-法采-星遥1.mp4", 2100, 12)
+        self._add_qianchuan_material("fondant-002", "机制-26.5.3-翻糖膏-法采-星遥2.mp4", 2050, 11)
+
+        response = self.client.post(
+            "/api/templates/qianchuan/bindings/auto-match",
+            json={"mode": "apply"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["created"], 0)
+        self.assertEqual(data["ambiguous"][0]["script_id"], script.id)
+        self.assertEqual(
+            {item["material_id"] for item in data["ambiguous"][0]["candidates"]},
+            {"fondant-001", "fondant-002"},
+        )
+        self.assertEqual(self.db.query(QianchuanScriptBinding).count(), 0)
+
+    def test_auto_match_does_not_bind_one_material_to_multiple_scripts(self):
+        first_script = ViralScript(
+            category="烘焙装饰",
+            video_type="机制类",
+            title="翻糖膏 / 脚本 / 26.5.3机制 / A",
+            script_content="翻糖膏用于蛋糕造型，强调延展性。",
+        )
+        second_script = ViralScript(
+            category="烘焙装饰",
+            video_type="机制类",
+            title="翻糖膏 / 脚本 / 26.5.3机制 / B",
+            script_content="翻糖膏用于蛋糕造型，强调稳定性。",
+        )
+        self.db.add_all([first_script, second_script])
+        self.db.commit()
+        self._add_qianchuan_material("fondant-shared", "机制-26.5.3-翻糖膏-法采-星遥1.mp4", 2200, 14)
+
+        response = self.client.post(
+            "/api/templates/qianchuan/bindings/auto-match",
+            json={"mode": "apply"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["created"], 0)
+        self.assertEqual(
+            [item for item in data["ambiguous"] if item.get("material_id") == "fondant-shared"][0]["material_id"],
+            "fondant-shared",
+        )
+        self.assertEqual(self.db.query(QianchuanScriptBinding).count(), 0)
 
 
 if __name__ == "__main__":

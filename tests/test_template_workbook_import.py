@@ -3,6 +3,7 @@ import time
 import unittest
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -33,6 +34,9 @@ class TemplateWorkbookImportUiTests(unittest.TestCase):
         self.assertIn("/api/templates/viral/import-workbook/status", page)
         self.assertIn("renderScriptCakeImages", page)
         self.assertIn("script-cake-gallery", page)
+        self.assertIn("script-card-image-area", page)
+        self.assertIn("script-card-time", page)
+        self.assertIn("cakeImages[0].url", page)
         self.assertIn("onclick=\"openCakeImage(\\''+escJsArg(img.url)+'\\')\"", page)
         self.assertNotIn("onclick=\"openCakeImage(\\\\''+escJsArg(img.url)+'\\\\')\"", page)
 
@@ -176,6 +180,13 @@ class TemplateWorkbookImportApiTests(unittest.TestCase):
         self.assertEqual(image_response.headers["content-type"], "image/png")
         self.assertTrue(image_response.content.startswith(b"\x89PNG"))
 
+        listing = self.client.get("/api/templates/viral/list")
+        self.assertEqual(listing.status_code, 200)
+        listed = next(item for item in listing.json()["items"] if item["id"] == first.id)
+        self.assertEqual(listed["performance_data"]["cake_images"][0]["url"], image_url)
+        self.assertEqual(listed["performance_data"]["cake_images"][0]["content_type"], "image/png")
+        self.assertTrue(listed["performance_data"]["cake_images"][0]["relative_path"])
+
         second = next(script for script in scripts if script.title.startswith("水性色素 / SS-001"))
         self.assertEqual(second.category, "烘焙调色")
         self.assertEqual(second.video_type, "机制类")
@@ -238,6 +249,38 @@ class TemplateWorkbookImportApiTests(unittest.TestCase):
         self.assertEqual(status["created"], 2)
         self.assertEqual(status["index_error_count"], 2)
         self.assertEqual(self.db.query(ViralScript).count(), 2)
+
+    def test_semantic_search_returns_cake_image_metadata_for_cards(self):
+        script = ViralScript(
+            category="烘焙调色",
+            video_type="需求类",
+            title="果蔬粉 / 参考图脚本",
+            script_content="果蔬粉蛋糕参考图脚本。",
+            performance_data={
+                "cake_images": [{
+                    "filename": "cake.png",
+                    "relative_path": "sample/cake.png",
+                    "url": "/api/templates/viral/1/cake-images/cake.png",
+                    "content_type": "image/png",
+                }]
+            },
+        )
+        self.db.add(script)
+        self.db.commit()
+
+        with patch("vector_store.script_store.ScriptVectorStore") as store_class:
+            store_class.return_value.search.return_value = [{
+                "source": "viral",
+                "db_id": script.id,
+                "distance": 0.12,
+            }]
+            response = self.client.get("/api/templates/viral/search?q=果蔬粉&limit=5")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], script.id)
+        self.assertEqual(data[0]["performance_data"]["cake_images"][0]["filename"], "cake.png")
 
 
 if __name__ == "__main__":

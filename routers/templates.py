@@ -42,6 +42,8 @@ LOCAL_TXT_SCRIPT_SOURCE_DIR = os.getenv(
 LOCAL_TXT_SCAN_SESSION_FACTORY = SessionLocal
 LOCAL_TXT_SCAN_ERROR_LIMIT = 50
 QIANCHUAN_AUTO_BIND_SCORE = 12
+QIANCHUAN_STRUCTURED_AUTO_BIND_SCORE = 24
+QIANCHUAN_STRUCTURED_AUTO_BIND_MARGIN = 4
 BASE_DIR = Path(__file__).resolve().parents[1]
 SCRIPT_WORKBOOK_IMPORT_MAX_SIZE = int(os.getenv(
     "SCRIPT_WORKBOOK_IMPORT_MAX_SIZE",
@@ -89,6 +91,15 @@ _workbook_import_state = {
     "started_at": None,
     "finished_at": None,
     "message": "待导入",
+}
+
+_qianchuan_auto_match_lock = threading.RLock()
+_qianchuan_auto_match_state = {
+    "is_running": False,
+    "started_at": None,
+    "finished_at": None,
+    "last_result": None,
+    "message": "待匹配",
 }
 
 
@@ -1009,6 +1020,7 @@ def semantic_search_scripts(
                         "id": s.id, "title": s.title, "category": s.category,
                         "video_type": s.video_type, "tags": s.tags,
                         "script_content": (s.script_content or "")[:300],
+                        "performance_data": s.performance_data,
                         "is_high_conversion": bool(s.is_high_conversion),
                         "source": "viral", "distance": r.get("distance", 0),
                         "created_at": str(s.created_at) if s.created_at else None,
@@ -1148,6 +1160,7 @@ def _summarize_qianchuan_materials(materials: list[QianchuanMaterialPerformance]
         "transaction_amount": _round_metric(amount, 2),
         "spend": _round_metric(spend, 2),
         "roi": _round_metric(amount / spend if spend > 0 else 0, 4),
+        "average_order_value": _round_metric(amount / orders if orders > 0 else 0, 2),
         "impressions": impressions,
         "clicks": clicks,
         "ctr": _round_metric(clicks / impressions if impressions > 0 else 0, 4),
@@ -1184,11 +1197,133 @@ def _qianchuan_tokens(value: str) -> set[str]:
     text = (value or "").lower().replace(".mp4", "")
     text = re.sub(r"20(\d{2})", r"\1", text)
     parts = re.split(r"[\s/\\_\-+()（）【】\[\]·.,，。:：]+", text)
-    blocked = {"脚本", "脚本参考", "文案", "法采", "烘焙", "品质", "需求", "机制", "痛点", "价格"}
+    blocked = {
+        "脚本", "脚本参考", "文案", "法采", "烘焙", "品质", "需求", "机制", "痛点", "价格",
+        "烘焙调味", "烘焙配件", "烘焙调色", "烘焙造型", "调味", "配件",
+    }
     return {part for part in parts if len(part) >= 2 and part not in blocked and not part.isdigit()}
 
 
+QIANCHUAN_PRODUCT_ALIAS_GROUPS = [
+    {"茶酱", "调味茶酱", "调味果酱"},
+    {"翻糖", "翻糖膏"},
+    {"果蔬粉", "果蔬色素"},
+]
+QIANCHUAN_GENERIC_PRODUCT_TERMS = {
+    "烘焙调味", "烘焙配件", "烘焙调色", "烘焙造型", "调味", "配件", "素材", "产品",
+}
+QIANCHUAN_VIDEO_TYPE_TERMS = ("需求", "机制", "品质", "痛点", "价格", "场景")
+
+
+def _compact_qianchuan_text(value: str) -> str:
+    return re.sub(r"\s+", "", (value or "").lower().replace(".mp4", ""))
+
+
+def _qianchuan_script_text(script: ViralScript) -> str:
+    return _compact_qianchuan_text(" ".join([
+        script.title or "",
+        script.category or "",
+        script.video_type or "",
+        (script.script_content or "")[:500],
+        script.tags or "",
+    ]))
+
+
+def _extract_qianchuan_dates(value: str) -> set[str]:
+    text = (value or "").lower()
+    dates: set[str] = set()
+    for year, month, day in re.findall(r"(?:20)?(\d{2})[.\-/年](\d{1,2})[.\-/月](\d{1,2})", text):
+        dates.add(f"{int(year):02d}.{int(month)}.{int(day)}")
+        dates.add(f"{int(month)}.{int(day)}")
+    for month, day in re.findall(r"(?<!\d)(\d{1,2})[.\-/月](\d{1,2})(?!\d)", text):
+        dates.add(f"{int(month)}.{int(day)}")
+    return dates
+
+
+def _qianchuan_product_matches(script: ViralScript, material_name: str) -> tuple[set[str], set[str]]:
+    script_text = _qianchuan_script_text(script)
+    material_text = _compact_qianchuan_text(material_name)
+    matched_aliases: set[str] = set()
+    canonical_matches: set[str] = set()
+    for group in QIANCHUAN_PRODUCT_ALIAS_GROUPS:
+        script_aliases = {term for term in group if term in script_text}
+        material_aliases = {term for term in group if term in material_text}
+        if script_aliases and material_aliases:
+            matched_aliases.update(script_aliases | material_aliases)
+            canonical_matches.add(sorted(group, key=len, reverse=True)[0])
+
+    script_tokens = _qianchuan_tokens(" ".join([
+        script.title or "",
+        (script.script_content or "")[:260],
+        script.tags or "",
+    ]))
+    material_tokens = _qianchuan_tokens(material_name)
+    explicit_tokens = {
+        token for token in script_tokens & material_tokens
+        if token not in QIANCHUAN_GENERIC_PRODUCT_TERMS and not any(char.isdigit() for char in token)
+    }
+    matched_aliases.update(explicit_tokens)
+    canonical_matches.update(explicit_tokens)
+    return matched_aliases, canonical_matches
+
+
+def _structured_qianchuan_candidate(
+    script: ViralScript,
+    material: QianchuanMaterialPerformance,
+) -> dict | None:
+    matched_aliases, product_matches = _qianchuan_product_matches(script, material.material_name or "")
+    if not product_matches:
+        return None
+
+    script_text = _compact_qianchuan_text(" ".join([
+        script.title or "",
+        script.video_type or "",
+        script.category or "",
+    ]))
+    material_text = _compact_qianchuan_text(material.material_name or "")
+    score = 0
+    reasons = []
+    if matched_aliases:
+        alias_score = 24 if any(
+            alias in {term for group in QIANCHUAN_PRODUCT_ALIAS_GROUPS for term in group}
+            for alias in matched_aliases
+        ) else 12
+        score += alias_score
+        reasons.append("产品/别名明确")
+
+    script_dates = _extract_qianchuan_dates(" ".join([script.title or "", script.script_content or ""]))
+    material_dates = _extract_qianchuan_dates(material.material_name or "")
+    if script_dates & material_dates:
+        score += 6
+        reasons.append("日期一致")
+
+    type_hits = {
+        term for term in QIANCHUAN_VIDEO_TYPE_TERMS
+        if term in script_text and term in material_text
+    }
+    if type_hits:
+        score += 4
+        reasons.append("类型一致")
+
+    category_key = (script.category or "").replace("烘焙", "").strip()
+    if category_key and category_key not in QIANCHUAN_GENERIC_PRODUCT_TERMS and category_key in material_text:
+        score += 2
+        reasons.append("类目弱匹配")
+
+    item = _qianchuan_material_to_dict(material)
+    item.update({
+        "script_id": script.id,
+        "score": score,
+        "matched_aliases": sorted(matched_aliases, key=lambda value: (-len(value), value)),
+        "reasons": reasons,
+    })
+    return item
+
+
 def _score_qianchuan_candidate(script: ViralScript, material: QianchuanMaterialPerformance) -> int:
+    structured = _structured_qianchuan_candidate(script, material)
+    if structured:
+        return int(structured.get("score") or 0)
     script_tokens = _qianchuan_tokens(" ".join([
         script.title or "",
         script.category or "",
@@ -1225,27 +1360,187 @@ def _candidate_materials(
 
     scored = []
     for material in latest_by_material.values():
+        item = _structured_qianchuan_candidate(script, material)
+        if item:
+            scored.append(item)
+            continue
         score = _score_qianchuan_candidate(script, material)
         if score > 0:
-            item = _qianchuan_material_to_dict(material)
-            item["score"] = score
-            scored.append(item)
+            fallback = _qianchuan_material_to_dict(material)
+            fallback["score"] = score
+            fallback["matched_aliases"] = []
+            fallback["reasons"] = ["弱文本匹配"]
+            scored.append(fallback)
     scored.sort(key=lambda item: (item["score"], item["transaction_amount"]), reverse=True)
     return scored[:limit]
+
+
+def _latest_qianchuan_materials(db: Session) -> list[QianchuanMaterialPerformance]:
+    latest_by_material: dict[str, QianchuanMaterialPerformance] = {}
+    rows = db.query(QianchuanMaterialPerformance).order_by(
+        QianchuanMaterialPerformance.id.desc()
+    ).all()
+    for row in rows:
+        if row.material_id not in latest_by_material:
+            latest_by_material[row.material_id] = row
+    return list(latest_by_material.values())
+
+
+def _plan_qianchuan_auto_match(
+    db: Session,
+    min_score: int = QIANCHUAN_STRUCTURED_AUTO_BIND_SCORE,
+    min_margin: int = QIANCHUAN_STRUCTURED_AUTO_BIND_MARGIN,
+) -> dict:
+    materials = _latest_qianchuan_materials(db)
+    scripts = db.query(ViralScript).order_by(ViralScript.id.asc()).all()
+    existing_rows = db.query(QianchuanScriptBinding.script_id, QianchuanScriptBinding.material_id).all()
+    bound_by_script: dict[int, set[str]] = {}
+    globally_bound_materials: set[str] = set()
+    for script_id, material_id in existing_rows:
+        bound_by_script.setdefault(script_id, set()).add(material_id)
+        globally_bound_materials.add(material_id)
+
+    matches = []
+    ambiguous = []
+    candidates = []
+    no_candidate = 0
+    skipped_existing = 0
+    for script in scripts:
+        bound_ids = bound_by_script.get(script.id, set())
+        if bound_ids:
+            skipped_existing += len(bound_ids)
+            continue
+
+        script_candidates = []
+        for material in materials:
+            if material.material_id in globally_bound_materials:
+                continue
+            item = _structured_qianchuan_candidate(script, material)
+            if item:
+                script_candidates.append(item)
+        script_candidates.sort(key=lambda item: (item["score"], item["transaction_amount"]), reverse=True)
+        if not script_candidates:
+            no_candidate += 1
+            continue
+
+        high_confidence = [
+            item for item in script_candidates
+            if int(item.get("score") or 0) >= min_score
+        ]
+        if len(high_confidence) == 1:
+            matches.append(high_confidence[0])
+        elif len(high_confidence) > 1:
+            top_score = int(high_confidence[0].get("score") or 0)
+            close = [
+                item for item in high_confidence
+                if top_score - int(item.get("score") or 0) <= 3
+            ]
+            if len(close) > 1:
+                ambiguous.append({
+                    "script_id": script.id,
+                    "script_title": script.title,
+                    "candidates": close[:5],
+                })
+            else:
+                matches.append(high_confidence[0])
+        else:
+            candidates.append({
+                "script_id": script.id,
+                "script_title": script.title,
+                "candidates": script_candidates[:5],
+            })
+
+    resolved_matches = []
+    matches_by_material: dict[str, list[dict]] = {}
+    for item in matches:
+        material_id = str(item.get("material_id") or "")
+        matches_by_material.setdefault(material_id, []).append(item)
+    for material_id, items in matches_by_material.items():
+        if len(items) == 1:
+            resolved_matches.append(items[0])
+            continue
+        items.sort(key=lambda item: (int(item.get("score") or 0), float(item.get("transaction_amount") or 0)), reverse=True)
+        top_score = int(items[0].get("score") or 0)
+        second_score = int(items[1].get("score") or 0)
+        if top_score - second_score >= min_margin:
+            resolved_matches.append(items[0])
+            continue
+        ambiguous.append({
+            "material_id": material_id,
+            "material_name": items[0].get("material_name") or "",
+            "script_id": items[0].get("script_id"),
+            "script_title": items[0].get("script_title") or "",
+            "candidates": items[:5],
+        })
+    matches = resolved_matches
+
+    return {
+        "total_scripts": len(scripts),
+        "processed": len(scripts),
+        "material_count": len(materials),
+        "planned": len(matches),
+        "would_create": len(matches),
+        "created": 0,
+        "created_bindings": 0,
+        "skipped_existing": skipped_existing,
+        "already_bound": skipped_existing,
+        "no_candidate": no_candidate,
+        "review_count": len(candidates),
+        "ambiguous_count": len(ambiguous),
+        "matches": matches,
+        "ambiguous": ambiguous,
+        "candidates": candidates,
+        "candidates_preview": (ambiguous + candidates)[:20],
+    }
+
+
+def _apply_qianchuan_auto_match(db: Session, plan: dict) -> int:
+    created = 0
+    for item in plan.get("matches", []):
+        script_id = int(item.get("script_id") or 0)
+        material_id = str(item.get("material_id") or "").strip()
+        if not script_id or not material_id:
+            continue
+        exists = db.query(QianchuanScriptBinding).filter(
+            QianchuanScriptBinding.script_id == script_id,
+            QianchuanScriptBinding.material_id == material_id,
+        ).first()
+        if exists:
+            continue
+        db.add(QianchuanScriptBinding(
+            script_id=script_id,
+            material_id=material_id,
+            material_name=item.get("material_name") or "",
+        ))
+        created += 1
+    if created:
+        db.commit()
+        for script_id in {int(item.get("script_id") or 0) for item in plan.get("matches", [])}:
+            script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
+            if script:
+                _sync_qianchuan_high_conversion(script, db)
+    return created
 
 
 def _auto_bind_qianchuan_materials(
     script: ViralScript,
     db: Session,
-    min_score: int = QIANCHUAN_AUTO_BIND_SCORE,
+    min_score: int = QIANCHUAN_STRUCTURED_AUTO_BIND_SCORE,
 ) -> int:
     bindings = db.query(QianchuanScriptBinding.material_id).filter(
         QianchuanScriptBinding.script_id == script.id
     ).all()
     bound_ids = {material_id for (material_id,) in bindings}
+    globally_bound_ids = {
+        material_id for (material_id,) in db.query(QianchuanScriptBinding.material_id).filter(
+            QianchuanScriptBinding.script_id != script.id
+        ).all()
+    }
     created = 0
-    for item in _candidate_materials(script, db, bound_ids, limit=50):
+    for item in _candidate_materials(script, db, bound_ids | globally_bound_ids, limit=50):
         if int(item.get("score") or 0) < min_score:
+            continue
+        if not item.get("matched_aliases"):
             continue
         material_id = str(item.get("material_id") or "").strip()
         if not material_id or material_id in bound_ids:
@@ -1276,12 +1571,17 @@ def _qianchuan_performance_payload(script: ViralScript, db: Session) -> dict:
         ).order_by(QianchuanMaterialPerformance.id.asc()).all()
         materials.extend(bound_materials)
         binding_items.append(_qianchuan_binding_to_dict(binding, bound_materials))
+    globally_bound_ids = {
+        material_id for (material_id,) in db.query(QianchuanScriptBinding.material_id).filter(
+            QianchuanScriptBinding.script_id != script.id
+        ).all()
+    }
     return {
         "script_id": script.id,
         "is_high_conversion": bool(script.is_high_conversion),
         "summary": _summarize_qianchuan_materials(materials),
         "bindings": binding_items,
-        "candidates": _candidate_materials(script, db, bound_ids),
+        "candidates": _candidate_materials(script, db, bound_ids | globally_bound_ids),
     }
 
 
@@ -1296,6 +1596,92 @@ def _sync_qianchuan_high_conversion(script: ViralScript, db: Session) -> bool:
         db.commit()
         db.refresh(script)
     return changed
+
+
+def _qianchuan_auto_match_snapshot() -> dict:
+    with _qianchuan_auto_match_lock:
+        return dict(_qianchuan_auto_match_state)
+
+
+@router.post("/qianchuan/bindings/auto-match")
+def auto_match_qianchuan_bindings(payload: dict | None = None, db: Session = Depends(get_db)):
+    """Plan or apply full Qianchuan material bindings from imported performance rows."""
+    payload = payload or {}
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="参数格式错误")
+    apply_requested = bool(payload.get("apply"))
+    if payload.get("dry_run") is False:
+        apply_requested = True
+    mode = str(payload.get("mode") or ("apply" if apply_requested else "dry_run")).strip().lower()
+    if mode not in {"dry_run", "apply"}:
+        raise HTTPException(status_code=400, detail="mode 仅支持 dry_run 或 apply")
+    try:
+        min_score = int(payload.get("min_auto_score") or payload.get("min_score") or QIANCHUAN_STRUCTURED_AUTO_BIND_SCORE)
+        min_margin = int(payload.get("min_margin") or QIANCHUAN_STRUCTURED_AUTO_BIND_MARGIN)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="min_score/min_margin 必须是数字")
+
+    started_at = datetime.now().replace(microsecond=0).isoformat()
+    with _qianchuan_auto_match_lock:
+        if _qianchuan_auto_match_state["is_running"]:
+            return ApiResponse(message="千川全量匹配正在运行", data=_qianchuan_auto_match_snapshot())
+        _qianchuan_auto_match_state.update({
+            "is_running": True,
+            "started_at": started_at,
+            "finished_at": None,
+            "message": "匹配中",
+        })
+
+    try:
+        plan = _plan_qianchuan_auto_match(db, min_score=min_score, min_margin=min_margin)
+        created = _apply_qianchuan_auto_match(db, plan) if mode == "apply" else 0
+        result = {
+            "mode": mode,
+            "min_score": min_score,
+            "min_margin": min_margin,
+            "script_count": db.query(ViralScript).count(),
+            **plan,
+            "created": created,
+            "created_bindings": created,
+            "would_create": 0 if mode == "apply" else plan.get("planned", 0),
+        }
+        finished_at = datetime.now().replace(microsecond=0).isoformat()
+        with _qianchuan_auto_match_lock:
+            _qianchuan_auto_match_state.update({
+                "is_running": False,
+                "finished_at": finished_at,
+                "last_result": result,
+                "message": "匹配完成",
+                "mode": mode,
+                "total_scripts": result.get("total_scripts"),
+                "processed": result.get("processed"),
+                "material_count": result.get("material_count"),
+                "planned": result.get("planned"),
+                "would_create": result.get("would_create"),
+                "created": result.get("created"),
+                "created_bindings": result.get("created_bindings"),
+                "skipped_existing": result.get("skipped_existing"),
+                "already_bound": result.get("already_bound"),
+                "no_candidate": result.get("no_candidate"),
+                "review_count": result.get("review_count"),
+                "ambiguous_count": result.get("ambiguous_count"),
+            })
+        return ApiResponse(message="千川绑定自动匹配完成", data=result)
+    except Exception:
+        _update = {
+            "is_running": False,
+            "finished_at": datetime.now().replace(microsecond=0).isoformat(),
+            "message": "匹配失败",
+        }
+        with _qianchuan_auto_match_lock:
+            _qianchuan_auto_match_state.update(_update)
+        raise
+
+
+@router.get("/qianchuan/bindings/auto-match/status")
+def qianchuan_auto_match_status():
+    """Return the latest full Qianchuan auto-match status."""
+    return ApiResponse(message="ok", data=_qianchuan_auto_match_snapshot())
 
 
 @router.post("/qianchuan/import")
