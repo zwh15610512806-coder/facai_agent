@@ -397,7 +397,7 @@ class DeepSeekPromptTests(unittest.TestCase):
         self.assertIn("（镜头/画面说明）口播文案", user_prompt)
         self.assertNotIn("参考模板库脚本", user_prompt)
 
-    def test_deepseek_prompt_ignores_template_and_reference_script_content(self):
+    def test_deepseek_prompt_uses_reference_structure_without_copying_reference_script_content(self):
         ai = PromptCaptureAI("姐妹们，别等恢复原价了才后悔。")
         generator = ScriptGenerator()
         generator.ai = ai
@@ -430,12 +430,22 @@ class DeepSeekPromptTests(unittest.TestCase):
         ))
 
         user_prompt = ai.messages[-1]["content"]
+        system_prompt = ai.messages[0]["content"]
 
+        self.assertIn("抖音跑量自检框架", system_prompt)
+        self.assertIn("【同类型脚本结构参考】", user_prompt)
+        self.assertIn("结构参考 #1", user_prompt)
+        self.assertIn("开头方式", user_prompt)
+        self.assertIn("痛点推进", user_prompt)
+        self.assertIn("卖点顺序", user_prompt)
+        self.assertIn("价格/机制位置", user_prompt)
+        self.assertIn("CTA节奏", user_prompt)
+        self.assertIn("画面段落功能", user_prompt)
+        self.assertIn("禁止复制参考脚本原文", user_prompt)
         self.assertNotIn("【参考模板】", user_prompt)
         self.assertNotIn("推荐开头钩子", user_prompt)
         self.assertNotIn("推荐CTA话术", user_prompt)
         self.assertNotIn("模板库示例脚本", user_prompt)
-        self.assertNotIn("【同类爆款脚本参考】", user_prompt)
         self.assertNotIn("脏参考脚本", user_prompt)
         self.assertNotIn("好的，没问题", user_prompt)
         self.assertNotIn("脚本改写专家", user_prompt)

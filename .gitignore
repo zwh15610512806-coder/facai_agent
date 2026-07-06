@@ -23,6 +23,7 @@ data/models/*
 data/search_index.json
 data/product_files/*
 data/generated_documents/*
+data/viral_script_images/*
 data/*.png
 !data/chroma_db/.gitkeep
 !data/chroma_test/.gitkeep

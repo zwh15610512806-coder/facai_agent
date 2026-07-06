@@ -15,6 +15,19 @@ from routers import products as products_router
 from services import selling_point_extractor
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _local_materials_available():
+    import import_materials
+
+    try:
+        import_materials.get_material_paths(ROOT)
+    except (OSError, FileNotFoundError):
+        return False
+    return True
+
+
 class ProductFileApiTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine(
@@ -194,6 +207,8 @@ class ProductFileApiTests(unittest.TestCase):
             self.assertEqual(product.info_file, str(secret))
 
     def test_source_preview_returns_text_material_and_download_url(self):
+        if not _local_materials_available():
+            self.skipTest("requires local material files")
         response = self.client.get(
             "/api/products/source-preview",
             params={"source": "00_产品知识总索引.md"},
@@ -211,6 +226,8 @@ class ProductFileApiTests(unittest.TestCase):
         self.assertGreater(len(download.content), 0)
 
     def test_source_preview_marks_large_binary_material_as_download_only(self):
+        if not _local_materials_available():
+            self.skipTest("requires local material files")
         root = Path(__file__).resolve().parents[1]
         source_name = next((root / "资料" / "2026产品知识库").glob("*.xlsx")).name
 

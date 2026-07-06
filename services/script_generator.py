@@ -495,6 +495,77 @@ class ScriptGenerator:
             logger.warning(f"High-conversion script search failed: {e}")
             return []
 
+    def find_type_structure_scripts(
+        self,
+        video_type: str,
+        db: Session,
+        limit: int = 3,
+    ) -> List[Dict]:
+        """Return exact-video-type scripts for AI generation structure reference only."""
+        if not video_type:
+            return []
+        try:
+            selected = []
+
+            def append_records(records, source: str):
+                for record in records:
+                    if len(selected) >= limit:
+                        break
+                    selected.append({
+                        "title": getattr(record, "title", "") or "",
+                        "content": getattr(record, "script_content", "") or "",
+                        "video_type": getattr(record, "video_type", "") or "",
+                        "category": getattr(record, "category", "") or "",
+                        "tags": getattr(record, "tags", "") or "",
+                        "performance": getattr(record, "performance_data", None),
+                        "is_high_conversion": bool(getattr(record, "is_high_conversion", 0)),
+                        "source": source,
+                    })
+
+            query_plan = [
+                (
+                    "viral",
+                    db.query(ViralScript)
+                    .filter(ViralScript.video_type == video_type, ViralScript.is_high_conversion == 1)
+                    .order_by(ViralScript.id.asc())
+                    .limit(limit)
+                    .all(),
+                ),
+                (
+                    "reference",
+                    db.query(ReferenceScript)
+                    .filter(ReferenceScript.video_type == video_type, ReferenceScript.is_high_conversion == 1)
+                    .order_by(ReferenceScript.id.asc())
+                    .limit(limit)
+                    .all(),
+                ),
+                (
+                    "viral",
+                    db.query(ViralScript)
+                    .filter(ViralScript.video_type == video_type, ViralScript.is_high_conversion != 1)
+                    .order_by(ViralScript.id.asc())
+                    .limit(limit)
+                    .all(),
+                ),
+                (
+                    "reference",
+                    db.query(ReferenceScript)
+                    .filter(ReferenceScript.video_type == video_type, ReferenceScript.is_high_conversion != 1)
+                    .order_by(ReferenceScript.id.asc())
+                    .limit(limit)
+                    .all(),
+                ),
+            ]
+
+            for source, records in query_plan:
+                append_records(records, source)
+                if len(selected) >= limit:
+                    break
+            return selected[:limit]
+        except Exception as e:
+            logger.warning(f"Type-structure script search failed: {e}")
+            return []
+
     async def generate(
         self,
         product: Dict,
@@ -537,7 +608,7 @@ class ScriptGenerator:
             video_type=video_type,
             tone=tone,
             extra_requirements=extra_requirements,
-            reference_scripts=[],
+            reference_scripts=reference_scripts or [],
             include_shot_design=include_shot_design,
         )
 
@@ -758,6 +829,93 @@ class ScriptGenerator:
             return []
         return lines
 
+    def _has_any(self, text: str, patterns: List[str]) -> bool:
+        return any(re.search(pattern, text) for pattern in patterns)
+
+    def _infer_reference_structure(self, content: str) -> Dict[str, str]:
+        text = re.sub(r"\s+", " ", content or "").strip()
+        if not text:
+            return {
+                "opening": "3-5秒内直接抛出具体场景或明确利益点",
+                "pain": "用门店真实问题承接，不泛泛铺垫",
+                "selling": "按用户最关心的1-2个卖点推进到产品证明",
+                "price": "价格/机制放在中后段，承接信任后再释放购买理由",
+                "cta": "结尾自然引导左下角/小黄车，不用硬广口号",
+                "visual": "按开场、证明、使用、成品或下单动作组织画面功能",
+            }
+
+        opening = "3-5秒内直接进入具体产品判断或门店使用场景"
+        if self._has_any(text, [r"价格|活动|优惠|券|到手|恢复原价|买.*送|囤"]):
+            opening = "用价格机制、活动利益或囤货理由开场，先给用户继续看的动机"
+        elif self._has_any(text, [r"痛|麻烦|不好|粘手|开裂|踩坑|费时|翻车"]):
+            opening = "用高频痛点开场，先让烘焙从业者觉得问题被说中"
+        elif self._has_any(text, [r"客户|门店|出单|打包|生日蛋糕|甜品"]):
+            opening = "用真实门店/客户场景开场，快速建立使用语境"
+
+        pain = "先承接一个真实使用阻碍，再让产品卖点进入解决方案"
+        if self._has_any(text, [r"以前|之前|原来|但是|结果|别等|后悔"]):
+            pain = "用前后状态或损失感推进，让用户意识到现在处理更划算"
+        elif self._has_any(text, [r"客户|老板|门店|出单"]):
+            pain = "围绕门店接单、出品、备货或客户体验推进需求"
+
+        selling = "先讲最强证明型卖点，再补使用便利或成本效率"
+        if self._has_any(text, [r"包装|规格|克|g|保质|封口|独立"]):
+            selling = "先讲包装/规格/保存等可信信息，再讲使用效果"
+        elif self._has_any(text, [r"质地|口感|稳定|不裂|不粘|成品"]):
+            selling = "先展示质地或成品效果，再补稳定性和操作省心"
+
+        price = "价格/机制放在卖点证明之后，用作最后购买理由"
+        if self._has_any(text, [r"开头|前3秒|一上来|先说.*价|价格.*离谱"]):
+            price = "机制利益前置，开头就用价格/活动吸引点击"
+        elif self._has_any(text, [r"最后|结尾|左下角|小黄车|拍下|下单"]):
+            price = "机制利益后置，在CTA前强化下单理由"
+
+        cta = "结尾自然引导左下角/小黄车，避免照搬原脚本促单句"
+        if self._has_any(text, [r"左下角|小黄车|拍下|下单|链接"]):
+            cta = "CTA在结尾出现，用动作指令承接前面的产品证明"
+        elif self._has_any(text, [r"别等|赶紧|现在|错过"]):
+            cta = "CTA带轻微紧迫感，但要换成当前产品的自然说法"
+
+        visual = "按开场口播、产品细节、使用动作、成品结果、下单引导安排画面功能"
+        if self._has_any(text, [r"镜头|画面|展示|特写|近景|俯拍|切换|定格"]):
+            visual = "画面节奏包含产品细节、手部操作、对比或成品展示，可借鉴功能时机"
+        elif self._has_any(text, [r"包装|规格|封口|瓶|袋|盒"]):
+            visual = "优先安排包装规格和拿取保存细节，让产品证明可视化"
+
+        return {
+            "opening": opening,
+            "pain": pain,
+            "selling": selling,
+            "price": price,
+            "cta": cta,
+            "visual": visual,
+        }
+
+    def _format_type_structure_reference(
+        self,
+        video_type: str,
+        reference_scripts: Optional[List[Dict]],
+    ) -> List[str]:
+        if video_type == "AI智能生成" or not reference_scripts:
+            return []
+
+        lines = [
+            "\n【同类型脚本结构参考】",
+            "以下只学习同类型脚本的成交结构、推进节奏和画面功能，不作为改写源。",
+            "硬性约束：禁止复制参考脚本原文、商品名、价格、CTA原句、称呼和固定开头；禁止输出“改写自”或说明参考了第几条。",
+        ]
+        for index, script in enumerate(reference_scripts[:3], 1):
+            structure = self._infer_reference_structure(script.get("content", ""))
+            quality = "高成交" if script.get("is_high_conversion") else "普通"
+            lines.append(f"结构参考 #{index}（{script.get('video_type') or video_type}，{quality}）：")
+            lines.append(f"- 开头方式：{structure['opening']}")
+            lines.append(f"- 痛点推进：{structure['pain']}")
+            lines.append(f"- 卖点顺序：{structure['selling']}")
+            lines.append(f"- 价格/机制位置：{structure['price']}")
+            lines.append(f"- CTA节奏：{structure['cta']}")
+            lines.append(f"- 画面段落功能：{structure['visual']}")
+        return lines
+
     def _build_user_prompt(
         self,
         product: Dict,
@@ -797,6 +955,7 @@ class ScriptGenerator:
             parts.append("\n【核心卖点】（请根据产品信息提炼）")
 
         parts.extend(self._format_product_knowledge_context(product))
+        parts.extend(self._format_type_structure_reference(video_type, reference_scripts))
 
         # 3. 创作要求
         parts.append(f"\n【创作要求】")

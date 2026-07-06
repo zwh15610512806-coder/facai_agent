@@ -1,7 +1,7 @@
 """SQLAlchemy 数据模型"""
 from sqlalchemy import (
     Column, Integer, String, Float, Text, JSON,
-    DateTime, ForeignKey, func
+    DateTime, ForeignKey, UniqueConstraint, func
 )
 from sqlalchemy.orm import relationship
 from database import Base
@@ -110,6 +110,70 @@ class ReferenceScript(Base):
     notes = Column(Text, comment="备注/亮点")
     is_high_conversion = Column(Integer, default=0, comment="高成交标记")
     embedding_id = Column(String(200), comment="ChromaDB向量ID")
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class QianchuanImportBatch(Base):
+    """千川素材表现导入批次"""
+    __tablename__ = "qianchuan_import_batches"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    filename = Column(String(500), nullable=False)
+    file_sha256 = Column(String(64), nullable=False, unique=True, index=True)
+    row_count = Column(Integer, default=0)
+    imported_count = Column(Integer, default=0)
+    skipped_count = Column(Integer, default=0)
+    amount_field = Column(String(100))
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class QianchuanMaterialPerformance(Base):
+    """千川素材表现明细"""
+    __tablename__ = "qianchuan_material_performance"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "material_id", name="uq_qianchuan_batch_material"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(Integer, ForeignKey("qianchuan_import_batches.id", ondelete="CASCADE"), nullable=False, index=True)
+    material_id = Column(String(100), nullable=False, index=True)
+    material_name = Column(String(500), nullable=False, index=True)
+    material_evaluation = Column(String(200))
+    material_duration = Column(String(50))
+    material_created_time = Column(String(50))
+    material_source = Column(String(100))
+    tags = Column(String(500))
+    amount_field = Column(String(100))
+    transaction_amount = Column(Float, default=0.0)
+    order_count = Column(Integer, default=0)
+    user_pay_amount = Column(Float, default=0.0)
+    roi = Column(Float, default=0.0)
+    impressions = Column(Integer, default=0)
+    ctr = Column(Float, default=0.0)
+    spend = Column(Float, default=0.0)
+    clicks = Column(Integer, default=0)
+    cvr = Column(Float, default=0.0)
+    play_3s_rate = Column(Float, default=0.0)
+    play_10s_rate = Column(Float, default=0.0)
+    avg_watch_seconds = Column(Float, default=0.0)
+    completion_rate = Column(Float, default=0.0)
+    plan_count = Column(Integer, default=0)
+    product_count = Column(Integer, default=0)
+    raw_data = Column(JSON)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class QianchuanScriptBinding(Base):
+    """脚本与千川素材绑定关系"""
+    __tablename__ = "qianchuan_script_bindings"
+    __table_args__ = (
+        UniqueConstraint("script_id", "material_id", name="uq_qianchuan_script_material"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    script_id = Column(Integer, ForeignKey("viral_scripts.id", ondelete="CASCADE"), nullable=False, index=True)
+    material_id = Column(String(100), nullable=False, index=True)
+    material_name = Column(String(500), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
 

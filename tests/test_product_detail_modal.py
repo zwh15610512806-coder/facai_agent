@@ -7,7 +7,40 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _local_materials_available():
+    import import_materials
+
+    try:
+        import_materials.get_material_paths(ROOT)
+    except (OSError, FileNotFoundError):
+        return False
+    return True
+
+
 class ProductDetailDataTests(unittest.TestCase):
+    MATERIAL_DATA_TESTS = {
+        "test_detail_data_uses_manual_points_and_sku_prices",
+        "test_detail_data_exposes_activity_mechanism_prices",
+        "test_detail_data_reads_knife_price_workbook_for_cutlery",
+        "test_detail_data_matches_legacy_product_names",
+        "test_detail_data_enriches_points_from_2026_knowledge_base",
+        "test_detail_data_reads_2026_single_product_archive",
+        "test_detail_data_merges_2026_sku_knowledge_to_parent_product",
+        "test_detail_data_uses_2026_naming_aliases_for_legacy_products",
+        "test_detail_data_adds_2026_solution_context",
+        "test_detail_data_removes_useless_material_metadata",
+        "test_detail_data_merges_repeated_selling_point_sections",
+        "test_detail_payload_prefers_editable_database_selling_points",
+        "test_detail_payload_hides_deleted_material_selling_points",
+        "test_detail_payload_builds_five_profile_sections",
+        "test_sparse_named_products_get_profile_fallbacks_without_metadata_as_selling_point",
+        "test_profile_sections_keep_all_activity_prices_without_useless_metadata",
+    }
+
+    def setUp(self):
+        if self._testMethodName in self.MATERIAL_DATA_TESTS and not _local_materials_available():
+            self.skipTest("requires local material files")
+
     def test_detail_data_uses_manual_points_and_sku_prices(self):
         from services.product_detail import build_material_product_detail
 

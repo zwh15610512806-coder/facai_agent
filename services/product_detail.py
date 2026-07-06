@@ -360,7 +360,16 @@ def build_material_product_detail(
     root: Path | str | None = None,
 ) -> dict[str, Any]:
     root_path = Path(root) if root is not None else Path(__file__).resolve().parents[1]
-    paths = import_materials.get_material_paths(root_path)
+    try:
+        paths = import_materials.get_material_paths(root_path)
+    except (OSError, FileNotFoundError):
+        return {
+            "source_name": _base_name(product_name),
+            "manual_source": "",
+            "knowledge_sources": [],
+            "selling_points": [],
+            "sku_prices": [],
+        }
     products = _load_material_products(str(root_path.resolve()))
     source = _find_material_product(product_name, products)
     product_names = [product_name]

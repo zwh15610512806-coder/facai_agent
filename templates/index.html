@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>生成脚本 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260706-import-fab">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260706-modal-layout">
 </head>
 <body>
 
@@ -728,7 +728,7 @@ function renderVideoTypes(){
 function selectType(type){state.selectedType=state.selectedType===type?"":type;renderVideoTypes();document.getElementById('btnGenerate').disabled=false;}
 
 document.getElementById('aiEngine').addEventListener('change',function(){
- document.getElementById('engineHint').textContent=this.value==='deepseek'?'AI生成：使用已配置模型和 API Key，结合产品资料与跑量逻辑创作':'模板库改写：从脚本库匹配高成交脚本，改写为当前产品脚本';
+ document.getElementById('engineHint').textContent=this.value==='deepseek'?'AI生成：结合产品资料、跑量逻辑，并在已选类型时参考同类型脚本结构创作':'模板库改写：从脚本库匹配高成交脚本，改写为当前产品脚本';
 });
 
 async function doGenerate(extra){

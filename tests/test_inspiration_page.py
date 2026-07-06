@@ -10,7 +10,7 @@ from main import app
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NAV_STYLE_VERSION = "nav-20260706-import-fab"
+NAV_STYLE_VERSION = "nav-20260706-modal-layout"
 
 
 class InspirationPageTests(unittest.TestCase):

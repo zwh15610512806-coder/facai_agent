@@ -21,9 +21,28 @@ REQUESTED_VIDEO_TYPES = [
 
 
 class MaterialsImportParsingTests(unittest.TestCase):
+    MATERIAL_DATA_TESTS = {
+        "test_parse_product_knowledge_extracts_expected_products",
+        "test_parse_product_manual_extracts_missing_products",
+        "test_parse_2026_product_knowledge_extracts_standard_and_card_products",
+        "test_parse_2026_product_knowledge_excludes_removed_unpriced_products",
+        "test_product_sources_merge_and_price_products",
+        "test_2026_products_get_prices_from_price_system",
+        "test_material_paths_find_knife_price_workbook",
+        "test_parse_excel_scripts_extracts_expected_script_count",
+        "test_script_dedupe_key_uses_category_and_title",
+    }
+
     @classmethod
     def setUpClass(cls):
-        cls.paths = import_materials.get_material_paths(ROOT)
+        try:
+            cls.paths = import_materials.get_material_paths(ROOT)
+        except (OSError, FileNotFoundError):
+            cls.paths = None
+
+    def setUp(self):
+        if self._testMethodName in self.MATERIAL_DATA_TESTS and self.paths is None:
+            self.skipTest("requires local material files")
 
     def test_parse_product_knowledge_extracts_expected_products(self):
         products = import_materials.parse_product_knowledge(self.paths.product_knowledge_md)

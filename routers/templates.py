@@ -1,9 +1,16 @@
 """脚本模板 & 爆款脚本 API"""
 from fastapi import APIRouter, Depends, HTTPException, Query, Form, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from database import get_db, SessionLocal
-from models import ScriptTemplate, ViralScript
+from models import (
+    QianchuanImportBatch,
+    QianchuanMaterialPerformance,
+    QianchuanScriptBinding,
+    ScriptTemplate,
+    ViralScript,
+)
 from schemas import (
     ScriptTemplateCreate, ScriptTemplateOut,
     ViralScriptCreate, ViralScriptOut, ViralScriptPageOut, ApiResponse
@@ -13,14 +20,17 @@ from datetime import datetime
 from pathlib import Path
 import asyncio
 import hashlib
+import mimetypes
 import os
 import re
 import json
 import threading
+import uuid
 
 from config import MAX_UPLOAD_SIZE
 from services.ai_service import ai_service
 from services.product_markdown_importer import normalize_product_name
+from services.qianchuan_importer import parse_qianchuan_workbook
 from services.upload_limits import read_upload_bytes
 
 router = APIRouter()
@@ -31,6 +41,19 @@ LOCAL_TXT_SCRIPT_SOURCE_DIR = os.getenv(
 )
 LOCAL_TXT_SCAN_SESSION_FACTORY = SessionLocal
 LOCAL_TXT_SCAN_ERROR_LIMIT = 50
+QIANCHUAN_AUTO_BIND_SCORE = 12
+BASE_DIR = Path(__file__).resolve().parents[1]
+SCRIPT_WORKBOOK_IMPORT_MAX_SIZE = int(os.getenv(
+    "SCRIPT_WORKBOOK_IMPORT_MAX_SIZE",
+    str(max(MAX_UPLOAD_SIZE, 100 * 1024 * 1024)),
+))
+WORKBOOK_IMPORT_SESSION_FACTORY = SessionLocal
+WORKBOOK_IMPORT_ERROR_LIMIT = 50
+WORKBOOK_IMPORT_UPLOAD_DIR = BASE_DIR / "data" / "workbook_imports"
+VIRAL_SCRIPT_IMAGE_DIR = Path(os.getenv(
+    "VIRAL_SCRIPT_IMAGE_DIR",
+    str(BASE_DIR / "data" / "viral_script_images"),
+))
 
 _local_txt_scan_lock = threading.RLock()
 _local_txt_scan_state = {
@@ -47,6 +70,25 @@ _local_txt_scan_state = {
     "started_at": None,
     "finished_at": None,
     "message": "待扫描",
+}
+
+_workbook_import_lock = threading.RLock()
+_workbook_import_state = {
+    "is_running": False,
+    "filename": "",
+    "total": 0,
+    "processed": 0,
+    "created": 0,
+    "updated": 0,
+    "skipped": 0,
+    "image_count": 0,
+    "index_error_count": 0,
+    "error_count": 0,
+    "errors": [],
+    "ids": [],
+    "started_at": None,
+    "finished_at": None,
+    "message": "待导入",
 }
 
 
@@ -185,6 +227,429 @@ def _combine_tags(base_tags: str, ai_tags: str) -> str:
     parts = [part.strip() for part in (base_tags or "").split(",") if part.strip()]
     parts.extend(part.strip() for part in (ai_tags or "").split(",") if part.strip())
     return ",".join(dict.fromkeys(parts))
+
+
+def _reset_workbook_import_state() -> None:
+    with _workbook_import_lock:
+        _workbook_import_state.update({
+            "is_running": False,
+            "filename": "",
+            "total": 0,
+            "processed": 0,
+            "created": 0,
+            "updated": 0,
+            "skipped": 0,
+            "image_count": 0,
+            "index_error_count": 0,
+            "error_count": 0,
+            "errors": [],
+            "ids": [],
+            "started_at": None,
+            "finished_at": None,
+            "message": "待导入",
+        })
+
+
+def _workbook_import_snapshot() -> dict:
+    with _workbook_import_lock:
+        snapshot = dict(_workbook_import_state)
+        snapshot["errors"] = list(_workbook_import_state["errors"])
+        snapshot["ids"] = list(_workbook_import_state["ids"])
+        return snapshot
+
+
+def _update_workbook_import_state(**changes) -> None:
+    with _workbook_import_lock:
+        _workbook_import_state.update(changes)
+
+
+def _append_workbook_import_error(message: str) -> None:
+    with _workbook_import_lock:
+        _workbook_import_state["error_count"] += 1
+        if len(_workbook_import_state["errors"]) < WORKBOOK_IMPORT_ERROR_LIMIT:
+            _workbook_import_state["errors"].append(message)
+
+
+def _normalize_workbook_cell(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _workbook_sheet_key(sheet_name: str) -> str:
+    return re.sub(r"\s+", "", sheet_name or "")
+
+
+def _category_from_workbook_sheet(sheet_name: str) -> str:
+    key = _workbook_sheet_key(sheet_name)
+    category_map = {
+        "刀叉（袋装）": "烘焙配件",
+        "刀叉(袋装)": "烘焙配件",
+        "刀叉（盒装）": "烘焙配件",
+        "刀叉(盒装)": "烘焙配件",
+        "水性色素": "烘焙调色",
+        "水状色素": "烘焙调色",
+        "果蔬色素": "烘焙调色",
+        "果蔬粉": "烘焙调色",
+        "慕斯粉": "烘焙夹心",
+        "奶冻粉": "烘焙夹心",
+        "布蕾粉": "烘焙夹心",
+        "翻糖": "烘焙装饰",
+        "彩色翻糖膏": "烘焙装饰",
+        "手绘拉线膏": "烘焙装饰",
+        "巧克力糖": "烘焙装饰",
+        "糖珠": "烘焙装饰",
+        "肉松": "烘焙装饰",
+    }
+    if key in category_map:
+        return category_map[key]
+    return _infer_local_txt_category_by_keywords(key) or "烘焙配件"
+
+
+def _video_type_from_workbook(raw_type: str) -> str:
+    value = _normalize_workbook_cell(raw_type)
+    if not value:
+        return "机制类"
+    video_type_map = {
+        "机制": "机制类",
+        "机制类": "机制类",
+        "痛点": "痛点类",
+        "痛点类": "痛点类",
+        "需求": "需求类",
+        "需求类": "需求类",
+        "认知": "认知类",
+        "认知类": "认知类",
+        "对比": "对比类",
+        "对比类": "对比类",
+        "场景": "场景类",
+        "场景类": "场景类",
+        "爆款翻拍": "达人分享类",
+        "达人分享": "达人分享类",
+        "达人分享类": "达人分享类",
+        "创意": "场景类",
+        "AI生成": "机制类",
+        "AI": "机制类",
+    }
+    return video_type_map.get(value, value if value.endswith("类") else "机制类")
+
+
+def _truthy_high_conversion(value) -> bool:
+    text = _normalize_workbook_cell(value).lower()
+    if not text:
+        return False
+    return text not in {"0", "false", "no", "n", "否", "不是", "无", "nan", "none"}
+
+
+def _workbook_title(sheet_name: str, script_code: str, raw_type: str) -> str:
+    parts = [
+        _normalize_workbook_cell(sheet_name),
+        _normalize_workbook_cell(script_code),
+        _normalize_workbook_cell(raw_type),
+    ]
+    title = " / ".join(part for part in parts if part).strip() or "Excel脚本"
+    if len(title) > 300:
+        title = "..." + title[-297:]
+    return title
+
+
+def _workbook_tags(sheet_name: str, raw_type: str, has_images: bool) -> str:
+    tags = ["Excel脚本", _normalize_workbook_cell(sheet_name), _normalize_workbook_cell(raw_type)]
+    if has_images:
+        tags.append("有蛋糕图")
+    return ",".join(dict.fromkeys(tag for tag in tags if tag))
+
+
+def _workbook_image_extension(image_bytes: bytes, image_format: str | None) -> str:
+    ext = (image_format or "").lower().strip(".")
+    if ext in {"jpeg", "jpg"}:
+        return "jpg"
+    if ext in {"png", "gif", "bmp", "webp"}:
+        return ext
+    if image_bytes.startswith(b"\x89PNG"):
+        return "png"
+    if image_bytes.startswith(b"\xff\xd8"):
+        return "jpg"
+    return "bin"
+
+
+def _image_anchor_position(image) -> tuple[int, int]:
+    anchor = getattr(image, "anchor", None)
+    marker = getattr(anchor, "_from", None)
+    if marker is None:
+        return 0, 0
+    return int(marker.row) + 1, int(marker.col) + 1
+
+
+def _collect_workbook_images(workbook) -> dict[str, dict[int, list[dict]]]:
+    image_map: dict[str, dict[int, list[dict]]] = {}
+    for ws in workbook.worksheets:
+        row_map: dict[int, list[dict]] = {}
+        for index, image in enumerate(getattr(ws, "_images", []) or [], start=1):
+            row_number, col_number = _image_anchor_position(image)
+            if row_number <= 0:
+                continue
+            try:
+                image_bytes = image._data()
+            except Exception:
+                continue
+            row_map.setdefault(row_number, []).append({
+                "bytes": image_bytes,
+                "extension": _workbook_image_extension(image_bytes, getattr(image, "format", None)),
+                "column": col_number,
+                "index": index,
+            })
+        image_map[ws.title] = row_map
+    return image_map
+
+
+def _header_index_map(row_values: list[str]) -> dict[str, int]:
+    headers: dict[str, int] = {}
+    for index, value in enumerate(row_values):
+        text = _normalize_workbook_cell(value)
+        if text:
+            headers[text] = index
+    return headers
+
+
+def _find_workbook_column(headers: dict[str, int], *keywords: str) -> int | None:
+    for header, index in headers.items():
+        if all(keyword in header for keyword in keywords):
+            return index
+    return None
+
+
+def _workbook_script_columns(row_values: list[str]) -> dict[str, int | None]:
+    headers = _header_index_map(row_values)
+    return {
+        "code": _find_workbook_column(headers, "编号"),
+        "high": _find_workbook_column(headers, "高成交"),
+        "type": _find_workbook_column(headers, "类型"),
+        "script": _find_workbook_column(headers, "视频脚本") or _find_workbook_column(headers, "脚本"),
+        "image": _find_workbook_column(headers, "蛋糕") or _find_workbook_column(headers, "参考图"),
+    }
+
+
+def _extract_workbook_rows(workbook_path: Path, workbook_sha256: str, filename: str) -> list[dict]:
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(workbook_path, data_only=True)
+    image_map = _collect_workbook_images(workbook)
+    rows: list[dict] = []
+    for ws in workbook.worksheets:
+        header_values = [_normalize_workbook_cell(cell.value) for cell in ws[1]]
+        columns = _workbook_script_columns(header_values)
+        if columns["script"] is None:
+            continue
+        for row in ws.iter_rows(min_row=2):
+            values = [cell.value for cell in row]
+
+            def cell_at(index: int | None) -> str:
+                if index is None or index >= len(values):
+                    return ""
+                return _normalize_workbook_cell(values[index])
+
+            raw_script = cell_at(columns["script"])
+            script_text = format_script(raw_script)
+            if len(script_text) < 20:
+                continue
+            row_number = row[0].row
+            script_code = cell_at(columns["code"]) or str(row_number)
+            raw_type = cell_at(columns["type"])
+            row_images = list(image_map.get(ws.title, {}).get(row_number, []))
+            content_sha256 = _script_content_hash(script_text)
+            rows.append({
+                "filename": filename,
+                "workbook_sha256": workbook_sha256,
+                "sheet_name": ws.title,
+                "row_number": row_number,
+                "script_code": script_code,
+                "raw_type": raw_type,
+                "category": _category_from_workbook_sheet(ws.title),
+                "video_type": _video_type_from_workbook(raw_type),
+                "title": _workbook_title(ws.title, script_code, raw_type),
+                "script_content": script_text,
+                "content_sha256": content_sha256,
+                "is_high_conversion": 1 if _truthy_high_conversion(cell_at(columns["high"])) else 0,
+                "images": row_images,
+            })
+    return rows
+
+
+def _existing_cake_images(script: ViralScript) -> list[dict]:
+    data = script.performance_data if isinstance(script.performance_data, dict) else {}
+    images = data.get("cake_images")
+    return list(images) if isinstance(images, list) else []
+
+
+def _find_existing_workbook_script(db: Session, row_info: dict):
+    for script in db.query(ViralScript).all():
+        data = script.performance_data if isinstance(script.performance_data, dict) else {}
+        if (
+            data.get("workbook_sha256") == row_info["workbook_sha256"]
+            and data.get("sheet_name") == row_info["sheet_name"]
+            and str(data.get("row_number")) == str(row_info["row_number"])
+            and str(data.get("script_code")) == str(row_info["script_code"])
+        ):
+            return script
+        if data.get("content_sha256") == row_info["content_sha256"]:
+            return script
+        if _script_content_hash(script.script_content or "") == row_info["content_sha256"]:
+            return script
+    return None
+
+
+def _save_workbook_cake_images(script_id: int, row_info: dict) -> list[dict]:
+    if not row_info.get("images"):
+        return []
+    base_dir = Path(VIRAL_SCRIPT_IMAGE_DIR)
+    workbook_dir = row_info["workbook_sha256"][:16]
+    target_dir = base_dir / workbook_dir / str(script_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[dict] = []
+    for image in row_info["images"]:
+        extension = image.get("extension") or "bin"
+        filename = f"row{row_info['row_number']}_{uuid.uuid4().hex[:10]}.{extension}"
+        target = target_dir / filename
+        image_bytes = image["bytes"]
+        target.write_bytes(image_bytes)
+        relative_path = f"{workbook_dir}/{script_id}/{filename}"
+        media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        saved.append({
+            "filename": filename,
+            "relative_path": relative_path,
+            "url": f"/api/templates/viral/{script_id}/cake-images/{filename}",
+            "content_type": media_type,
+            "file_size": len(image_bytes),
+            "sheet_name": row_info["sheet_name"],
+            "row_number": row_info["row_number"],
+            "column": image.get("column"),
+        })
+    return saved
+
+
+def _workbook_performance_data(row_info: dict, existing_data: dict | None, cake_images: list[dict]) -> dict:
+    data = dict(existing_data or {})
+    existing_images = data.get("cake_images") if isinstance(data.get("cake_images"), list) else []
+    image_keys = {item.get("relative_path") or item.get("filename") for item in existing_images if isinstance(item, dict)}
+    merged_images = list(existing_images)
+    for image in cake_images:
+        key = image.get("relative_path") or image.get("filename")
+        if key not in image_keys:
+            merged_images.append(image)
+            image_keys.add(key)
+    data.update({
+        "source": "Excel脚本表导入",
+        "source_file": row_info["filename"],
+        "workbook_sha256": row_info["workbook_sha256"],
+        "sheet_name": row_info["sheet_name"],
+        "row_number": row_info["row_number"],
+        "script_code": row_info["script_code"],
+        "original_type": row_info["raw_type"],
+        "content_sha256": row_info["content_sha256"],
+    })
+    if merged_images:
+        data["cake_images"] = merged_images
+    return data
+
+
+def _sync_workbook_viral_index(viral: ViralScript, db: Session) -> None:
+    try:
+        indexed = _sync_viral_index(viral, db)
+        if indexed is False:
+            with _workbook_import_lock:
+                _workbook_import_state["index_error_count"] += 1
+    except Exception as exc:
+        with _workbook_import_lock:
+            _workbook_import_state["index_error_count"] += 1
+        _append_workbook_import_error(f"{viral.title}: 索引同步失败：{exc}")
+
+
+def _import_workbook_scripts(workbook_path: Path, filename: str, workbook_sha256: str, db: Session) -> None:
+    rows = _extract_workbook_rows(workbook_path, workbook_sha256, filename)
+    _update_workbook_import_state(total=len(rows), message=f"发现 {len(rows)} 条 Excel 脚本")
+
+    for row_info in rows:
+        try:
+            existing = _find_existing_workbook_script(db, row_info)
+            if existing:
+                existing_images = _existing_cake_images(existing)
+                new_images = [] if existing_images else _save_workbook_cake_images(existing.id, row_info)
+                existing_data = existing.performance_data if isinstance(existing.performance_data, dict) else {}
+                should_update_metadata = bool(new_images) or not existing_data.get("workbook_sha256")
+                new_data = _workbook_performance_data(row_info, existing_data, new_images) if should_update_metadata else existing_data
+                if should_update_metadata and new_data != existing_data:
+                    existing.performance_data = new_data
+                    db.commit()
+                    db.refresh(existing)
+                    _sync_workbook_viral_index(existing, db)
+                    with _workbook_import_lock:
+                        _workbook_import_state["updated"] += 1
+                        _workbook_import_state["image_count"] += len(new_images)
+                        _workbook_import_state["message"] = f"已补充：{row_info['title']}"
+                else:
+                    with _workbook_import_lock:
+                        _workbook_import_state["skipped"] += 1
+                        _workbook_import_state["message"] = f"已跳过重复脚本：{row_info['title']}"
+                with _workbook_import_lock:
+                    _workbook_import_state["processed"] += 1
+                continue
+
+            viral = ViralScript(
+                category=row_info["category"],
+                video_type=row_info["video_type"],
+                title=row_info["title"],
+                script_content=row_info["script_content"],
+                tags=_workbook_tags(row_info["sheet_name"], row_info["raw_type"], bool(row_info["images"])),
+                is_high_conversion=row_info["is_high_conversion"],
+                performance_data=_workbook_performance_data(row_info, {}, []),
+            )
+            db.add(viral)
+            db.commit()
+            db.refresh(viral)
+            cake_images = _save_workbook_cake_images(viral.id, row_info)
+            if cake_images:
+                viral.performance_data = _workbook_performance_data(row_info, viral.performance_data, cake_images)
+                db.commit()
+                db.refresh(viral)
+            _sync_workbook_viral_index(viral, db)
+            with _workbook_import_lock:
+                _workbook_import_state["created"] += 1
+                _workbook_import_state["processed"] += 1
+                _workbook_import_state["image_count"] += len(cake_images)
+                _workbook_import_state["ids"].append(viral.id)
+                _workbook_import_state["message"] = f"已导入：{row_info['title']}"
+        except Exception as exc:
+            db.rollback()
+            with _workbook_import_lock:
+                _workbook_import_state["skipped"] += 1
+                _workbook_import_state["processed"] += 1
+                _workbook_import_state["message"] = f"跳过：{row_info.get('title') or row_info.get('sheet_name')}"
+            _append_workbook_import_error(f"{row_info.get('title') or row_info.get('sheet_name')}: {exc}")
+
+
+def _run_workbook_import(workbook_path: str, filename: str, workbook_sha256: str) -> None:
+    db = WORKBOOK_IMPORT_SESSION_FACTORY()
+    try:
+        _import_workbook_scripts(Path(workbook_path), filename, workbook_sha256, db)
+        snapshot = _workbook_import_snapshot()
+        _update_workbook_import_state(
+            message=(
+                f"导入完成：新增 {snapshot['created']}，补充 {snapshot['updated']}，"
+                f"跳过 {snapshot['skipped']}，错误 {snapshot['error_count']}"
+            )
+        )
+    except Exception as exc:
+        _append_workbook_import_error(str(exc))
+        _update_workbook_import_state(message=f"导入失败：{exc}")
+    finally:
+        db.close()
+        try:
+            Path(workbook_path).unlink()
+        except FileNotFoundError:
+            pass
+        _update_workbook_import_state(is_running=False, finished_at=datetime.now().replace(microsecond=0).isoformat())
 
 
 def _resolve_viral_script_category(db: Session, category: str = "", product_name: str = "") -> str:
@@ -636,6 +1101,448 @@ def local_txt_scan_status():
     return ApiResponse(message="ok", data=_local_txt_scan_snapshot())
 
 
+def _round_metric(value: float, digits: int = 4) -> float:
+    return round(float(value or 0), digits)
+
+
+def _qianchuan_material_to_dict(material: QianchuanMaterialPerformance) -> dict:
+    return {
+        "id": material.id,
+        "material_id": material.material_id,
+        "material_name": material.material_name,
+        "material_evaluation": material.material_evaluation or "",
+        "material_duration": material.material_duration or "",
+        "material_created_time": material.material_created_time or "",
+        "material_source": material.material_source or "",
+        "tags": material.tags or "",
+        "amount_field": material.amount_field or "",
+        "transaction_amount": _round_metric(material.transaction_amount, 2),
+        "order_count": int(material.order_count or 0),
+        "user_pay_amount": _round_metric(material.user_pay_amount, 2),
+        "roi": _round_metric(material.roi, 4),
+        "impressions": int(material.impressions or 0),
+        "ctr": _round_metric(material.ctr, 4),
+        "spend": _round_metric(material.spend, 2),
+        "clicks": int(material.clicks or 0),
+        "cvr": _round_metric(material.cvr, 4),
+        "play_3s_rate": _round_metric(material.play_3s_rate, 4),
+        "play_10s_rate": _round_metric(material.play_10s_rate, 4),
+        "avg_watch_seconds": _round_metric(material.avg_watch_seconds, 2),
+        "completion_rate": _round_metric(material.completion_rate, 4),
+        "plan_count": int(material.plan_count or 0),
+        "product_count": int(material.product_count or 0),
+    }
+
+
+def _summarize_qianchuan_materials(materials: list[QianchuanMaterialPerformance]) -> dict:
+    amount = sum(float(item.transaction_amount or 0) for item in materials)
+    spend = sum(float(item.spend or 0) for item in materials)
+    impressions = sum(int(item.impressions or 0) for item in materials)
+    clicks = sum(int(item.clicks or 0) for item in materials)
+    orders = sum(int(item.order_count or 0) for item in materials)
+    amount_fields = sorted({item.amount_field for item in materials if item.amount_field})
+    return {
+        "material_count": len({item.material_id for item in materials}),
+        "row_count": len(materials),
+        "amount_field": amount_fields[0] if len(amount_fields) == 1 else " / ".join(amount_fields),
+        "transaction_amount": _round_metric(amount, 2),
+        "spend": _round_metric(spend, 2),
+        "roi": _round_metric(amount / spend if spend > 0 else 0, 4),
+        "impressions": impressions,
+        "clicks": clicks,
+        "ctr": _round_metric(clicks / impressions if impressions > 0 else 0, 4),
+        "order_count": orders,
+        "cvr": _round_metric(orders / clicks if clicks > 0 else 0, 4),
+        "play_3s_rate": _round_metric(_average_metric(materials, "play_3s_rate"), 4),
+        "play_10s_rate": _round_metric(_average_metric(materials, "play_10s_rate"), 4),
+        "avg_watch_seconds": _round_metric(_average_metric(materials, "avg_watch_seconds"), 2),
+        "completion_rate": _round_metric(_average_metric(materials, "completion_rate"), 4),
+    }
+
+
+def _average_metric(materials: list[QianchuanMaterialPerformance], field: str) -> float:
+    values = [float(getattr(item, field) or 0) for item in materials if getattr(item, field) not in (None, 0)]
+    return sum(values) / len(values) if values else 0.0
+
+
+def _qianchuan_binding_to_dict(
+    binding: QianchuanScriptBinding,
+    materials: list[QianchuanMaterialPerformance],
+) -> dict:
+    latest = materials[-1] if materials else None
+    data = _summarize_qianchuan_materials(materials)
+    data.update({
+        "id": binding.id,
+        "material_id": binding.material_id,
+        "material_name": binding.material_name or (latest.material_name if latest else ""),
+        "latest": _qianchuan_material_to_dict(latest) if latest else None,
+    })
+    return data
+
+
+def _qianchuan_tokens(value: str) -> set[str]:
+    text = (value or "").lower().replace(".mp4", "")
+    text = re.sub(r"20(\d{2})", r"\1", text)
+    parts = re.split(r"[\s/\\_\-+()（）【】\[\]·.,，。:：]+", text)
+    blocked = {"脚本", "脚本参考", "文案", "法采", "烘焙", "品质", "需求", "机制", "痛点", "价格"}
+    return {part for part in parts if len(part) >= 2 and part not in blocked and not part.isdigit()}
+
+
+def _score_qianchuan_candidate(script: ViralScript, material: QianchuanMaterialPerformance) -> int:
+    script_tokens = _qianchuan_tokens(" ".join([
+        script.title or "",
+        script.category or "",
+        script.video_type or "",
+        (script.script_content or "")[:260],
+    ]))
+    material_tokens = _qianchuan_tokens(material.material_name or "")
+    overlap = script_tokens & material_tokens
+    score = sum(min(6, len(token)) for token in overlap)
+    title = script.title or ""
+    if script.category and script.category.replace("烘焙", "") in (material.material_name or ""):
+        score += 4
+    for token in script_tokens:
+        if len(token) >= 4 and token in title and token in (material.material_name or "").lower():
+            score += 4
+    return score
+
+
+def _candidate_materials(
+    script: ViralScript,
+    db: Session,
+    bound_ids: set[str],
+    limit: int = 12,
+) -> list[dict]:
+    latest_by_material: dict[str, QianchuanMaterialPerformance] = {}
+    rows = db.query(QianchuanMaterialPerformance).order_by(
+        QianchuanMaterialPerformance.transaction_amount.desc(),
+        QianchuanMaterialPerformance.id.desc(),
+    ).all()
+    for row in rows:
+        if row.material_id in bound_ids or row.material_id in latest_by_material:
+            continue
+        latest_by_material[row.material_id] = row
+
+    scored = []
+    for material in latest_by_material.values():
+        score = _score_qianchuan_candidate(script, material)
+        if score > 0:
+            item = _qianchuan_material_to_dict(material)
+            item["score"] = score
+            scored.append(item)
+    scored.sort(key=lambda item: (item["score"], item["transaction_amount"]), reverse=True)
+    return scored[:limit]
+
+
+def _auto_bind_qianchuan_materials(
+    script: ViralScript,
+    db: Session,
+    min_score: int = QIANCHUAN_AUTO_BIND_SCORE,
+) -> int:
+    bindings = db.query(QianchuanScriptBinding.material_id).filter(
+        QianchuanScriptBinding.script_id == script.id
+    ).all()
+    bound_ids = {material_id for (material_id,) in bindings}
+    created = 0
+    for item in _candidate_materials(script, db, bound_ids, limit=50):
+        if int(item.get("score") or 0) < min_score:
+            continue
+        material_id = str(item.get("material_id") or "").strip()
+        if not material_id or material_id in bound_ids:
+            continue
+        db.add(QianchuanScriptBinding(
+            script_id=script.id,
+            material_id=material_id,
+            material_name=item.get("material_name") or "",
+        ))
+        bound_ids.add(material_id)
+        created += 1
+    if created:
+        db.commit()
+        db.refresh(script)
+    return created
+
+
+def _qianchuan_performance_payload(script: ViralScript, db: Session) -> dict:
+    bindings = db.query(QianchuanScriptBinding).filter(
+        QianchuanScriptBinding.script_id == script.id
+    ).order_by(QianchuanScriptBinding.id.desc()).all()
+    bound_ids = {binding.material_id for binding in bindings}
+    materials = []
+    binding_items = []
+    for binding in bindings:
+        bound_materials = db.query(QianchuanMaterialPerformance).filter(
+            QianchuanMaterialPerformance.material_id == binding.material_id
+        ).order_by(QianchuanMaterialPerformance.id.asc()).all()
+        materials.extend(bound_materials)
+        binding_items.append(_qianchuan_binding_to_dict(binding, bound_materials))
+    return {
+        "script_id": script.id,
+        "is_high_conversion": bool(script.is_high_conversion),
+        "summary": _summarize_qianchuan_materials(materials),
+        "bindings": binding_items,
+        "candidates": _candidate_materials(script, db, bound_ids),
+    }
+
+
+def _sync_qianchuan_high_conversion(script: ViralScript, db: Session) -> bool:
+    payload = _qianchuan_performance_payload(script, db)
+    should_mark = payload["summary"]["transaction_amount"] > 2000
+    changed = False
+    if should_mark and not script.is_high_conversion:
+        script.is_high_conversion = 1
+        changed = True
+    if changed:
+        db.commit()
+        db.refresh(script)
+    return changed
+
+
+@router.post("/qianchuan/import")
+async def import_qianchuan_performance(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Import Qianchuan material-performance rows and refresh bound scripts."""
+    filename = file.filename or "qianchuan.xlsx"
+    if not filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="仅支持 .xlsx/.xls 文件")
+
+    content = await read_upload_bytes(file, max_bytes=MAX_UPLOAD_SIZE)
+    file_sha256 = hashlib.sha256(content).hexdigest()
+    existing = db.query(QianchuanImportBatch).filter(
+        QianchuanImportBatch.file_sha256 == file_sha256
+    ).first()
+    if existing:
+        return ApiResponse(message="该千川数据表已导入，已跳过重复同步", data={
+            "duplicate_file": True,
+            "total_rows": existing.row_count,
+            "imported": 0,
+            "skipped": existing.row_count,
+            "amount_field": existing.amount_field,
+            "auto_bound": 0,
+            "auto_marked_high": 0,
+        })
+
+    try:
+        parsed = parse_qianchuan_workbook(content, filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    batch = QianchuanImportBatch(
+        filename=filename,
+        file_sha256=file_sha256,
+        row_count=parsed.row_count,
+        imported_count=0,
+        skipped_count=0,
+        amount_field=parsed.amount_field,
+    )
+    db.add(batch)
+    db.flush()
+
+    imported = 0
+    skipped = 0
+    imported_material_ids: set[str] = set()
+    seen_in_batch: set[str] = set()
+    for row in parsed.rows:
+        if row.material_id in seen_in_batch:
+            skipped += 1
+            continue
+        seen_in_batch.add(row.material_id)
+        db.add(QianchuanMaterialPerformance(
+            batch_id=batch.id,
+            material_id=row.material_id,
+            material_name=row.material_name,
+            material_evaluation=row.material_evaluation,
+            material_duration=row.material_duration,
+            material_created_time=row.material_created_time,
+            material_source=row.material_source,
+            tags=row.tags,
+            amount_field=row.amount_field,
+            transaction_amount=row.transaction_amount,
+            order_count=row.order_count,
+            user_pay_amount=row.user_pay_amount,
+            roi=row.roi,
+            impressions=row.impressions,
+            ctr=row.ctr,
+            spend=row.spend,
+            clicks=row.clicks,
+            cvr=row.cvr,
+            play_3s_rate=row.play_3s_rate,
+            play_10s_rate=row.play_10s_rate,
+            avg_watch_seconds=row.avg_watch_seconds,
+            completion_rate=row.completion_rate,
+            plan_count=row.plan_count,
+            product_count=row.product_count,
+            raw_data=row.raw_data,
+        ))
+        imported += 1
+        imported_material_ids.add(row.material_id)
+
+    batch.imported_count = imported
+    batch.skipped_count = skipped
+    db.commit()
+
+    auto_bound = 0
+    auto_marked = 0
+    if imported_material_ids:
+        for script in db.query(ViralScript).all():
+            auto_bound += _auto_bind_qianchuan_materials(script, db)
+            if _sync_qianchuan_high_conversion(script, db):
+                auto_marked += 1
+
+    return ApiResponse(message=f"已导入 {imported} 条千川素材数据", data={
+        "duplicate_file": False,
+        "total_rows": parsed.row_count,
+        "imported": imported,
+        "skipped": skipped,
+        "amount_field": parsed.amount_field,
+        "auto_bound": auto_bound,
+        "auto_marked_high": auto_marked,
+    })
+
+
+@router.get("/viral/{script_id}/performance")
+def get_viral_script_performance(script_id: int, db: Session = Depends(get_db)):
+    script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="爆款脚本不存在")
+    _auto_bind_qianchuan_materials(script, db)
+    _sync_qianchuan_high_conversion(script, db)
+    return ApiResponse(message="ok", data=_qianchuan_performance_payload(script, db))
+
+
+@router.post("/viral/{script_id}/performance/bind")
+def bind_viral_script_performance(script_id: int, payload: dict, db: Session = Depends(get_db)):
+    script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="爆款脚本不存在")
+    material_id = str((payload or {}).get("material_id") or "").strip()
+    if not material_id:
+        raise HTTPException(status_code=400, detail="请选择素材")
+    material = db.query(QianchuanMaterialPerformance).filter(
+        QianchuanMaterialPerformance.material_id == material_id
+    ).order_by(QianchuanMaterialPerformance.id.desc()).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="素材不存在")
+    binding = db.query(QianchuanScriptBinding).filter(
+        QianchuanScriptBinding.script_id == script.id,
+        QianchuanScriptBinding.material_id == material_id,
+    ).first()
+    if not binding:
+        binding = QianchuanScriptBinding(
+            script_id=script.id,
+            material_id=material.material_id,
+            material_name=material.material_name,
+        )
+        db.add(binding)
+        db.commit()
+        db.refresh(binding)
+    _sync_qianchuan_high_conversion(script, db)
+    payload = _qianchuan_performance_payload(script, db)
+    binding_payload = next((item for item in payload["bindings"] if item["id"] == binding.id), None)
+    return ApiResponse(message="已绑定素材表现", data={
+        "binding": binding_payload,
+        "summary": payload["summary"],
+        "is_high_conversion": bool(script.is_high_conversion),
+    })
+
+
+@router.delete("/viral/{script_id}/performance/bind/{binding_id}")
+def unbind_viral_script_performance(script_id: int, binding_id: int, db: Session = Depends(get_db)):
+    script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="爆款脚本不存在")
+    binding = db.query(QianchuanScriptBinding).filter(
+        QianchuanScriptBinding.id == binding_id,
+        QianchuanScriptBinding.script_id == script_id,
+    ).first()
+    if not binding:
+        raise HTTPException(status_code=404, detail="绑定不存在")
+    db.delete(binding)
+    db.commit()
+    return ApiResponse(message="已解绑素材表现", data=_qianchuan_performance_payload(script, db))
+
+
+@router.post("/viral/import-workbook")
+async def import_viral_workbook(file: UploadFile = File(...)):
+    """Import Facai Excel scripts and cake reference images into the viral script library."""
+    filename = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if not filename:
+        raise HTTPException(status_code=400, detail="请选择 Excel 文件")
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".xlsx", ".xls"}:
+        raise HTTPException(status_code=400, detail="仅支持 .xlsx/.xls Excel 文件")
+
+    with _workbook_import_lock:
+        if _workbook_import_state["is_running"]:
+            return ApiResponse(message="Excel 脚本导入正在运行", data=_workbook_import_snapshot())
+
+    content = await read_upload_bytes(file, max_bytes=SCRIPT_WORKBOOK_IMPORT_MAX_SIZE)
+    workbook_sha256 = hashlib.sha256(content).hexdigest()
+    WORKBOOK_IMPORT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    upload_path = WORKBOOK_IMPORT_UPLOAD_DIR / f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{workbook_sha256[:12]}{suffix}"
+    upload_path.write_bytes(content)
+
+    with _workbook_import_lock:
+        _workbook_import_state.update({
+            "is_running": True,
+            "filename": filename,
+            "total": 0,
+            "processed": 0,
+            "created": 0,
+            "updated": 0,
+            "skipped": 0,
+            "image_count": 0,
+            "index_error_count": 0,
+            "error_count": 0,
+            "errors": [],
+            "ids": [],
+            "started_at": datetime.now().replace(microsecond=0).isoformat(),
+            "finished_at": None,
+            "message": "Excel 脚本导入启动中",
+        })
+
+    thread = threading.Thread(
+        target=_run_workbook_import,
+        args=(str(upload_path), filename, workbook_sha256),
+        name="facai-script-workbook-import",
+        daemon=True,
+    )
+    thread.start()
+    return ApiResponse(message="Excel 脚本导入已启动", data=_workbook_import_snapshot())
+
+
+@router.get("/viral/import-workbook/status")
+def workbook_import_status():
+    """Return the latest Excel script workbook import status."""
+    return ApiResponse(message="ok", data=_workbook_import_snapshot())
+
+
+@router.get("/viral/{script_id}/cake-images/{image_name}")
+def get_viral_script_cake_image(script_id: int, image_name: str, db: Session = Depends(get_db)):
+    """Serve a cake reference image owned by a viral script."""
+    script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="爆款脚本不存在")
+    images = _existing_cake_images(script)
+    image_meta = next((item for item in images if isinstance(item, dict) and item.get("filename") == image_name), None)
+    if not image_meta:
+        raise HTTPException(status_code=404, detail="图片不存在")
+    relative_path = image_meta.get("relative_path")
+    if not relative_path:
+        raise HTTPException(status_code=404, detail="图片不存在")
+
+    base_dir = Path(VIRAL_SCRIPT_IMAGE_DIR).resolve()
+    target = (base_dir / relative_path).resolve()
+    if base_dir != target and base_dir not in target.parents:
+        raise HTTPException(status_code=404, detail="图片不存在")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="图片不存在")
+    media_type = image_meta.get("content_type") or mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    return FileResponse(str(target), media_type=media_type, filename=target.name)
+
+
 @router.get("/viral/{script_id}", response_model=ViralScriptOut)
 def get_viral_script(script_id: int, db: Session = Depends(get_db)):
     """获取爆款脚本详情"""
@@ -797,12 +1704,15 @@ def _sync_viral_index(viral, db: Session):
         from vector_store.script_store import ScriptVectorStore
         from vector_store import get_chroma_store
         if not get_chroma_store().is_available:
-            return
-        ScriptVectorStore().index_viral_script(viral)
-        viral.embedding_id = f"viral_{viral.id}"
+            return None
+        embedding_id = ScriptVectorStore().index_viral_script(viral)
+        if not embedding_id:
+            return False
+        viral.embedding_id = embedding_id
         db.commit()
+        return True
     except Exception:
-        pass
+        return False
 
 
 def _sync_reference_index(ref, db: Session):
@@ -810,12 +1720,15 @@ def _sync_reference_index(ref, db: Session):
         from vector_store.script_store import ScriptVectorStore
         from vector_store import get_chroma_store
         if not get_chroma_store().is_available:
-            return
-        ScriptVectorStore().index_reference_script(ref)
-        ref.embedding_id = f"ref_{ref.id}"
+            return None
+        embedding_id = ScriptVectorStore().index_reference_script(ref)
+        if not embedding_id:
+            return False
+        ref.embedding_id = embedding_id
         db.commit()
+        return True
     except Exception:
-        pass
+        return False
 
 
 def _delete_script_index(doc_id: str):

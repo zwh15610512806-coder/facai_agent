@@ -15,7 +15,7 @@ class SecurityHardeningTests(unittest.TestCase):
         old_token = os.environ.get("FACAI_ADMIN_TOKEN")
         os.environ["FACAI_ADMIN_TOKEN"] = "launch-secret"
         try:
-            client = TestClient(app)
+            client = TestClient(app, raise_server_exceptions=False)
 
             api_response = client.get("/api/products/categories")
             app_response = client.get("/app", follow_redirects=False)

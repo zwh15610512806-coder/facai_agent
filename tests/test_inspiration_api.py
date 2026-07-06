@@ -116,6 +116,11 @@ class InspirationApiTests(unittest.TestCase):
         self.inspiration.ai_service.client = None
         self.inspiration.ai_service._clients = {}
 
+    def _enable_test_ai(self):
+        os.environ["ARK_API_KEY"] = "ark-unit-test-secret"
+        os.environ["ARK_BASE_URL"] = "https://ark.example.test/api/v3"
+        self.inspiration.ai_service._clients = {}
+
     def test_chat_uses_interface_availability_when_only_ark_key_is_configured(self):
         original_env = {
             "ARK_API_KEY": os.environ.get("ARK_API_KEY"),
@@ -160,7 +165,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
     def test_chat_returns_ai_answer_when_service_responds(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         self.inspiration.ai_service.model = "deepseek-chat"
 
         async def fake_chat(messages, temperature=0.7, allow_fallback=False, model=None, thinking=False, return_reasoning=False, **kwargs):
@@ -193,7 +198,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["attachments_used"], [])
 
     def test_chat_thinking_mode_uses_interface_default_model_and_returns_reasoning(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         captured = {}
 
         async def fake_chat(messages, temperature=0.7, allow_fallback=False, model=None, thinking=False, reasoning_effort=None, return_reasoning=False, **kwargs):
@@ -237,7 +242,7 @@ class InspirationApiTests(unittest.TestCase):
             "一次性盒装配件",
             "适合低价促销组合。",
         )
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
 
         async def fail_if_called(*args, **kwargs):
             raise AssertionError("model status questions should not call AI")
@@ -262,7 +267,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertIn("不是 DeepSeek", data["answer"])
 
     def test_chat_returns_fallback_when_ai_call_times_out(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         self.inspiration.INSPIRATION_AI_TIMEOUT_SECONDS = 0.01
 
         async def slow_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
@@ -284,7 +289,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertIn("AI 响应超时", data["answer"])
 
     def test_thinking_mode_uses_longer_ai_timeout(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         self.inspiration.INSPIRATION_AI_TIMEOUT_SECONDS = 0.01
         self.inspiration.INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = 0.2
 
@@ -306,7 +311,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["tool_mode"], "thinking")
 
     def test_thinking_mode_passes_extended_request_timeout_to_ai_service(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         self.inspiration.INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = 240.0
         captured = {}
 
@@ -326,7 +331,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(captured["request_timeout"], 240.0)
 
     def test_research_mode_adds_web_sources_to_prompt(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         captured = {}
         original_search = getattr(self.inspiration, "search_web", None)
 
@@ -367,7 +372,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["sources"][0]["url"], "https://example.com/trend")
 
     def test_chat_auto_searches_web_for_online_public_info_request(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         captured = {}
         original_search = getattr(self.inspiration, "search_web", None)
 
@@ -408,7 +413,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["sources"][0]["url"], "https://example.com/facai-products")
 
     def test_chat_web_search_mode_always_searches_without_keyword_intent(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         captured = {}
         original_search = getattr(self.inspiration, "search_web", None)
 
@@ -448,7 +453,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["sources"][0]["url"], "https://example.com/bakery-campaign")
 
     def test_analysis_mode_uses_attachments_and_web_sources(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         captured = {}
         original_search = getattr(self.inspiration, "search_web", None)
 
@@ -749,7 +754,7 @@ class InspirationApiTests(unittest.TestCase):
             "适合蛋糕调色和翻糖上色",
             "少量即可上色，适合烘焙门店做调色备货。",
         )
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         captured = {}
         original_finder = self.inspiration.find_product_context_for_inspiration
 
@@ -784,7 +789,7 @@ class InspirationApiTests(unittest.TestCase):
             "适合蛋糕调色和翻糖上色",
             "少量即可上色，适合烘焙门店做调色备货。",
         )
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         original_finder = self.inspiration.find_product_context_for_inspiration
         calls = []
 
@@ -820,7 +825,7 @@ class InspirationApiTests(unittest.TestCase):
             "适合蛋糕调色和翻糖上色",
             "少量即可上色，适合烘焙门店做调色备货。",
         )
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         captured = {}
 
         async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
@@ -843,7 +848,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertIn("水性色素", captured["messages"][-1]["content"])
 
     def test_chat_product_context_mode_always_forces_product_context_lookup(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         captured = {}
         original_finder = self.inspiration.find_product_context_for_inspiration
 
@@ -904,7 +909,7 @@ class InspirationApiTests(unittest.TestCase):
             "果肉含量高，适合蛋糕夹心和奶油调味。",
             "开袋即用，适合活动款蛋糕做夹心卖点。",
         )
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
 
         async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
             return "已结合产品资料给出内容方向。"
@@ -969,7 +974,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(forced_data["products"][0]["product_id"], product.id)
 
     def test_chat_sends_only_recent_valid_history(self):
-        self.inspiration.ai_service.client = object()
+        self._enable_test_ai()
         captured = {}
 
         async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):

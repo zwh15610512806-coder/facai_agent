@@ -188,7 +188,7 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
 
     def test_deepseek_engine_is_displayed_as_generic_ai_generation(self):
         self.assertIn('<option value="deepseek">AI生成</option>', self.page)
-        self.assertIn("AI生成：使用已配置模型和 API Key", self.page)
+        self.assertIn("AI生成：结合产品资料、跑量逻辑，并在已选类型时参考同类型脚本结构创作", self.page)
         self.assertNotIn("DeepSeek AI", self.page)
 
     def test_redo_requests_a_distinct_ai_regeneration(self):

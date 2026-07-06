@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Product, SellingPoint, ViralScript
+from models import Product, ReferenceScript, SellingPoint, ViralScript
 from routers import scripts as scripts_router
 from schemas import ScriptGenerateRequest
 from services.script_generator import ScriptGenerator
@@ -70,6 +70,7 @@ class FakeTemplateLibraryGenerator:
 class FakeDeepSeekGenerator:
     def __init__(self):
         self.similar_called = False
+        self.type_structure_called = False
         self.high_only_called = False
         self.generate_called = False
         self.reference_scripts = None
@@ -84,11 +85,25 @@ class FakeDeepSeekGenerator:
         self.similar_called = True
         return [
             {
-                "title": "Should not be used",
-                "content": "模板库参考脚本",
+                "title": "Legacy similar search should not be used by AI generation",
+                "content": "旧相似脚本检索结果不应该进入 AI生成",
                 "video_type": video_type,
                 "category": product["category"],
                 "tags": "",
+                "performance": None,
+                "is_high_conversion": True,
+            }
+        ]
+
+    def find_type_structure_scripts(self, video_type, db, limit=3):
+        self.type_structure_called = True
+        return [
+            {
+                "title": "同类型机制脚本",
+                "content": "先用价格机制开头，再讲门店囤货痛点，最后引导左下角下单。",
+                "video_type": video_type,
+                "category": "烘焙配件",
+                "tags": "机制,囤货",
                 "performance": None,
                 "is_high_conversion": True,
             }
@@ -173,6 +188,7 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
 
         self.assertTrue(fake.generate_called)
         self.assertFalse(fake.similar_called)
+        self.assertFalse(fake.type_structure_called)
         self.assertFalse(fake.high_only_called)
         self.assertEqual(fake.reference_scripts, [])
         self.assertIsNone(fake.template)
@@ -219,21 +235,23 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
 
         self.assertTrue(fake.include_shot_design)
 
-    def test_explicit_deepseek_generation_does_not_fetch_or_pass_template_library_scripts(self):
+    def test_explicit_ai_generation_uses_same_type_script_structure_references(self):
         fake = FakeDeepSeekGenerator()
         scripts_router.generator = fake
         request = ScriptGenerateRequest(
             product_id=self.product.id,
             engine="deepseek",
-            video_type="需求类",
+            video_type="机制类",
         )
 
         response = asyncio.run(scripts_router.generate_script(request, db=self.db))
 
         self.assertTrue(fake.generate_called)
         self.assertFalse(fake.similar_called)
+        self.assertTrue(fake.type_structure_called)
         self.assertFalse(fake.high_only_called)
-        self.assertEqual(fake.reference_scripts, [])
+        self.assertEqual(fake.reference_scripts[0]["title"], "同类型机制脚本")
+        self.assertEqual(fake.video_type, "机制类")
         self.assertIsNone(fake.template)
         self.assertIn("profile_sections", fake.product)
         self.assertTrue(fake.product["profile_sections"])
@@ -285,6 +303,38 @@ class ScriptGeneratorHighConversionSearchTests(unittest.TestCase):
 
         self.assertEqual([script["title"] for script in scripts], ["高成交脚本A", "高成交脚本B"])
         self.assertTrue(all(script["is_high_conversion"] for script in scripts))
+
+    def test_type_structure_search_uses_only_exact_video_type_and_prioritizes_high_conversion(self):
+        self.db.add_all([
+            ViralScript(
+                category="烘焙调味",
+                video_type="机制类",
+                title="普通机制脚本",
+                script_content="普通机制脚本内容",
+                is_high_conversion=0,
+            ),
+            ReferenceScript(
+                video_type="机制类",
+                title="参考机制脚本",
+                script_content="参考库机制脚本内容",
+                is_high_conversion=1,
+            ),
+            ViralScript(
+                category="烘焙调味",
+                video_type="需求类",
+                title="高成交需求脚本",
+                script_content="需求类不应该出现",
+                is_high_conversion=1,
+            ),
+        ])
+        self.db.commit()
+
+        scripts = ScriptGenerator().find_type_structure_scripts("机制类", self.db, limit=3)
+
+        self.assertEqual(3, len(scripts))
+        self.assertTrue(all(script["video_type"] == "机制类" for script in scripts))
+        self.assertEqual(["高成交脚本A", "参考机制脚本", "普通机制脚本"], [script["title"] for script in scripts])
+        self.assertNotIn("高成交需求脚本", {script["title"] for script in scripts})
 
 
 if __name__ == "__main__":

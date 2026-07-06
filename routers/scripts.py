@@ -65,7 +65,8 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
 
     # 确定视频类型
     engine = request.engine or "template"
-    video_type = request.video_type
+    requested_video_type = (request.video_type or "").strip()
+    video_type = requested_video_type
     template = None
     auto_high_library = False
 
@@ -110,7 +111,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
     if engine != "template":
         product_context.update(build_product_detail_payload(product))
 
-    # 准备模板上下文；AI生成不使用脚本模板库内容
+    # 准备模板上下文；模板库改写才使用结构化模板
     template_context = None
     if template and engine == "template":
         template_context = {
@@ -122,7 +123,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             "example_script": template.example_script,
         }
 
-    # 只有模板库改写模式检索脚本库；AI生成只使用产品资料和跑量逻辑
+    # 模板库改写使用完整脚本改写；AI生成只在用户明确选择类型时参考同类型结构
     reference_scripts = []
     if engine == "template":
         ref_limit = 5
@@ -136,6 +137,12 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             )
         import random as _r
         _r.shuffle(reference_scripts)
+    elif requested_video_type:
+        reference_scripts = generator.find_type_structure_scripts(
+            video_type,
+            db,
+            limit=3,
+        )
 
     if auto_high_library and not reference_scripts:
         raise HTTPException(status_code=404, detail="暂无高成交模板库脚本，请先在模板库标记高成交脚本")
@@ -152,7 +159,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             include_shot_design=request.include_shot_design,
         )
     else:
-        # AI生成模式：全新创作，不注入模板库参考脚本
+        # AI生成模式：基于产品资料创作；明确选择类型时只参考同类型脚本结构
         try:
             script_content = await generator.generate(
                 product=product_context,

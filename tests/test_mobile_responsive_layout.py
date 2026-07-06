@@ -135,7 +135,9 @@ class PageSpecificMobileLayoutTests(unittest.TestCase):
         self.assertIn(".script-detail-modal", page)
         self.assertIn("width: 100%", page)
         self.assertIn(".script-preview-actions .btn", page)
-        self.assertIn(".modal-product-toolbar .btn", page)
+        self.assertIn(".modal-product-list.has-results", page)
+        self.assertIn("grid-template-columns:1fr", page)
+        self.assertNotIn(".modal-product-toolbar .btn", page)
 
     def test_search_page_mobile_filter_chips_scroll_horizontally(self):
         page = (ROOT / "templates" / "search.html").read_text(encoding="utf-8-sig")
