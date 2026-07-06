@@ -4,53 +4,28 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>生成脚本 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260706-import-fab">
 </head>
 <body>
 
 <nav class="nav">
 <div class="nav-inner">
+<div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+</div>
 <div class="nav-links">
 <a href="/app" class="nav-link">AI工作</a>
 <a href="/app/generate" class="nav-link on">生成脚本</a>
-<a href="/app/rewrite" class="nav-link">爆款脚本改写</a>
+<a href="/app/rewrite" class="nav-link">脚本改写</a>
 <a href="/app/products" class="nav-link">产品知识库</a>
-<a href="/app/import" class="nav-link">数据导入</a>
 <a href="/app/templates" class="nav-link">脚本模板库</a>
 <a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
-<a href="/app/ai-config" class="nav-link">AI配置</a>
 </div></div></nav>
+<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
+<a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
 
-<!-- ====== Hero Banner ====== -->
-<section class="hero">
-  <div class="hero-inner">
-    <p class="hero-copy">AI 创作引擎：以创意与数据成就带货艺术，为法采 57 款烘焙产品量身打造高转化短视频脚本。选产品 &rarr; 定类型 &rarr; 即时生成。</p>
-  </div>
-</section>
 <style>
-.hero {
-  background: #faf8f5;
-  border-bottom: 1px solid var(--border);
-}
-.hero-inner {
-  max-width: 1280px; margin: 0 auto; padding: 14px 40px;
-}
-.hero-copy {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.7;
-  color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-@media (max-width: 900px) {
-  .hero-inner { padding: 12px 16px; }
-  .hero-copy { white-space: normal; font-size: 13px; }
-}
 .generate-main{max-width:1540px}
 .generate-result-hd{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;margin-bottom:16px}
 .generate-result-back{justify-self:end}
@@ -91,7 +66,7 @@
 <div class="product-picker-layout">
 <!-- 左侧品类栏 -->
 <div id="categorySidebar" class="category-sidebar">
-<div id="categoryAll" class="cat-item cat-on" onclick="selectCategory('')">全部品类</div>
+<div id="categoryAll" class="cat-item cat-on" data-cat="" onclick="selectCategory('')"><span class="cat-label">全部品类</span><span class="cat-count">0</span></div>
 </div>
 <!-- 右侧产品卡片 -->
 <div style="flex:1;min-width:0">
@@ -146,6 +121,10 @@
   z-index: 8;
 }
 .cat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 8px 14px;
   border-radius: var(--r-sm);
   font-size: 14px;
@@ -157,6 +136,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.cat-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cat-count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-darker);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}
 .cat-item:hover {
   background: var(--facai-ghost);
   color: var(--accent);
@@ -165,6 +162,10 @@
   background: var(--facai);
   color: #fff;
   font-weight: 600;
+}
+.cat-item.cat-on .cat-count {
+  background: rgba(255,255,255,.22);
+  color: #fff;
 }
 .cat-item.cat-on:hover {
   background: var(--facai-hover);
@@ -349,7 +350,7 @@
   #searchInput { width: 100% !important; }
   .category-sidebar { position: static; flex: 0 0 auto; width: 100%; max-height: none; overflow-x: auto; overflow-y: hidden; padding: 2px 0 8px; display: flex; flex-direction: row; gap: 8px; -webkit-overflow-scrolling: touch; }
   .category-sidebar::-webkit-scrollbar { display: none; }
-  .category-sidebar .cat-item { flex: 0 0 auto; max-width: 44vw; padding: 8px 12px; }
+  .category-sidebar .cat-item { flex: 0 0 auto; max-width: 48vw; padding: 8px 12px; }
   .product-picker-layout { flex-direction: column; align-items: stretch; gap: 12px; }
   #productGrid { grid-template-columns: 1fr; }
   #btnToStep2 { width: 100%; }
@@ -407,7 +408,7 @@
 <input id="customVideoTypeInput" type="text" class="input" maxlength="20" placeholder="输入自定义视频类型">
 <button id="btnAddCustomType" class="btn btn-soft btn-sm" type="button">添加类型</button>
 </div>
-<p style="font-size:12px;color:var(--text-3);margin:8px 0 18px">不选类型时自动用高成交模板库生成。</p>
+<p style="font-size:12px;color:var(--text-3);margin:8px 0 18px">AI生成未选类型会由 AI 自动推断；模板库改写未选类型会自动用高成交模板库。</p>
 
 <div style="margin-bottom:22px">
 <label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">引擎</label>
@@ -542,7 +543,7 @@ const VIDEO_TYPES=[
 ];
 const CUSTOM_VIDEO_TYPES_KEY='facai_custom_video_types';
 const DELETED_VIDEO_TYPES_KEY='facai_deleted_video_types';
-let state={products:[],categories:[],selectedProduct:null,selectedType:"",step:1,generating:false};
+let state={products:[],categories:[],categoryCounts:{},totalProductCount:0,selectedProduct:null,selectedType:"",step:1,generating:false};
 let currentScript='',currentScriptId=null;
 let currentSeedancePrompts=[];
 let customVideoTypes=loadCustomVideoTypes();
@@ -610,10 +611,30 @@ function showTip(e,summary){
 }
 function hideTip(){document.getElementById('tooltip').style.display='none';}
 
+function productCategory(p){return p&&p.category?p.category:'未分类';}
+function categoryProductCount(category){return category?state.categoryCounts[category]||0:state.totalProductCount||0;}
+function categoryItemHtml(label,category){return '<span class="cat-label">'+esc(label)+'</span><span class="cat-count">'+categoryProductCount(category)+'</span>';}
+function updateCategoryCountBadges(){
+ const all=document.getElementById('categoryAll');
+ if(all)all.innerHTML=categoryItemHtml('全部品类','');
+ document.querySelectorAll('#categorySidebar .cat-item[data-cat]').forEach(function(el){
+  if(el.id==='categoryAll')return;
+  const category=el.dataset.cat||'';
+  el.innerHTML=categoryItemHtml(category||'未分类',category);
+ });
+}
+function updateCategoryCountsFromProducts(products){
+ const counts={};
+ (products||[]).forEach(function(p){const category=productCategory(p);counts[category]=(counts[category]||0)+1;});
+ state.categoryCounts=counts;
+ state.totalProductCount=(products||[]).length;
+ updateCategoryCountBadges();
+}
+
 async function loadProducts(){
  const s=document.getElementById('searchInput').value;
  let u='/api/products/?';if(currentCategory)u+='category='+encodeURIComponent(currentCategory)+'&';if(s)u+='search='+encodeURIComponent(s)+'&';
- try{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);state.products=await r.json();renderProducts();}
+ try{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);state.products=await r.json();if(!currentCategory&&!s)updateCategoryCountsFromProducts(state.products);renderProducts();}
  catch(e){document.getElementById('productGrid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)"><i data-lucide="wifi-off" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4"></i><div style="font-weight:600;margin-bottom:4px">服务器未启动</div><div style="font-size:14px">请双击 run.bat 启动服务，然后刷新页面</div></div>';if(window.lucide)lucide.createIcons();}
 }
 let currentCategory='';
@@ -632,7 +653,8 @@ function selectCategory(cat){
 async function loadCategories(){
  try{const r=await fetch('/api/products/categories');state.categories=await r.json();
   const sb=document.getElementById('categorySidebar');
-  state.categories.forEach(function(c){const d=document.createElement('div');d.className='cat-item';d.dataset.cat=c;d.textContent=c;d.onclick=function(){selectCategory(c);};sb.appendChild(d);});
+  state.categories.forEach(function(c){const d=document.createElement('div');d.className='cat-item';d.dataset.cat=c;d.innerHTML=categoryItemHtml(c,c);d.onclick=function(){selectCategory(c);};sb.appendChild(d);});
+  updateCategoryCountBadges();
  }catch(e){}
 }
 
@@ -714,7 +736,7 @@ async function doGenerate(extra){
  document.getElementById('btnGenerateSeedance').disabled=true;
  try{
   const selectedType=state.selectedType||'';
-  const engine=selectedType?document.getElementById('aiEngine').value:'template';
+  const engine=document.getElementById('aiEngine').value;
   const body={product_id:state.selectedProduct.id,engine:engine,include_shot_design:document.getElementById('includeShotDesign').checked};
   if(selectedType)saveCustomVideoType(selectedType);
   if(selectedType)body.video_type=selectedType;

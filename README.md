@@ -10,7 +10,7 @@
 - 模板库：管理法采高成交脚本和其他参考脚本。
 - 产品资料同步：从本地产品资料、2026 产品知识库、价格表中导入产品和 SKU 售价。
 - 关键词搜索：产品搜索按产品名称精确匹配，避免无关产品混入。
-- 向量检索：使用 ChromaDB 为产品和脚本提供语义检索能力，异常时回退到关键词检索。
+- 向量检索：使用 ChromaDB + 火山方舟 embedding 为产品和脚本提供语义检索；显式语义检索/重建失败时返回清晰错误，脚本生成等后台参考检索可继续降级到关键词逻辑。
 - 本机服务守护：提供 Windows 登录自启和看门狗脚本，服务异常时自动重启。
 
 ## 技术栈
@@ -57,9 +57,26 @@ pip install -r requirements.txt
 DEEPSEEK_API_KEY=你的 DeepSeek Key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
+ARK_API_KEY=你的火山方舟 API Key
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+ARK_MODEL=ep-20260703160153-h5cx5
+EMBEDDING_PROVIDER=volcengine_ark
+EMBEDDING_MODEL_NAME=ark-4e8d208b-a896-43b4-9b77-eda0ceac0370-0a2ef
+# 可选：需要单独隔离向量凭据时再配置；默认复用 ARK_API_KEY/ARK_BASE_URL 或 DOUBAO_API_KEY/DOUBAO_BASE_URL
+# EMBEDDING_API_KEY=你的火山方舟 Embedding API Key
+# EMBEDDING_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 DATABASE_URL=sqlite:///./data/script_agent.db
 CHROMA_PERSIST_DIR=./data/chroma_db
 ```
+
+更换 embedding 模型或从旧索引迁移后，需要显式重建产品和脚本 Chroma collection，避免旧向量与新向量混用：
+
+```bash
+curl -X POST http://localhost:8001/api/products/reindex
+curl -X POST http://localhost:8001/api/templates/reindex
+```
+
+如果重建失败，请优先检查 `ARK_API_KEY`、`ARK_BASE_URL`、`EMBEDDING_MODEL_NAME` 和火山方舟 endpoint 权限。`EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL` 只在需要为向量服务单独配置凭据时使用。
 
 局域网上线前必须设置管理员口令；设置后 `/app/*` 和 `/api/*` 会要求登录或携带 `Authorization: Bearer <口令>`：
 

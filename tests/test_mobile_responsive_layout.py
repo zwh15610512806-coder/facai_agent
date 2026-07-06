@@ -17,6 +17,8 @@ class SharedMobileResponsiveCssTests(unittest.TestCase):
         body = mobile.group("body")
         self.assertIn(".nav-inner", body)
         self.assertIn("flex-direction: column", body)
+        self.assertIn(".nav-brand-group", body)
+        self.assertIn("justify-content: flex-start", body)
         self.assertIn(".nav-links", body)
         self.assertIn("overflow-x: auto", body)
         self.assertIn("scroll-padding-inline", body)
@@ -33,6 +35,7 @@ class SharedMobileResponsiveCssTests(unittest.TestCase):
 
         self.assertIsNotNone(mobile)
         body = mobile.group("body")
+        self.assertIn(".nav-brand-group", body)
         self.assertIn(".nav-brand span:last-child", body)
         self.assertIn("text-overflow: ellipsis", body)
         self.assertIn("img, video, iframe", body)
@@ -53,6 +56,25 @@ class SharedMobileResponsiveCssTests(unittest.TestCase):
         self.assertIn("position: fixed", body)
         self.assertIn("bottom: 32px", body)
         self.assertIn("right: 32px", body)
+
+    def test_bottom_right_fabs_are_fixed_and_mobile_safe(self):
+        fab = re.search(r"\.ai-config-fab,\s*\n\.data-import-fab\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S)
+        mobile = re.search(r"@media \(max-width: 768px\)\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S)
+
+        self.assertIsNotNone(fab)
+        self.assertIsNotNone(mobile)
+        fab_body = fab.group("body")
+        mobile_body = mobile.group("body")
+        self.assertIn("position: fixed", fab_body)
+        self.assertIn("right: 28px", fab_body)
+        self.assertIn("z-index: 90", fab_body)
+        self.assertIn(".ai-config-fab { bottom: 28px; }", self.css)
+        self.assertIn(".data-import-fab { bottom: 88px; }", self.css)
+        self.assertIn(".ai-config-fab", mobile_body)
+        self.assertIn(".data-import-fab", mobile_body)
+        self.assertIn("bottom: max(72px", mobile_body)
+        self.assertIn("bottom: max(126px", mobile_body)
+        self.assertIn("env(safe-area-inset-bottom)", mobile_body)
 
 
 class GeneratePageMobileLayoutTests(unittest.TestCase):

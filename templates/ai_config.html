@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>AI配置 - 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260706-import-fab">
 <script src="/static/vendor/lucide.min.js"></script>
 <script src="/static/js/common.js?v=20260618"></script>
 <style>
@@ -61,10 +61,13 @@ body{background:var(--bg)}
 <body>
 <nav class="nav">
 <div class="nav-inner">
+<div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+</div>
 <div class="nav-links">
-<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/import" class="nav-link">数据导入</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a><a href="/app/ai-config" class="nav-link on active">AI配置</a>
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
+<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 <main class="page-main ai-config-main">
   <div class="ai-config-head">
     <div>
@@ -86,7 +89,7 @@ body{background:var(--bg)}
             <label for="providerSelect">模型供应商</label>
             <select id="providerSelect" class="input" onchange="onProviderChange()"></select>
           </div>
-          <div class="field">
+          <div id="modelSelectField" class="field">
             <label for="modelSelect">模型</label>
             <select id="modelSelect" class="input" onchange="onModelSelectChange()"></select>
           </div>
@@ -95,9 +98,9 @@ body{background:var(--bg)}
             <input id="customModelInput" class="input" type="text" placeholder="例如 qwen-plus、glm-5.2、MiniMax-M3 或火山方舟 Endpoint ID">
           </div>
           <div class="field">
-            <label for="baseUrlInput">Base URL</label>
+            <label id="baseUrlLabel" for="baseUrlInput">Base URL</label>
             <input id="baseUrlInput" class="input" type="url" placeholder="留空使用供应商默认或 .env 配置">
-            <div class="field-help">上线后用户可填自己的 OpenAI-compatible Base URL。</div>
+            <div id="baseUrlHelp" class="field-help">上线后用户可填自己的 OpenAI-compatible Base URL。</div>
           </div>
           <div class="field">
             <label for="apiKeyInput">API Key</label>
@@ -114,6 +117,7 @@ body{background:var(--bg)}
           </div>
         </div>
         <div class="status-row">
+          <div class="status-line"><span>调用模型</span><span id="callModelStatus" class="status-value"></span></div>
           <div class="status-line"><span>API Key 状态</span><span id="apiKeyStatus" class="status-value"></span></div>
           <div class="status-line"><span>默认环境变量</span><span id="apiKeyEnvNames" class="status-value"></span></div>
           <div class="status-line"><span>实际 Base URL</span><span id="baseUrlStatus" class="status-value"></span></div>
@@ -163,6 +167,9 @@ function renderIcons(){if(window.lucide)window.lucide.createIcons();}
 function fmtNumber(value){return Number(value||0).toLocaleString('zh-CN');}
 function fmtTime(value){if(!value)return '-';const d=new Date(value);return Number.isNaN(d.getTime())?value:d.toLocaleString('zh-CN',{hour12:false});}
 function selectedInterface(){return interfaces.find(function(item){return item.interface_key===selectedInterfaceKey;})||interfaces[0]||null;}
+function modelForDisplay(item){return item.display_model||item.latest_model||item.model||'';}
+function isDoubaoProvider(){return document.getElementById('providerSelect').value==='doubao';}
+function volcengineEndpointForDisplay(model){const value=(model||'').trim();return value.indexOf('ep-')===0?value:'';}
 
 async function fetchJson(url,options){
  const response=await fetch(url,options);
@@ -221,7 +228,7 @@ function renderInterfaceList(){
  list.innerHTML=interfaces.map(function(item){
   const active=item.interface_key===selectedInterfaceKey?' is-active':'';
   const status=item.latest_status?item.latest_status:'未调用';
-  return '<button class="interface-item'+active+'" type="button" onclick="selectInterface(\''+escHtml(item.interface_key)+'\')"><span class="interface-name"><span>'+escHtml(item.label)+'</span><span class="interface-pill">'+escHtml(item.group)+'</span></span><span class="interface-desc">'+escHtml(item.description||'')+'</span><span class="interface-meta"><span class="interface-pill">'+escHtml(item.provider_label||item.provider)+'</span><span class="interface-pill">'+escHtml(item.model)+'</span><span class="interface-pill">'+escHtml(status)+'</span></span></button>';
+  return '<button class="interface-item'+active+'" type="button" onclick="selectInterface(\''+escHtml(item.interface_key)+'\')"><span class="interface-name"><span>'+escHtml(item.label)+'</span><span class="interface-pill">'+escHtml(item.group)+'</span></span><span class="interface-desc">'+escHtml(item.description||'')+'</span><span class="interface-meta"><span class="interface-pill">'+escHtml(item.provider_label||item.provider)+'</span><span class="interface-pill">'+escHtml(modelForDisplay(item))+'</span><span class="interface-pill">'+escHtml(status)+'</span></span></button>';
  }).join('');
 }
 
@@ -241,16 +248,18 @@ function renderCurrentInterface(){
  providerSelect.innerHTML=providers.map(function(provider){return '<option value="'+escHtml(provider.key)+'">'+escHtml(provider.label)+'</option>';}).join('');
  providerSelect.value=item.provider;
  document.getElementById('maxTokensInput').value=item.max_tokens||2400;
- document.getElementById('baseUrlInput').value=item.custom_base_url||'';
+ document.getElementById('baseUrlInput').value=isDoubaoProvider()?volcengineEndpointForDisplay(item.model):(item.custom_base_url||'');
  document.getElementById('apiKeyInput').value='';
  clearApiKeyOnSave=false;
  document.getElementById('implementedState').textContent=item.implemented?'已接入真实调用':'配置占位，当前不直接调用大模型';
+ document.getElementById('callModelStatus').textContent=modelForDisplay(item)||'-';
  renderModelOptions(item.model);
  renderProviderDetail();
  renderInterfaceMetrics(item);
 }
 
 function renderModelOptions(currentModel){
+ document.getElementById('modelSelectField').style.display='grid';
  const provider=providerByKey[document.getElementById('providerSelect').value]||{};
  const models=(provider.preset_models||[]).filter(Boolean);
  const seen={};
@@ -278,7 +287,10 @@ function renderProviderDetail(){
  apiKey.className='status-value '+(configured?'status-ok':'status-missing');
  document.getElementById('apiKeyEnvNames').textContent=(provider.api_key_env_names||[]).join(' / ')||'-';
  document.getElementById('baseUrlStatus').textContent=(usingSavedProvider?item.base_url:provider.base_url)||'未配置';
- document.getElementById('baseUrlInput').placeholder=provider.base_url?'留空使用 '+provider.base_url:'留空使用供应商默认或 .env 配置';
+ document.getElementById('baseUrlInput').type=isDoubaoProvider()?'text':'url';
+ document.getElementById('baseUrlLabel').textContent=isDoubaoProvider()?'接入点 ID':'Base URL';
+ document.getElementById('baseUrlHelp').textContent=isDoubaoProvider()?'填写火山方舟接入点 ID（ep-...）；留空则使用上方模型服务。实际 Base URL 仍使用 ARK_BASE_URL / DOUBAO_BASE_URL 或默认配置。':'上线后用户可填自己的 OpenAI-compatible Base URL。';
+ document.getElementById('baseUrlInput').placeholder=isDoubaoProvider()?'例如 ep-20260703160153-h5cx5':provider.base_url?'留空使用 '+provider.base_url:'留空使用供应商默认或 .env 配置';
  document.getElementById('apiKeyHint').textContent=source==='interface'?'已保存接口级密钥；输入新密钥可替换，或点击清除密钥。':'未保存接口级密钥；留空时使用默认环境变量。';
  document.getElementById('clearApiKeyBtn').disabled=source!=='interface';
 }
@@ -298,6 +310,7 @@ function onProviderChange(){
 function onModelSelectChange(){
  const isCustom=document.getElementById('modelSelect').value==='__custom__';
  document.getElementById('customModelField').style.display=isCustom?'grid':'none';
+ if(isDoubaoProvider()&&!isCustom)document.getElementById('baseUrlInput').value=volcengineEndpointForDisplay(document.getElementById('modelSelect').value);
  if(isCustom)document.getElementById('customModelInput').focus();
 }
 
@@ -320,9 +333,9 @@ async function saveCurrentConfig(){
  if(!item)return;
  const payload={
   provider:document.getElementById('providerSelect').value,
-  model:currentModelValue(),
+  model:isDoubaoProvider()?(document.getElementById('baseUrlInput').value.trim()||currentModelValue()):currentModelValue(),
   max_tokens:Number(document.getElementById('maxTokensInput').value)||0,
-  base_url:document.getElementById('baseUrlInput').value.trim()
+  base_url:isDoubaoProvider()?'':document.getElementById('baseUrlInput').value.trim()
  };
  const apiKey=document.getElementById('apiKeyInput').value.trim();
  if(apiKey)payload.api_key=apiKey;

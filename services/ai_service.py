@@ -346,6 +346,15 @@ class AIService:
     def is_available(self) -> bool:
         return self._get_provider_client("deepseek") is not None
 
+    def is_interface_available(self, interface_key: str = "default", db=None) -> bool:
+        provider_key, _, _, api_key_override, base_url_override = self._resolve_chat_config(
+            interface_key,
+            None,
+            None,
+            db,
+        )
+        return self._get_provider_client(provider_key, api_key_override, base_url_override) is not None
+
     def _client_cache_key(self, provider_key: str, api_key: str, base_url: str) -> str:
         digest = hashlib.sha256(f"{api_key}|{base_url}".encode("utf-8")).hexdigest()[:16]
         return f"{provider_key}:{digest}"
@@ -508,6 +517,7 @@ class AIService:
         thinking: bool = False,
         reasoning_effort: str = "high",
         return_reasoning: bool = False,
+        request_timeout: Optional[float] = None,
     ):
         start_time = time.perf_counter()
         provider_key, selected_model, selected_max_tokens, api_key_override, base_url_override = self._resolve_chat_config(
@@ -544,16 +554,20 @@ class AIService:
                 "messages": messages,
                 "max_tokens": selected_max_tokens,
             }
+            if request_timeout is not None:
+                payload["timeout"] = max(1.0, float(request_timeout))
             if thinking:
                 if provider_key == "deepseek":
                     payload["reasoning_effort"] = reasoning_effort
+                    payload["extra_body"] = {"thinking": {"type": "enabled"}}
+                elif provider_key == "doubao":
                     payload["extra_body"] = {"thinking": {"type": "enabled"}}
                 else:
                     payload["temperature"] = temperature
             else:
                 payload["temperature"] = temperature
                 payload["top_p"] = 0.9
-                if provider_key == "deepseek":
+                if provider_key in {"deepseek", "doubao"}:
                     payload["extra_body"] = {"thinking": {"type": "disabled"}}
             response = await asyncio.to_thread(client.chat.completions.create, **payload)
             message = response.choices[0].message

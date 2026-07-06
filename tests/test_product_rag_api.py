@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -112,6 +113,32 @@ class ProductRagApiTests(unittest.TestCase):
         self.assertTrue(context["used"])
         self.assertIn("翻糖压片", context["context"])
         self.assertEqual(context["products"][0]["name"], "翻糖压片")
+
+    def test_product_context_helper_force_keeps_retrieved_general_query_products(self):
+        product = self._add_product(
+            "奶冻粉",
+            "烘焙夹心",
+            12.71,
+            "适合奶冻蛋糕夹心和活动款甜品。",
+            "口感稳定，适合门店做奶冻夹心内容。",
+        )
+
+        with patch.object(product_rag, "_candidate_products", return_value=[product]):
+            normal_context = product_rag.find_product_context_for_inspiration(
+                query="今天拍什么",
+                db=self.db,
+                limit=6,
+            )
+            forced_context = product_rag.find_product_context_for_inspiration(
+                query="今天拍什么",
+                db=self.db,
+                limit=6,
+                force=True,
+            )
+
+        self.assertFalse(normal_context["used"])
+        self.assertTrue(forced_context["used"])
+        self.assertEqual(forced_context["products"][0]["name"], "奶冻粉")
 
     def test_product_query_policy_identifies_known_product_selection_intents(self):
         filling_policy = product_rag._product_query_policy("有哪些适合蛋糕夹心的产品？")

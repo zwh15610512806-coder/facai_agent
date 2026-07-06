@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>数据导入 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260706-import-fab">
 <script src="/static/vendor/lucide.min.js"></script>
 <style>
 .import-main{max-width:1680px}
@@ -13,6 +13,8 @@
 .result-detail-list{margin-top:10px;display:grid;gap:6px;color:var(--text-2)}
 .result-detail-list h4{margin:0;font-size:12px;color:var(--text-3)}
 .result-detail-list ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.product-import-actions,.txt-script-actions{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.product-import-actions .btn,.txt-script-actions .btn{flex:1}
 @media (max-width: 768px) {
   main.page-main > div, .import-workspace { grid-template-columns: 1fr !important; gap: 14px !important; }
   main.page-main > div .card:nth-child(2) > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
@@ -24,12 +26,14 @@
 
 <nav class="nav">
 <div class="nav-inner">
+<div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+</div>
 <div class="nav-links">
-<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/import" class="nav-link on">数据导入</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
-<a href="/app/ai-config" class="nav-link">AI配置</a>
 </div></div></nav>
+<a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
 
 <main class="page-main import-main">
 <header class="page-hd"><h1>数据导入</h1><p>CSV/Excel 批量导入产品数据，或直接粘贴脚本</p></header>
@@ -45,6 +49,9 @@
 <p style="font-size:13px;color:var(--text-3);margin-top:6px">支持 .csv / .xlsx / .md / .markdown，Markdown 可多选并自动新增或更新产品</p>
 <input type="file" id="productFile" style="position:absolute;width:1px;height:1px;opacity:0" accept=".csv,.xlsx,.xls,.md,.markdown" multiple>
 </div>
+<div class="product-import-actions">
+<button type="button" id="btnScanLocalProducts" class="btn btn-soft" onclick="scanLocalProducts()"><i data-lucide="folder-search"></i>扫描本地产品资料</button>
+</div>
 <div id="productProgress" style="text-align:center;font-size:13px;color:var(--facai);display:none;margin-bottom:12px"></div>
 <div id="productResult"></div>
 </div>
@@ -58,7 +65,11 @@
 <p style="font-size:13px;color:var(--text-3);margin-top:6px">可多选 .txt 文件，文件名会作为脚本标题</p>
 <input type="file" id="txtScriptFiles" style="position:absolute;width:1px;height:1px;opacity:0" accept=".txt,text/plain" multiple>
 </div>
+<div class="txt-script-actions">
+<button type="button" id="btnScanLocalTxtScripts" class="btn btn-soft" onclick="scanLocalTxtScripts()"><i data-lucide="folder-search"></i>扫码本地脚本</button>
+</div>
 <div id="txtScriptProgress" style="text-align:center;font-size:13px;color:var(--facai);display:none;margin-bottom:12px"></div>
+<div id="txtScriptResult"></div>
 </div>
 
 <div class="card" id="singleScriptPanel">
@@ -83,6 +94,10 @@
 <script>
 function toast(msg,type){var e=document.createElement('div');e.className='toast toast-'+(type==='success'?'ok':'err');e.textContent=(type==='success'?'OK ':'!! ')+msg;document.body.appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(function(){e.remove()},300)},2000);}
 var escHtml=FacaiUI.escHtml;
+var localProductScanTimer=null;
+var localProductScanFailures=0;
+var localTxtScanTimer=null;
+var localTxtScanFailures=0;
 
 function renderResultList(key,title,items,formatter){
  if(!items||!items.length)return '';
@@ -120,9 +135,18 @@ async function uploadProductFiles(files){var list=Array.prototype.slice.call(fil
 async function uploadProductFile(file){if(isMarkdownProductFile(file))return uploadMarkdownProductFiles([file]);var p=document.getElementById('productProgress');p.style.display='';p.textContent='导入中&hellip;';var fd=new FormData();fd.append('file',file);var name=file.name.toLowerCase();var url=(name.endsWith('.xlsx')||name.endsWith('.xls'))?'/api/import/excel':'/api/import/csv';try{var r=await fetch(url,{method:'POST',body:fd});var d=await r.json();if(r.ok){toast('导入成功','success');renderProductImportResult(d,'table');}else{var msg=d.detail||d.message||'导入失败';toast(msg,'error');renderProductImportResult({total:0,success:0,skipped:0,errors:[msg]},'table');}}catch(e){toast('失败','error');renderProductImportResult({total:0,success:0,skipped:0,errors:[e.message||'网络错误']},'table');}p.style.display='none';}
 async function uploadMarkdownProductFiles(files){var p=document.getElementById('productProgress');p.style.display='';p.textContent='同步 Markdown 产品中&hellip;';var fd=new FormData();files.forEach(function(file){fd.append('files',file);});try{var r=await fetch('/api/import/markdown',{method:'POST',body:fd});var d=await r.json();if(r.ok){toast('同步完成','success');renderProductImportResult(d,'markdown');document.getElementById('productFile').value='';}else{var msg=d.detail||d.message||'同步失败';toast(msg,'error');renderProductImportResult({total:files.length,created:0,updated:0,skipped:0,errors:[msg]},'markdown');}}catch(e){toast('失败','error');renderProductImportResult({total:files.length,created:0,updated:0,skipped:0,errors:[e.message||'网络错误']},'markdown');}p.style.display='none';}
 
-function showScriptImportResult(msg,type){var box=document.createElement('div');box.style.padding='12px 16px';box.style.background=type==='error'?'var(--danger-soft)':'var(--facai-soft)';box.style.borderRadius='var(--r)';box.style.fontSize='13px';box.style.color=type==='error'?'var(--danger)':'var(--accent)';box.textContent=msg;var target=document.getElementById('scriptResult');target.innerHTML='';target.appendChild(box);}
+function renderLocalProductScanState(d,type){d=d||{};var running=!!d.is_running;var summary='总计 '+(d.total||0)+'，已处理 '+(d.processed||0)+'，新增 '+(d.created||0)+'，更新 '+(d.updated||0)+'，附件 '+(d.attached||0)+'，跳过 '+(d.skipped||0)+'，不支持 '+(d.unsupported||0)+'，错误 '+(d.error_count||0);var html='<div class="result-card'+(type==='error'||(d.error_count||0)>0?' error':'')+'"><strong>'+escHtml(summary)+'</strong>';if(d.message)html+='<div style="margin-top:6px;color:inherit">'+escHtml(d.message)+'</div>';html+=renderResultList('errors','错误明细',d.errors||[]);html+='</div>';document.getElementById('productResult').innerHTML=html;var btn=document.getElementById('btnScanLocalProducts');if(btn){btn.disabled=running;btn.innerHTML=(running?'<i data-lucide="loader"></i>扫描中':'<i data-lucide="folder-search"></i>扫描本地产品资料');if(window.lucide)lucide.createIcons();}var p=document.getElementById('productProgress');p.style.display=running?'':'none';p.textContent=running?'扫描中，正在同步产品资料...':'';}
+async function pollLocalProductScanStatus(){try{var r=await fetch('/api/import/scan-local-products/status',{headers:{'Accept':'application/json'}});var d=await readJsonResponse(r);localProductScanFailures=0;var data=d.data||{};renderLocalProductScanState(data,(data.error_count||0)>0?'error':'success');if(!data.is_running&&localProductScanTimer){clearInterval(localProductScanTimer);localProductScanTimer=null;toast('本地产品资料扫描完成','success');}}catch(e){localProductScanFailures+=1;renderProductImportResult({total:0,success:0,skipped:0,errors:['服务连接不稳定，稍后自动重试（'+localProductScanFailures+'/5）：'+e.message]},'table');if(localProductScanFailures<5)return;if(localProductScanTimer){clearInterval(localProductScanTimer);localProductScanTimer=null;}var btn=document.getElementById('btnScanLocalProducts');if(btn)btn.disabled=false;document.getElementById('productProgress').style.display='none';}}
+async function scanLocalProducts(){var btn=document.getElementById('btnScanLocalProducts');if(btn)btn.disabled=true;var p=document.getElementById('productProgress');p.style.display='';p.textContent='扫描启动中...';localProductScanFailures=0;try{var r=await fetch('/api/import/scan-local-products',{method:'POST',headers:{'Accept':'application/json'}});var d=await readJsonResponse(r);if(r.ok){renderLocalProductScanState(d.data||{},'success');toast(d.message||'扫描已启动','success');if(localProductScanTimer)clearInterval(localProductScanTimer);localProductScanTimer=setInterval(pollLocalProductScanStatus,2000);pollLocalProductScanStatus();}else{if(btn)btn.disabled=false;p.style.display='none';renderProductImportResult({total:0,success:0,skipped:0,errors:[d.detail||'扫描启动失败']},'table');toast('失败','error');}}catch(e){if(btn)btn.disabled=false;p.style.display='none';renderProductImportResult({total:0,success:0,skipped:0,errors:['扫描启动失败：'+e.message]},'table');toast('失败','error');}}
+
+function showScriptImportResult(msg,type){var box=document.createElement('div');box.style.padding='12px 16px';box.style.background=type==='error'?'var(--danger-soft)':'var(--facai-soft)';box.style.borderRadius='var(--r)';box.style.fontSize='13px';box.style.color=type==='error'?'var(--danger)':'var(--accent)';box.textContent=msg;var target=document.getElementById('txtScriptResult');target.innerHTML='';target.appendChild(box);}
 
 async function uploadTxtScriptFiles(files){var list=Array.prototype.slice.call(files||[]);if(!list.length)return;var p=document.getElementById('txtScriptProgress');p.style.display='';p.textContent='导入中&hellip;';var fd=new FormData();list.forEach(function(file){fd.append('files',file);});fd.append('category',document.getElementById('scriptCategory').value);fd.append('video_type','');fd.append('tags','本地txt');fd.append('product_name','');try{var r=await fetch('/api/templates/viral/upload-txt-batch',{method:'POST',body:fd});var d=await r.json();if(r.ok){var data=d.data||{};var msg='总计 '+(data.total||list.length)+'，成功 '+(data.success||0)+'，跳过 '+(data.skipped||0);if(data.errors&&data.errors.length)msg+='，错误 '+data.errors.length;toast(d.message||'导入成功','success');showScriptImportResult(msg,'success');document.getElementById('txtScriptFiles').value='';}else{toast('失败','error');showScriptImportResult((d.detail||'导入失败'),'error');}}catch(e){toast('失败','error');showScriptImportResult('导入失败：'+e.message,'error');}p.style.display='none';}
+
+async function readJsonResponse(response){var text=await response.text();var contentType=(response.headers.get('content-type')||'').toLowerCase();if(contentType.indexOf('application/json')>=0){return JSON.parse(text||'{}');}var cleaned=(text||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();throw new Error(response.ok?'服务返回了页面内容，请稍后重试':'HTTP '+response.status+'：'+(cleaned||'服务暂时不可用').substring(0,90));}
+function renderLocalTxtScanState(d,type){d=d||{};var running=!!d.is_running;var summary='总计 '+(d.total||0)+'，已处理 '+(d.processed||0)+'，新增 '+(d.success||0)+'，跳过 '+(d.skipped||0)+'，错误 '+(d.error_count||0);var html='<div class="result-card'+(type==='error'||(d.error_count||0)>0?' error':'')+'"><strong>'+escHtml(summary)+'</strong>';if(d.message)html+='<div style="margin-top:6px;color:inherit">'+escHtml(d.message)+'</div>';html+=renderResultList('errors','错误明细',d.errors||[]);html+='</div>';document.getElementById('txtScriptResult').innerHTML=html;var btn=document.getElementById('btnScanLocalTxtScripts');if(btn){btn.disabled=running;btn.innerHTML=(running?'<i data-lucide="loader"></i>扫描中':'<i data-lucide="folder-search"></i>扫码本地脚本');if(window.lucide)lucide.createIcons();}var p=document.getElementById('txtScriptProgress');p.style.display=running?'':'none';p.textContent=running?'扫描中，正在逐条分析新增脚本...':'';}
+async function pollLocalTxtScanStatus(){try{var r=await fetch('/api/templates/viral/scan-local-txt/status',{headers:{'Accept':'application/json'}});var d=await readJsonResponse(r);localTxtScanFailures=0;var data=d.data||{};renderLocalTxtScanState(data,(data.error_count||0)>0?'error':'success');if(!data.is_running&&localTxtScanTimer){clearInterval(localTxtScanTimer);localTxtScanTimer=null;toast('本地脚本扫描完成','success');}}catch(e){localTxtScanFailures+=1;showScriptImportResult('服务连接不稳定，稍后自动重试（'+localTxtScanFailures+'/5）：'+e.message,'error');if(localTxtScanFailures<5)return;if(localTxtScanTimer){clearInterval(localTxtScanTimer);localTxtScanTimer=null;}var btn=document.getElementById('btnScanLocalTxtScripts');if(btn)btn.disabled=false;document.getElementById('txtScriptProgress').style.display='none';}}
+async function scanLocalTxtScripts(){var btn=document.getElementById('btnScanLocalTxtScripts');if(btn)btn.disabled=true;var p=document.getElementById('txtScriptProgress');p.style.display='';p.textContent='扫描启动中...';localTxtScanFailures=0;var fd=new FormData();fd.append('category',document.getElementById('scriptCategory').value);fd.append('video_type','');fd.append('tags','本地txt');fd.append('product_name','');try{var r=await fetch('/api/templates/viral/scan-local-txt',{method:'POST',headers:{'Accept':'application/json'},body:fd});var d=await readJsonResponse(r);if(r.ok){renderLocalTxtScanState(d.data||{},'success');toast(d.message||'扫描已启动','success');if(localTxtScanTimer)clearInterval(localTxtScanTimer);localTxtScanTimer=setInterval(pollLocalTxtScanStatus,2000);pollLocalTxtScanStatus();}else{if(btn)btn.disabled=false;p.style.display='none';showScriptImportResult((d.detail||'扫描启动失败'),'error');toast('失败','error');}}catch(e){if(btn)btn.disabled=false;p.style.display='none';showScriptImportResult('扫描启动失败：'+e.message,'error');toast('失败','error');}}
 
 async function importScript(){var c=document.getElementById('scriptContent').value.trim();if(!c)return toast('请粘贴脚本','error');var fd=new FormData();fd.append('content',c);fd.append('title',document.getElementById('scriptTitle').value.trim()||'导入脚本');fd.append('category',document.getElementById('scriptCategory').value);fd.append('video_type','');fd.append('tags','');fd.append('product_name','');try{var r=await fetch('/api/templates/viral/upload',{method:'POST',body:fd});var d=await r.json();if(r.ok){toast(d.message,'success');document.getElementById('scriptResult').innerHTML='<div style="padding:12px 16px;background:var(--facai-soft);border-radius:var(--r);font-size:13px;color:var(--accent)">'+d.message+'</div>';document.getElementById('scriptContent').value='';}else toast('失败','error');}catch(e){toast('失败','error');}}
 document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});

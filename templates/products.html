@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>产品知识库 · 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=mobile-20260613">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260706-import-fab">
 <script src="/static/vendor/lucide.min.js"></script>
 <style>
 body{overflow:hidden}
@@ -183,12 +183,15 @@ body{overflow:hidden}
 
 <nav class="nav">
 <div class="nav-inner">
+<div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+</div>
 <div class="nav-links">
-<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">爆款脚本改写</a><a href="/app/products" class="nav-link on">产品知识库</a><a href="/app/import" class="nav-link">数据导入</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link on">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
-<a href="/app/ai-config" class="nav-link">AI配置</a>
 </div></div></nav>
+<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
+<a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
 
 <main class="products-page" data-mobile-view="list">
 <div class="mobile-product-tabs" role="tablist" aria-label="产品移动端视图">

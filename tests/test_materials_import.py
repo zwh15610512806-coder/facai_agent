@@ -213,6 +213,29 @@ class MaterialsImportParsingTests(unittest.TestCase):
         self.assertNotIn("reset_product_collection()", init_body)
         self.assertNotIn("reset_script_collection()", init_body)
 
+    def test_reindex_endpoints_reset_collections_before_full_indexing(self):
+        products_source = (ROOT / "routers" / "products.py").read_text(encoding="utf-8-sig")
+        product_body = products_source.split("def reindex_products", 1)[1].split("\n\n@router", 1)[0]
+        self.assertIn("reset_product_collection()", product_body)
+        self.assertLess(product_body.index("reset_product_collection()"), product_body.index("index_all_products"))
+
+        templates_source = (ROOT / "routers" / "templates.py").read_text(encoding="utf-8-sig")
+        script_body = templates_source.split("def reindex_scripts", 1)[1].split("\n\n@router", 1)[0]
+        self.assertIn("reset_script_collection()", script_body)
+        self.assertLess(script_body.index("reset_script_collection()"), script_body.index("index_all_scripts"))
+
+    def test_reindex_failure_message_mentions_ark_embedding_configuration(self):
+        for path, func_name in [
+            (ROOT / "routers" / "products.py", "def reindex_products"),
+            (ROOT / "routers" / "templates.py", "def reindex_scripts"),
+        ]:
+            source = path.read_text(encoding="utf-8-sig")
+            body = source.split(func_name, 1)[1].split("\n\n@router", 1)[0]
+            self.assertIn("ARK_API_KEY", body)
+            self.assertIn("ARK_BASE_URL", body)
+            self.assertIn("EMBEDDING_MODEL_NAME", body)
+            self.assertIn("火山方舟", body)
+
     def test_vector_store_disables_chromadb_telemetry(self):
         source = (ROOT / "vector_store" / "__init__.py").read_text(encoding="utf-8-sig")
 

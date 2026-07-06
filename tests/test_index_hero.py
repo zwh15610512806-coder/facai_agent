@@ -10,29 +10,22 @@ class IndexHeroTests(unittest.TestCase):
     def setUp(self):
         self.page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8-sig")
 
-    def test_hero_is_compact_single_paragraph_intro(self):
-        self.assertIn('class="hero-copy"', self.page)
+    def test_generate_page_does_not_render_intro_hero_banner(self):
+        self.assertNotIn("<!-- ====== Hero Banner ====== -->", self.page)
+        self.assertNotIn('class="hero"', self.page)
+        self.assertNotIn('class="hero-copy"', self.page)
+        self.assertNotIn(".hero ", self.page)
+        self.assertNotIn(".hero-copy", self.page)
+
+    def test_generate_page_content_starts_without_intro_banner(self):
         self.assertRegex(
             self.page,
-            r'<section class="hero"[^>]*>\s*<div class="hero-inner">\s*<p class="hero-copy">.*?</p>\s*</div>\s*</section>',
+            r'</nav>\s*<a class="data-import-fab" href="/app/import"[^>]*>.*?</a>\s*<a class="ai-config-fab" href="/app/ai-config"[^>]*>.*?</a>\s*<style>\s*\.generate-main',
         )
-        self.assertIn("AI 创作引擎：", self.page)
-        self.assertIn("以创意与数据成就带货艺术", self.page)
-
-    def test_hero_removes_large_visual_and_cta_elements(self):
-        hero = re.search(
-            r"<!-- ====== Hero Banner ====== -->(?P<body>.*?)<main class=\"page-main(?: [^\"]*)?\">",
+        self.assertNotRegex(
             self.page,
-            flags=re.S,
+            r"</nav>\s*<!-- ====== Hero Banner ====== -->",
         )
-
-        self.assertIsNotNone(hero)
-        body = hero.group("body")
-        self.assertNotIn("hero-title", body)
-        self.assertNotIn("hero-visual", body)
-        self.assertNotIn("hero-img", body)
-        self.assertNotIn("hero-cta", body)
-        self.assertNotIn("hero-deco", body)
 
 
 class IndexGenerateSeedanceTests(unittest.TestCase):
@@ -135,10 +128,13 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         self.assertNotIn("rgba(245,243,240,0)", body)
         self.assertNotIn("linear-gradient(to bottom,rgba", body)
 
-    def test_generate_can_run_without_video_type_using_template_library(self):
-        self.assertIn("不选类型时自动用高成交模板库生成", self.page)
+    def test_generate_without_video_type_respects_selected_engine(self):
+        self.assertIn("AI生成未选类型会由 AI 自动推断", self.page)
+        self.assertIn("模板库改写未选类型会自动用高成交模板库", self.page)
+        self.assertNotIn("不选类型时自动用高成交模板库生成", self.page)
         self.assertIn("const selectedType=state.selectedType||''", self.page)
-        self.assertIn("const engine=selectedType?document.getElementById('aiEngine').value:'template'", self.page)
+        self.assertIn("const engine=document.getElementById('aiEngine').value", self.page)
+        self.assertNotIn("const engine=selectedType?document.getElementById('aiEngine').value:'template'", self.page)
         self.assertIn("if(selectedType)body.video_type=selectedType", self.page)
         self.assertIn("document.getElementById('btnGenerate').disabled=false", self.page)
         self.assertNotIn("document.getElementById('btnGenerate').disabled=!state.selectedType", self.page)

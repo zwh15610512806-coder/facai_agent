@@ -10,6 +10,7 @@ from main import app
 
 
 ROOT = Path(__file__).resolve().parents[1]
+NAV_STYLE_VERSION = "nav-20260706-import-fab"
 
 
 class InspirationPageTests(unittest.TestCase):
@@ -97,7 +98,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("参考产品", page)
         self.assertIn("renderReferenceProducts(data.products)", page)
         self.assertIn("if(!products||!products.length)return ''", page)
-        self.assertIn("产品资料 + AI 对话", page)
+        self.assertIn("product_context_used", page)
 
     def test_inspiration_template_can_generate_word_document_from_answer(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
@@ -114,19 +115,64 @@ class InspirationPageTests(unittest.TestCase):
 
     def test_inspiration_composer_has_tool_modes_and_upload(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        composer_tools = page.split('<div class="composer-tools" aria-label="AI工作对话功能">', 1)[1].split('<input id="inspirationFileInput"', 1)[0]
 
-        for label in ["上传文件", "思考模式", "深入研究", "数据分析"]:
+        for label in ["基于产品资料", "上传文件", "思考模式", "深入研究", "联网搜索", "分镜提示词生成"]:
             self.assertIn(label, page)
+        self.assertNotIn("产品库优先", page)
+        self.assertNotIn('data-tool-mode="analysis"', composer_tools)
+        self.assertNotIn(">数据分析<", composer_tools)
+        self.assertLess(page.index("基于产品资料"), page.index("上传文件"))
+        self.assertIn('id="productContextToggle"', page)
+        self.assertIn("function toggleProductContextMode()", page)
+        self.assertIn("function getProductContextMode()", page)
+        self.assertIn('id="webSearchToggle"', page)
+        self.assertIn("function toggleWebSearchMode()", page)
+        self.assertIn("function getWebSearchMode()", page)
         self.assertIn('id="inspirationFileInput"', page)
         self.assertIn('accept=".txt,.md,.json,.csv,.pdf,.docx,.xlsx"', page)
+        self.assertIn('data-tool-mode="seedance"', page)
         self.assertIn("function setInspirationMode(mode)", page)
         self.assertIn("function uploadInspirationFiles(files)", page)
         self.assertIn("fetch('/api/inspiration/attachments'", page)
+
+    def test_inspiration_seedance_mode_updates_label_and_placeholder(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("seedance:'粘贴脚本，或上传脚本文件后填写生成要求...'", page)
+        self.assertIn("function updateInspirationPlaceholder()", page)
+        self.assertIn("updateInspirationPlaceholder()", page)
+        self.assertIn("seedance:'分镜提示词生成'", page)
+        self.assertNotIn("DeepSeek V4 Pro", page)
+
+    def test_inspiration_model_pill_loads_configured_interface_models(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("fetch('/api/ai-config/interfaces'", page)
+        self.assertIn("function loadInspirationModelConfig()", page)
+        self.assertIn("const INSPIRATION_MODE_INTERFACE_KEYS={chat:'inspiration_chat',thinking:'inspiration_tools',seedance:'script_creation',research:'inspiration_tools',analysis:'inspiration_tools'}", page)
+        self.assertIn("provider_label", page)
+        self.assertIn("display_model", page)
+
+    def test_inspiration_model_pill_uses_response_model_after_chat(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("function updateModelPillForMode(mode,overrideModel,productContextUsed)", page)
+        self.assertIn("updateModelPillForMode(data.tool_mode||getActiveInspirationMode(),data.model,data.product_context_used)", page)
+        self.assertIn("基于产品资料", page)
+        self.assertNotIn("parts.push('产品资料')", page)
+        self.assertIn("isProductContextAlways()", page)
+        self.assertIn("modelPill.title=labelText", page)
 
     def test_inspiration_chat_request_sends_tool_mode_and_attachments(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
         self.assertIn("tool_mode:getActiveInspirationMode()", page)
+        self.assertIn("product_context_mode:getProductContextMode()", page)
+        self.assertIn("web_search_mode:getWebSearchMode()", page)
+        self.assertIn("?'always':'off'", page)
+        self.assertIn("return isProductContextAlways()&&getActiveInspirationMode()!=='seedance'?'always':'off';", page)
+        self.assertIn("return isWebSearchAlways()&&getActiveInspirationMode()!=='seedance'?'always':'auto';", page)
         self.assertIn("attachments:attachmentsForRequest", page)
         self.assertIn("addConversationMessage('user',message,{attachments:selectedAttachments})", page)
         self.assertIn("selectedAttachments=[]", page)
@@ -197,11 +243,13 @@ class InspirationNavigationTests(unittest.TestCase):
             "history.html",
             "search.html",
             "inspiration.html",
+            "ai_config.html",
         ]
         for name in pages:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
             self.assertIn('href="/app"', page, name)
             self.assertIn('href="/app/generate"', page, name)
+            self.assertNotIn('href="/app/seedance"', page, name)
             self.assertNotIn('>灵感</a>', page, name)
             self.assertRegex(
                 page,
@@ -209,10 +257,91 @@ class InspirationNavigationTests(unittest.TestCase):
                 name,
             )
 
+    def test_data_import_is_bottom_right_fab_not_top_nav_item(self):
+        pages = [
+            "index.html",
+            "rewrite.html",
+            "products.html",
+            "import.html",
+            "templates.html",
+            "history.html",
+            "search.html",
+            "inspiration.html",
+            "ai_config.html",
+        ]
+        for name in pages:
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+            brand_group = re.search(
+                r'<div class="nav-brand-group">(?P<body>.*?)</div>\s*<div class="nav-links">',
+                page,
+                flags=re.S,
+            )
+            self.assertIsNotNone(brand_group, name)
+            self.assertNotIn('class="nav-import-btn', brand_group.group("body"), name)
+            self.assertNotIn('href="/app/import"', brand_group.group("body"), name)
+            self.assertNotIn(">数据导入</a>", brand_group.group("body"), name)
+
+            nav_links = re.search(
+                r'<div class="nav-links">(?P<body>.*?)</div></div></nav>',
+                page,
+                flags=re.S,
+            )
+            self.assertIsNotNone(nav_links, name)
+            self.assertNotIn(">数据导入</a>", nav_links.group("body"), name)
+
+            if name == "import.html":
+                self.assertNotIn('class="data-import-fab"', page, name)
+            else:
+                self.assertIn('class="data-import-fab"', page, name)
+                self.assertIn('href="/app/import"', page, name)
+                self.assertIn('aria-label="打开 数据导入"', page, name)
+                self.assertIn('data-lucide="upload"', page, name)
+
+    def test_data_import_nav_button_uses_fresh_shared_css_version(self):
+        pages = [
+            "index.html",
+            "rewrite.html",
+            "products.html",
+            "import.html",
+            "templates.html",
+            "history.html",
+            "search.html",
+            "inspiration.html",
+            "ai_config.html",
+        ]
+        for name in pages:
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+
+            self.assertIn(f'/static/css/style.css?v={NAV_STYLE_VERSION}', page, name)
+            self.assertNotIn("/static/css/style.css?v=nav-20260630", page, name)
+
     def test_ai_work_nav_is_active_only_on_ai_work_page(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
         self.assertIn('<a href="/app" class="nav-link on">AI工作</a>', page)
+
+    def test_rewrite_top_nav_label_is_script_rewrite(self):
+        pages = [
+            "index.html",
+            "rewrite.html",
+            "products.html",
+            "import.html",
+            "templates.html",
+            "history.html",
+            "search.html",
+            "inspiration.html",
+            "ai_config.html",
+        ]
+        for name in pages:
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+            nav_links = re.search(
+                r'<div class="nav-links">(?P<body>.*?)</div></div></nav>',
+                page,
+                flags=re.S,
+            )
+            self.assertIsNotNone(nav_links, name)
+            self.assertRegex(nav_links.group("body"), r'href="/app/rewrite"[^>]*>脚本改写</a>', name)
+            self.assertNotIn(">爆款脚本改写</a>", nav_links.group("body"), name)
 
 
 if __name__ == "__main__":

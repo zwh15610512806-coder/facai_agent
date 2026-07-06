@@ -1,6 +1,7 @@
 """General inspiration chat API."""
 import asyncio
 import logging
+import re
 from typing import Literal
 from urllib.parse import quote
 
@@ -9,20 +10,32 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from config import DEEPSEEK_V4_FLASH_MODEL, DEEPSEEK_V4_PRO_MODEL
+from config import (
+    INSPIRATION_AI_TIMEOUT_SECONDS as CONFIG_INSPIRATION_AI_TIMEOUT_SECONDS,
+    INSPIRATION_THINKING_AI_TIMEOUT_SECONDS as CONFIG_INSPIRATION_THINKING_AI_TIMEOUT_SECONDS,
+)
 from database import get_db
 from services.ai_service import ai_service
+from services.ai_config import get_or_create_interface_setting, get_provider_definition
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
 from services import inspiration_documents
 from services.product_rag import find_product_context_for_inspiration
+from services.seedance_prompt_generator import (
+    SEEDANCE_INTERFACE_KEY,
+    SeedancePromptGenerationError,
+    seedance_prompt_generator,
+)
 from services.upload_limits import read_upload_bytes
 from services.web_research import search_web
 
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-INSPIRATION_AI_TIMEOUT_SECONDS = 45.0
-INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = 120.0
+INSPIRATION_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_AI_TIMEOUT_SECONDS
+INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_THINKING_AI_TIMEOUT_SECONDS
+InspirationToolMode = Literal["chat", "thinking", "research", "analysis", "seedance"]
+ProductContextMode = Literal["off", "auto", "always"]
+WebSearchMode = Literal["auto", "always"]
 
 
 class ChatTurn(BaseModel):
@@ -58,7 +71,9 @@ class ProductReference(BaseModel):
 class InspirationChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=40)
-    tool_mode: Literal["chat", "thinking", "research", "analysis"] = "chat"
+    tool_mode: InspirationToolMode = "chat"
+    product_context_mode: ProductContextMode = "off"
+    web_search_mode: WebSearchMode = "auto"
     attachments: list[InspirationAttachment] = Field(default_factory=list, max_length=6)
 
     @field_validator("message")
@@ -74,7 +89,7 @@ class InspirationChatResponse(BaseModel):
     answer: str
     mode: Literal["ai", "fallback"]
     model: str
-    tool_mode: Literal["chat", "thinking", "research", "analysis"] = "chat"
+    tool_mode: InspirationToolMode = "chat"
     reasoning: str = ""
     sources: list[WebSource] = Field(default_factory=list)
     attachments_used: list[InspirationAttachment] = Field(default_factory=list)
@@ -103,12 +118,71 @@ SYSTEM_PROMPT = """你是法采新媒体运营AI工作助手。
 如果用户问题和法采业务无关，也可以正常协助，但优先把建议落回内容创作和运营执行。
 """
 
+NO_PRODUCT_CONTEXT_INSTRUCTION = (
+    "当前未启用“基于产品资料”。遇到“法采的产品怎么样”这类泛问题时，"
+    "只做高层判断、分析维度或追问用户想看哪类产品/场景；"
+    "不要编造 SKU、价格、具体产品资料，不要输出产品资料式清单或脚本模板。"
+)
+
 TOOL_MODE_INSTRUCTIONS = {
     "chat": "",
     "thinking": "当前为思考模式。请先做充分推理，再给出结构清晰、可执行的最终答案。",
     "research": "当前为深入研究模式。请优先利用外网搜索结果，给出结论、依据、风险、可执行建议和需要进一步验证的问题。",
     "analysis": "当前为数据分析模式。请优先分析附件数据，再结合外网搜索结果补充行业或运营参照，输出关键发现、异常、原因假设和下一步动作。",
 }
+
+WEB_SEARCH_INTENT_TERMS = (
+    "网上",
+    "公开信息",
+    "公开资料",
+    "全网",
+    "联网",
+    "搜索",
+    "检索",
+    "外网",
+    "官网",
+    "官方网站",
+    "小红书",
+    "抖音",
+    "大众点评",
+    "电商平台",
+)
+
+WEB_SEARCH_QUERY_STOP_PHRASES = (
+    "根据网上公开信息",
+    "根据网上的公开信息",
+    "根据公开信息",
+    "网上公开信息",
+    "网上的公开信息",
+    "公开信息",
+    "公开资料",
+    "联网搜索",
+    "搜索一下",
+    "搜索",
+    "检索",
+    "帮我",
+    "请",
+    "告诉我",
+    "给我",
+    "一个",
+    "两个",
+    "三个",
+    "四个",
+    "五个",
+    "几个",
+    "一些",
+    "汇总一下",
+    "汇总",
+    "整理一下",
+    "整理",
+    "就是",
+    "所有的",
+    "所有",
+    "一下",
+    "看看",
+    "基于",
+    "按照",
+)
 
 
 def _recent_history(history: list[ChatTurn]) -> list[dict[str, str]]:
@@ -154,11 +228,13 @@ def _fallback_answer_with_products(
     return answer + f"\n\n已先匹配到可参考产品：{names}。AI 响应恢复后可以继续把这些资料整理成完整创意方案。"
 
 
-def _model_for_tool_mode(tool_mode: str) -> str:
-    return DEEPSEEK_V4_PRO_MODEL if tool_mode == "thinking" else DEEPSEEK_V4_FLASH_MODEL
+def _model_for_tool_mode(tool_mode: str) -> str | None:
+    return None
 
 
 def _interface_key_for_tool_mode(tool_mode: str) -> str:
+    if tool_mode == "seedance":
+        return SEEDANCE_INTERFACE_KEY
     return {
         "thinking": "inspiration_thinking",
         "research": "inspiration_research",
@@ -172,6 +248,73 @@ def _ai_timeout_for_tool_mode(tool_mode: str) -> float:
     return INSPIRATION_AI_TIMEOUT_SECONDS
 
 
+def _tool_mode_label(tool_mode: str) -> str:
+    return {
+        "chat": "AI 对话",
+        "thinking": "思考模式",
+        "research": "深入研究",
+        "analysis": "数据分析",
+        "seedance": "分镜提示词生成",
+    }.get(tool_mode, "AI 对话")
+
+
+def _is_model_status_question(message: str) -> bool:
+    text = (message or "").strip().lower()
+    if not text:
+        return False
+    model_terms = (
+        "模型",
+        "model",
+        "deepseek",
+        "豆包",
+        "doubao",
+        "火山",
+        "方舟",
+        "qwen",
+        "通义",
+        "glm",
+        "智谱",
+        "minimax",
+    )
+    status_terms = (
+        "你用",
+        "用的是",
+        "当前",
+        "现在",
+        "这里",
+        "这个",
+        "调用",
+        "是什么",
+        "什么模型",
+        "哪个模型",
+        "是不是",
+        "还是",
+        "哪一个",
+        "哪款",
+    )
+    return any(term in text for term in model_terms) and any(term in text for term in status_terms)
+
+
+def _model_status_answer(tool_mode: str, interface_key: str, db: Session) -> tuple[str, str]:
+    setting = get_or_create_interface_setting(db, interface_key)
+    provider = get_provider_definition(setting.provider)
+    model = (setting.model or "").strip() or provider.default_model()
+    mode_label = _tool_mode_label(tool_mode)
+    comparison = (
+        "按当前 AI配置，这一轮会走 DeepSeek。"
+        if setting.provider == "deepseek"
+        else f"按当前 AI配置，这一轮会走 {provider.label}，不是 DeepSeek。"
+    )
+    answer = (
+        f"当前功能：{mode_label}\n"
+        f"服务商：{provider.label}\n"
+        f"模型：{model}\n\n"
+        f"{comparison}\n"
+        "这类模型状态问题我会直接读取本地 AI配置回答，不进入思考模式生成。"
+    )
+    return answer, model
+
+
 def _normalize_ai_result(result, model: str) -> tuple[str, str, str]:
     if isinstance(result, dict):
         return (
@@ -182,9 +325,9 @@ def _normalize_ai_result(result, model: str) -> tuple[str, str, str]:
     return str(result or ""), "", model
 
 
-def _safe_product_context(message: str, db: Session) -> dict:
+def _safe_product_context(message: str, db: Session, *, force: bool = False) -> dict:
     try:
-        return find_product_context_for_inspiration(message, db, limit=6)
+        return find_product_context_for_inspiration(message, db, limit=6, force=force)
     except Exception:
         return {"used": False, "context": "", "products": []}
 
@@ -231,12 +374,48 @@ def _web_context(sources: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
+def _should_search_web(message: str, tool_mode: str, web_search_mode: str = "auto") -> bool:
+    if web_search_mode == "always" and tool_mode != "seedance":
+        return True
+    if tool_mode in {"research", "analysis"}:
+        return True
+    if tool_mode != "chat":
+        return False
+    text = (message or "").strip()
+    return any(term in text for term in WEB_SEARCH_INTENT_TERMS)
+
+
+def _web_search_query(message: str) -> str:
+    text = (message or "").strip()
+    if not text:
+        return ""
+    query = text
+    for phrase in WEB_SEARCH_QUERY_STOP_PHRASES:
+        query = query.replace(phrase, " ")
+    query = re.sub(r"[，。！？；、,.!?;:：()（）\[\]【】\"'“”]+", " ", query)
+    query = re.sub(r"\s+", " ", query).strip()
+    if len(query) < 2:
+        query = text
+    return query[:120].strip()
+
+
+def _empty_web_search_notice(message: str, sources: list[dict], tool_mode: str, web_search_mode: str = "auto") -> str:
+    if sources or not _should_search_web(message, tool_mode, web_search_mode):
+        return ""
+    return (
+        "联网搜索提示：后端已尝试检索外网公开信息，但本次没有获取到可用网页结果。"
+        "不要声称自己没有联网搜索权限；可以说明未检索到可用结果，"
+        "再基于用户已提供信息给出下一步建议或更具体的检索关键词。"
+    )
+
+
 def _compose_user_message(
     message: str,
     product_context: dict,
     attachments: list[InspirationAttachment],
     sources: list[dict],
     tool_mode: str,
+    web_search_mode: str = "auto",
 ) -> str:
     sections = [f"用户问题：{message}" if product_context.get("context") or attachments or sources or tool_mode != "chat" else message]
     instruction = TOOL_MODE_INSTRUCTIONS.get(tool_mode, "")
@@ -248,6 +427,9 @@ def _compose_user_message(
     web_context = _web_context(sources)
     if web_context:
         sections.append(web_context)
+    empty_web_notice = _empty_web_search_notice(message, sources, tool_mode, web_search_mode)
+    if empty_web_notice:
+        sections.append(empty_web_notice)
     product_message = _message_with_product_context(message, product_context)
     if product_message != message:
         sections.append(product_message.replace(f"用户问题：{message}\n\n", ""))
@@ -256,11 +438,11 @@ def _compose_user_message(
     return "\n\n".join(section for section in sections if section)
 
 
-async def _safe_web_search(message: str, tool_mode: str) -> list[dict]:
-    if tool_mode not in {"research", "analysis"}:
+async def _safe_web_search(message: str, tool_mode: str, web_search_mode: str = "auto") -> list[dict]:
+    if not _should_search_web(message, tool_mode, web_search_mode):
         return []
     try:
-        return await search_web(message, max_results=5)
+        return await search_web(_web_search_query(message), max_results=5)
     except Exception:
         return []
 
@@ -306,8 +488,9 @@ def _document_user_payload(data: InspirationDocumentRequest) -> str:
 
 async def _build_document_content(data: InspirationDocumentRequest, db: Session) -> str:
     fallback = data.answer.strip()
-    if not ai_service.is_available:
+    if not ai_service.is_interface_available("inspiration_chat", db=db):
         return fallback
+    document_model = ai_service.get_model_name(interface_key="inspiration_chat", db=db)
     try:
         result = await asyncio.wait_for(
             ai_service.chat(
@@ -320,17 +503,52 @@ async def _build_document_content(data: InspirationDocumentRequest, db: Session)
                 ],
                 temperature=0.4,
                 allow_fallback=False,
-                model=DEEPSEEK_V4_FLASH_MODEL,
+                model=None,
                 interface_key="inspiration_chat",
                 db=db,
             ),
             timeout=INSPIRATION_AI_TIMEOUT_SECONDS,
         )
-        content, _, _ = _normalize_ai_result(result, DEEPSEEK_V4_FLASH_MODEL)
+        content, _, _ = _normalize_ai_result(result, document_model)
         return content.strip() or fallback
     except Exception as exc:
         logger.warning("Inspiration document AI formatting failed: %s", exc)
         return fallback
+
+
+def _seedance_payload_from_chat(data: InspirationChatRequest) -> tuple[str, str | None, list[InspirationAttachment]]:
+    attachments_used = [attachment for attachment in data.attachments if (attachment.text or "").strip()]
+    if attachments_used:
+        script_content = "\n\n".join((attachment.text or "").strip() for attachment in attachments_used)
+        requirements = data.message.strip() or None
+        return script_content, requirements, attachments_used
+    return data.message.strip(), None, []
+
+
+async def _chat_with_seedance(data: InspirationChatRequest, db: Session) -> InspirationChatResponse:
+    script_content, requirements, attachments_used = _seedance_payload_from_chat(data)
+    model = ai_service.get_model_name(interface_key=SEEDANCE_INTERFACE_KEY, db=db)
+    try:
+        result = await seedance_prompt_generator.generate(
+            script_content=script_content,
+            requirements=requirements,
+            db=db,
+        )
+    except SeedancePromptGenerationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    answer = str(result.get("prompt_text") or "").strip()
+    if not answer:
+        raise HTTPException(status_code=502, detail="DeepSeek V4 Pro 未返回可用的 Seedance 分镜提示词，请重试。")
+    return InspirationChatResponse(
+        answer=answer,
+        mode="ai",
+        model=model,
+        tool_mode="seedance",
+        attachments_used=attachments_used,
+        product_context_used=False,
+        products=[],
+        sources=[],
+    )
 
 
 @router.post("/attachments", response_model=InspirationAttachment)
@@ -385,15 +603,32 @@ def download_inspiration_document(filename: str):
 @router.post("/chat", response_model=InspirationChatResponse)
 async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depends(get_db)):
     message = data.message.strip()
-    selected_model = _model_for_tool_mode(data.tool_mode)
     interface_key = _interface_key_for_tool_mode(data.tool_mode)
-    model = ai_service.get_model_name(selected_model, interface_key=interface_key, db=db)
-    product_context = _safe_product_context(message, db)
+    if _is_model_status_question(message):
+        answer, model = _model_status_answer(data.tool_mode, interface_key, db)
+        return InspirationChatResponse(
+            answer=answer,
+            mode="ai",
+            model=model,
+            tool_mode=data.tool_mode,
+            product_context_used=False,
+            products=[],
+        )
+    if data.tool_mode == "seedance":
+        return await _chat_with_seedance(data, db)
+    model_override = _model_for_tool_mode(data.tool_mode)
+    model = ai_service.get_model_name(model_override, interface_key=interface_key, db=db)
+    force_product_context = data.product_context_mode == "always"
+    product_context = (
+        _safe_product_context(message, db, force=True)
+        if force_product_context
+        else {"used": False, "context": "", "products": []}
+    )
     products = product_context.get("products") or []
     product_context_used = bool(products)
-    sources = await _safe_web_search(message, data.tool_mode)
+    sources = await _safe_web_search(message, data.tool_mode, data.web_search_mode)
     attachments_used = [attachment for attachment in data.attachments if (attachment.text or "").strip()]
-    if not ai_service.is_available:
+    if not ai_service.is_interface_available(interface_key, db=db):
         return InspirationChatResponse(
             answer=_fallback_answer_with_products(message, products),
             mode="fallback",
@@ -409,11 +644,20 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
     tool_instruction = TOOL_MODE_INSTRUCTIONS.get(data.tool_mode, "")
     if tool_instruction:
         system_prompt = f"{system_prompt}\n{tool_instruction}"
+    if not force_product_context and data.tool_mode == "chat":
+        system_prompt = f"{system_prompt}\n{NO_PRODUCT_CONTEXT_INSTRUCTION}"
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(_recent_history(data.history))
     messages.append({
         "role": "user",
-        "content": _compose_user_message(message, product_context, attachments_used, sources, data.tool_mode),
+        "content": _compose_user_message(
+            message,
+            product_context,
+            attachments_used,
+            sources,
+            data.tool_mode,
+            data.web_search_mode,
+        ),
     })
     timed_out = False
     timeout_seconds = _ai_timeout_for_tool_mode(data.tool_mode)
@@ -423,20 +667,21 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
                 messages,
                 temperature=0.7,
                 allow_fallback=False,
-                model=selected_model,
+                model=model_override,
                 interface_key=interface_key,
                 db=db,
                 thinking=data.tool_mode == "thinking",
                 reasoning_effort="high",
                 return_reasoning=True,
+                request_timeout=timeout_seconds,
             ),
             timeout=timeout_seconds,
         )
     except TimeoutError:
         timed_out = True
         logger.warning("Inspiration chat AI call timed out after %.1fs", timeout_seconds)
-        result = {"content": "", "reasoning": "", "model": selected_model}
-    answer, reasoning, result_model = _normalize_ai_result(result, selected_model)
+        result = {"content": "", "reasoning": "", "model": model}
+    answer, reasoning, result_model = _normalize_ai_result(result, model)
     answer = answer.strip()
     if not answer:
         return InspirationChatResponse(

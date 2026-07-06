@@ -109,6 +109,8 @@ def templates_page(request: Request): return templates.TemplateResponse(request,
 def history_page(request: Request): return templates.TemplateResponse(request, "history.html", {"request": request})
 @app.get("/app/rewrite")
 def rewrite_page(request: Request): return templates.TemplateResponse(request, "rewrite.html", {"request": request})
+@app.get("/app/seedance")
+def seedance_page(): return RedirectResponse(url="/app", status_code=303)
 @app.get("/app/search")
 def search_page(request: Request): return templates.TemplateResponse(request, "search.html", {"request": request})
 @app.get("/app/inspiration")
