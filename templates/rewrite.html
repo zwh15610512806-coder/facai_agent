@@ -262,6 +262,21 @@ document.getElementById('btnGenerateSeedance').addEventListener('click',function
 document.getElementById('btnCopySeedanceAll').addEventListener('click',function(){var prompts=currentSeedancePrompts.map(function(x,i){return '画面'+(i+1)+'：'+x.scene+'\n'+x.prompt;}).join('\n\n');if(!prompts)return toast('请先点击生成提示词','error');copyText(prompts).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('seedancePromptList').addEventListener('click',function(e){var btn=e.target.closest('.seedance-copy');if(!btn)return;var idx=Number(btn.dataset.index);var item=currentSeedancePrompts[idx];if(!item)return;copyText(item.prompt).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 
+function splitSeedancePlainBeats(text){
+ var cleaned=String(text||'').replace(/\s+/g,' ').trim();if(!cleaned)return [];
+ var raw=cleaned.match(/[^。！？!?；;，,、]+[。！？!?；;，,、]?/g)||[cleaned];
+ var beats=[];raw.forEach(function(part){part=part.trim();if(!part)return;if(part.length<5&&beats.length){beats[beats.length-1]=(beats[beats.length-1]+part).trim();}else{beats.push(part);}});
+ if(beats.length<=1&&cleaned.length>90){beats=[];for(var i=0;i<cleaned.length;i+=80){beats.push(cleaned.slice(i,i+80));}}
+ return beats.slice(0,24);
+}
+function inferSeedanceSceneFromLine(line){
+ var text=String(line||'');
+ if(/下单|小黄车|左下角|活动|价格|买|送|券|优惠/.test(text))return '价格机制和下单引导';
+ if(/包装|规格|克|g|保质|封口|生产|资质|食品工厂/.test(text))return '产品包装细节';
+ if(/使用|操作|演示|拌|揉|捏|切|烤|装饰|翻糖|蛋糕|出单/.test(text))return '使用场景演示';
+ if(/开裂|粘手|麻烦|费时|踩坑|痛点|不好用|效率/.test(text))return '痛点口播';
+ return '口播画面';
+}
 function getSeedancePrompts(script){
  var text=String(script||'').trim();if(!text||text.startsWith('改写失败'))return [];
  var re=/（([^）]{1,60})）/g,items=[],m,last=null;
@@ -270,7 +285,7 @@ function getSeedancePrompts(script){
   last={scene:m[1].trim(),end:re.lastIndex,line:''};items.push(last);
  }
  if(last)last.line=text.slice(last.end).replace(/\s+/g,' ').trim();
- if(!items.length&&text)return [{scene:'口播画面',line:text.slice(0,90)}];
+ if(!items.length&&text)return splitSeedancePlainBeats(text).map(function(line,i){var scene=inferSeedanceSceneFromLine(line);return {scene:scene,line:line,prompt:buildSeedancePrompt(scene,line,i)};});
  return items.slice(0,24).map(function(item,i){return {scene:item.scene,line:item.line,prompt:buildSeedancePrompt(item.scene,item.line,i)};});
 }
 function buildSeedancePrompt(scene,line,index){

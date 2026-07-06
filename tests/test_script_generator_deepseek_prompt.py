@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 
-from services.script_generator import ScriptGenerator
+from services.script_generator import ScriptGenerationError, ScriptGenerator
 
 
 class PromptCaptureAI:
@@ -29,6 +29,25 @@ class InterfaceAvailableAI(PromptCaptureAI):
     def is_interface_available(self, interface_key):
         self.checked_interface = interface_key
         return interface_key == "script_generate"
+
+
+class UnavailableInterfaceAI(PromptCaptureAI):
+    is_available = False
+
+    def is_interface_available(self, interface_key):
+        return False
+
+
+class EmptyResponseAI(PromptCaptureAI):
+    async def chat(self, messages, temperature=0.85, interface_key="script_generate", **kwargs):
+        self.messages = messages
+        return ""
+
+
+class FailingResponseAI(PromptCaptureAI):
+    async def chat(self, messages, temperature=0.85, interface_key="script_generate", **kwargs):
+        self.messages = messages
+        raise RuntimeError("provider authentication failed")
 
 
 def make_product(**overrides):
@@ -129,6 +148,29 @@ def make_template():
 
 
 class DeepSeekPromptTests(unittest.TestCase):
+    def test_generation_fails_instead_of_using_local_template_when_interface_unavailable(self):
+        generator = ScriptGenerator()
+        generator.ai = UnavailableInterfaceAI()
+
+        with self.assertRaisesRegex(ScriptGenerationError, "AI生成模型未配置"):
+            asyncio.run(generator.generate(
+                product=make_product(name="糖珠", category="烘焙装饰"),
+                template=None,
+                video_type="AI智能生成",
+            ))
+
+    def test_generation_fails_instead_of_using_local_template_when_provider_errors_or_returns_empty(self):
+        for ai in (FailingResponseAI(), EmptyResponseAI()):
+            generator = ScriptGenerator()
+            generator.ai = ai
+
+            with self.assertRaisesRegex(ScriptGenerationError, "AI生成"):
+                asyncio.run(generator.generate(
+                    product=make_product(name="糖珠", category="烘焙装饰"),
+                    template=None,
+                    video_type="AI智能生成",
+                ))
+
     def test_generation_uses_interface_availability_instead_of_deepseek_global_flag(self):
         ai = InterfaceAvailableAI("火山方舟生成脚本正文")
         generator = ScriptGenerator()

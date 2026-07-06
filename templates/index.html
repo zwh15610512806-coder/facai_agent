@@ -558,6 +558,11 @@ function fallbackCopyText(text){return new Promise(function(resolve,reject){var 
 function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
 function escHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
 function getEditedScript(){const el=document.getElementById('scriptOutput');return (el.innerText||el.textContent||'').trim();}
+function buildRegenerateRequirement(){
+ const previous=(getEditedScript()||currentScript||'').replace(/\s+/g,' ').trim();
+ const summary=previous&&!previous.startsWith('生成失败')?previous.slice(0,180):'';
+ return '重新生成要求：这是一次重新生成，不要复用上一版脚本的开头、句式和推进顺序。上一版脚本开头摘要：'+summary+'。必须更换开头角度、第一句话句式、卖点顺序和 CTA；保留同一个产品、真实价格和产品资料，不要照搬上一版表达。';
+}
 function resetSeedancePrompts(msg){currentSeedancePrompts=[];document.getElementById('seedancePromptList').innerHTML='<div class="seedance-empty">'+escHtml(msg||'生成脚本后，可先编辑左侧文案，再点击上方「生成提示词」生成 Seedance 2.0 画面提示词。')+'</div>';}
 function normalizeCustomVideoType(type){return String(type||'').replace(/[<>"'`\\]/g,'').trim().replace(/\s+/g,'').slice(0,20);}
 function loadCustomVideoTypes(){
@@ -783,12 +788,27 @@ document.getElementById('scriptOutput').addEventListener('input',function(){curr
 document.getElementById('btnMatchShots').addEventListener('click',matchShotsForScript);
 document.getElementById('btnCopy').addEventListener('click',function(){const t=getEditedScript();if(!t)return toast('暂无可复制内容','error');copyText(t).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('btnSave').addEventListener('click',async function(){if(!currentScriptId)return toast('请先生成脚本','error');try{const r=await fetch('/api/scripts/history/'+currentScriptId+'/save-to-library',{method:'POST'});if(r.ok)toast('已保存到模板库','success');else toast('保存失败','error');}catch(e){toast('保存失败','error');}});
-document.getElementById('btnRedo').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';currentScript='';currentScriptId=null;resetSeedancePrompts();doGenerate(null);});
+document.getElementById('btnRedo').addEventListener('click',function(){const regenRequirement=buildRegenerateRequirement();currentScriptId=null;state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';resetSeedancePrompts();doGenerate(regenRequirement);});
 document.getElementById('btnGenerateSeedance').addEventListener('click',function(){var script=getEditedScript();if(!script||script.startsWith('生成失败'))return toast('请先生成或编辑有效脚本','error');renderSeedancePrompts(script);toast('已按当前脚本生成提示词','success');});
 document.getElementById('btnCopySeedanceAll').addEventListener('click',function(){var prompts=currentSeedancePrompts.map(function(x,i){return '画面'+(i+1)+'：'+getSeedanceCardLabel(x)+'\n'+x.prompt;}).join('\n\n');if(!prompts)return toast('请先点击生成提示词','error');copyText(prompts).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('seedancePromptList').addEventListener('click',function(e){var btn=e.target.closest('.seedance-copy');if(!btn)return;var idx=Number(btn.dataset.index);var item=currentSeedancePrompts[idx];if(!item)return;copyText(item.prompt).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('searchInput').addEventListener('input',function(){clearTimeout(window._st);window._st=setTimeout(loadProducts,300);});
 
+function splitSeedancePlainBeats(text){
+ var cleaned=String(text||'').replace(/\s+/g,' ').trim();if(!cleaned)return [];
+ var raw=cleaned.match(/[^。！？!?；;，,、]+[。！？!?；;，,、]?/g)||[cleaned];
+ var beats=[];raw.forEach(function(part){part=part.trim();if(!part)return;if(part.length<5&&beats.length){beats[beats.length-1]=(beats[beats.length-1]+part).trim();}else{beats.push(part);}});
+ if(beats.length<=1&&cleaned.length>90){beats=[];for(var i=0;i<cleaned.length;i+=80){beats.push(cleaned.slice(i,i+80));}}
+ return beats.slice(0,24);
+}
+function inferSeedanceSceneFromLine(line){
+ var text=String(line||'');
+ if(/下单|小黄车|左下角|活动|价格|买|送|券|优惠/.test(text))return '价格机制和下单引导';
+ if(/包装|规格|克|g|保质|封口|生产|资质|食品工厂/.test(text))return '产品包装细节';
+ if(/使用|操作|演示|拌|揉|捏|切|烤|装饰|翻糖|蛋糕|出单/.test(text))return '使用场景演示';
+ if(/开裂|粘手|麻烦|费时|踩坑|痛点|不好用|效率/.test(text))return '痛点口播';
+ return '口播画面';
+}
 function getSeedancePrompts(script){
  var text=String(script||'').trim();if(!text||text.startsWith('生成失败'))return [];
  var re=/（([^）]{1,60})）/g,items=[],m,last=null;
@@ -797,7 +817,7 @@ function getSeedancePrompts(script){
   last={scene:m[1].trim(),end:re.lastIndex,line:''};items.push(last);
  }
  if(last)last.line=text.slice(last.end).replace(/\s+/g,' ').trim();
- if(!items.length&&text)return [{scene:'口播画面',line:text.slice(0,90),prompt:buildSeedancePrompt('口播画面',text.slice(0,90),0)}];
+ if(!items.length&&text)return splitSeedancePlainBeats(text).map(function(line,i){var scene=inferSeedanceSceneFromLine(line);return {scene:scene,line:line,prompt:buildSeedancePrompt(scene,line,i)};});
  return items.slice(0,24).map(function(item,i){return {scene:item.scene,line:item.line,prompt:buildSeedancePrompt(item.scene,item.line,i)};});
 }
 function buildSeedancePrompt(scene,line,index){

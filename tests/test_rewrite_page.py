@@ -1,4 +1,6 @@
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -222,6 +224,34 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("请先点击生成提示词", self.page)
         self.assertIn("seedance-copy", self.page)
         self.assertIn("竖屏9:16，真实商业烘焙短视频", self.page)
+
+    def test_seedance_plain_rewrite_copy_splits_into_sentence_cards(self):
+        start = self.page.index("function splitSeedancePlainBeats(text){")
+        end = self.page.index("function renderSeedancePrompts(script){")
+        functions = self.page[start:end]
+        script = f"""
+var selectedProduct={{name:'糖珠',category:'烘焙装饰'}};
+{functions}
+const prompts=getSeedancePrompts('第一句讲痛点，第二句讲包装证明，第三句讲使用场景，第四句引导下单。');
+if(prompts.length<4) throw new Error('expected at least 4 cards, got '+prompts.length);
+if(!prompts[1].prompt.includes('第二句讲包装证明')) throw new Error('second card should keep second sentence');
+"""
+        with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as handle:
+            handle.write(script)
+            script_path = Path(handle.name)
+
+        try:
+            result = subprocess.run(
+                ["node", str(script_path)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+        finally:
+            script_path.unlink(missing_ok=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_seedance_panel_is_on_right_desktop_and_stacks_mobile(self):
         self.assertIn("<main class=\"page-main rewrite-main\">", self.page)

@@ -1,6 +1,7 @@
 import asyncio
 import unittest
 
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -118,6 +119,25 @@ class FakeDeepSeekGenerator:
         return "DeepSeek 只结合产品资料和跑量逻辑生成的脚本"
 
 
+class FakeEmptyDeepSeekGenerator(FakeDeepSeekGenerator):
+    async def generate(
+        self,
+        product,
+        template,
+        video_type,
+        tone="活泼",
+        extra_requirements=None,
+        reference_scripts=None,
+        include_shot_design=False,
+    ):
+        self.generate_called = True
+        self.product = product
+        self.template = template
+        self.reference_scripts = reference_scripts
+        self.video_type = video_type
+        return ""
+
+
 class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
@@ -219,6 +239,23 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertTrue(fake.product["profile_sections"])
         self.assertEqual(response.script_content, "DeepSeek 只结合产品资料和跑量逻辑生成的脚本")
         self.assertEqual(self.db.query(scripts_router.GeneratedScript).first().ai_model, "AI生成 · fake-model")
+
+    def test_ai_generation_empty_model_result_returns_error_without_saving_record(self):
+        fake = FakeEmptyDeepSeekGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(
+            product_id=self.product.id,
+            engine="deepseek",
+            video_type="AI智能生成",
+        )
+
+        with self.assertRaises(HTTPException) as caught:
+            asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertTrue(fake.generate_called)
+        self.assertEqual(caught.exception.status_code, 502)
+        self.assertIn("AI生成失败", caught.exception.detail)
+        self.assertIsNone(self.db.query(scripts_router.GeneratedScript).first())
 
 
 class ScriptGeneratorHighConversionSearchTests(unittest.TestCase):

@@ -1,4 +1,6 @@
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -59,6 +61,34 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         self.assertIn("'画面'+(i+1)+'：'+getSeedanceCardLabel(x)", self.page)
         self.assertNotIn("画面'+(i+1)+' · '+escHtml(item.scene)", self.page)
         self.assertNotIn("'画面'+(i+1)+'：'+x.scene", self.page)
+
+    def test_seedance_plain_spoken_copy_splits_into_sentence_cards(self):
+        start = self.page.index("function splitSeedancePlainBeats(text){")
+        end = self.page.index("function renderSeedancePrompts(script){")
+        functions = self.page[start:end]
+        script = f"""
+var state={{selectedProduct:{{name:'白色翻糖膏',category:'烘焙装饰'}}}};
+{functions}
+const prompts=getSeedancePrompts('开头一句抓痛点，第二句给产品证明，第三句讲使用场景，第四句自然引导下单。');
+if(prompts.length<4) throw new Error('expected at least 4 cards, got '+prompts.length);
+if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first card should keep first sentence');
+"""
+        with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as handle:
+            handle.write(script)
+            script_path = Path(handle.name)
+
+        try:
+            result = subprocess.run(
+                ["node", str(script_path)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+        finally:
+            script_path.unlink(missing_ok=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_seedance_panel_uses_rewrite_layout_pattern(self):
         self.assertIn("<main class=\"page-main generate-main\">", self.page)
@@ -160,6 +190,14 @@ class IndexGenerateSeedanceTests(unittest.TestCase):
         self.assertIn('<option value="deepseek">AI生成</option>', self.page)
         self.assertIn("AI生成：使用已配置模型和 API Key", self.page)
         self.assertNotIn("DeepSeek AI", self.page)
+
+    def test_redo_requests_a_distinct_ai_regeneration(self):
+        self.assertIn("function buildRegenerateRequirement()", self.page)
+        self.assertIn("上一版脚本开头摘要：", self.page)
+        self.assertIn("必须更换开头角度、第一句话句式、卖点顺序和 CTA", self.page)
+        self.assertIn("const regenRequirement=buildRegenerateRequirement()", self.page)
+        self.assertIn("doGenerate(regenRequirement)", self.page)
+        self.assertNotIn("btnRedo').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';currentScript='';currentScriptId=null;resetSeedancePrompts();doGenerate(null);}", self.page)
 
     def test_selected_product_bar_can_change_product_directly(self):
         selected_bar = re.search(

@@ -12,6 +12,14 @@ import re
 logger = logging.getLogger(__name__)
 
 
+class ScriptGenerationError(RuntimeError):
+    """Raised when AI script generation cannot produce a real model result."""
+
+    def __init__(self, message: str, status_code: int = 502):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class ScriptGenerator:
     """短视频脚本生成引擎"""
 
@@ -56,10 +64,28 @@ class ScriptGenerator:
             return bool(checker(interface_key))
         return bool(getattr(self.ai, "is_available", False))
 
-    async def _chat_with_interface(self, messages: List[Dict], temperature: float, interface_key: str) -> str:
+    async def _chat_with_interface(
+        self,
+        messages: List[Dict],
+        temperature: float,
+        interface_key: str,
+        allow_fallback: bool = True,
+    ) -> str:
         try:
-            return await self.ai.chat(messages, temperature=temperature, interface_key=interface_key)
+            return await self.ai.chat(
+                messages,
+                temperature=temperature,
+                interface_key=interface_key,
+                allow_fallback=allow_fallback,
+            )
         except TypeError as exc:
+            if "allow_fallback" in str(exc):
+                try:
+                    return await self.ai.chat(messages, temperature=temperature, interface_key=interface_key)
+                except TypeError as inner_exc:
+                    if "interface_key" not in str(inner_exc):
+                        raise
+                    return await self.ai.chat(messages, temperature=temperature)
             if "interface_key" not in str(exc):
                 raise
             return await self.ai.chat(messages, temperature=temperature)
@@ -491,12 +517,10 @@ class ScriptGenerator:
             extra_requirements: 额外需求
             reference_scripts: 参考爆款脚本列表
         """
-        # 如果 AI 不可用，直接用法采模板引擎
         if not self._ai_available_for_interface("script_generate"):
-            return self._post_process_script_output(
-                build_faicai_script(product, tone),
-                include_shot_design,
-                remove_default_audience_opening=True,
+            raise ScriptGenerationError(
+                "AI生成模型未配置，请到 AI配置 中检查脚本生成接口的 API Key、Base URL 和模型服务 ID。",
+                status_code=503,
             )
 
         # 构建系统提示
@@ -523,12 +547,29 @@ class ScriptGenerator:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = await self._chat_with_interface(messages, temperature=0.85, interface_key="script_generate")
-        return self._post_process_script_output(
+        try:
+            response = await self._chat_with_interface(
+                messages,
+                temperature=0.85,
+                interface_key="script_generate",
+                allow_fallback=False,
+            )
+        except ScriptGenerationError:
+            raise
+        except Exception as exc:
+            raise ScriptGenerationError(f"AI生成模型调用失败：{exc}") from exc
+
+        if not (response or "").strip():
+            raise ScriptGenerationError("AI生成模型调用失败或未返回内容，请检查 AI 配置后重试。")
+
+        script = self._post_process_script_output(
             response,
             include_shot_design,
             remove_default_audience_opening=True,
         )
+        if not script.strip():
+            raise ScriptGenerationError("AI生成模型返回内容为空，请重试或检查 AI 配置。")
+        return script
 
     def _build_system_prompt(self, video_type: str, tone: str, include_shot_design: bool = False) -> str:
         """构建系统提示词"""

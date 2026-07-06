@@ -834,6 +834,42 @@ class AiServiceRoutingTests(unittest.TestCase):
         self.assertEqual(record.interface_key, SCRIPT_GENERATE_INTERFACE_KEY)
         self.assertEqual(record.provider, "qwen")
 
+    def test_script_generate_clear_interface_key_falls_back_to_ark_env(self):
+        from models import AIInterfaceSetting
+        from services.ai_config import resolve_interface_connection, update_interface_setting
+
+        os.environ["ARK_API_KEY"] = "ark-env-secret"
+        os.environ["ARK_BASE_URL"] = ARK_DEFAULT_BASE_URL
+        self.db.query(AIInterfaceSetting).delete()
+        self.db.add(AIInterfaceSetting(
+            interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+            provider="doubao",
+            model="豆包2.0lite",
+            max_tokens=2400,
+            api_key_secret="bad-interface-key",
+        ))
+        self.db.commit()
+
+        setting = update_interface_setting(
+            db=self.db,
+            interface_key=SCRIPT_GENERATE_INTERFACE_KEY,
+            provider="doubao",
+            model=ARK_DEFAULT_MODEL,
+            max_tokens=3600,
+            api_key=None,
+            base_url="",
+            clear_api_key=True,
+        )
+        connection = resolve_interface_connection(setting)
+
+        self.assertEqual(setting.model, ARK_DEFAULT_MODEL)
+        self.assertEqual(setting.max_tokens, 3600)
+        self.assertEqual(setting.api_key_secret, "")
+        self.assertEqual(setting.base_url_override, "")
+        self.assertTrue(connection["configured"])
+        self.assertEqual(connection["api_key_source"], "env")
+        self.assertEqual(connection["base_url"], ARK_DEFAULT_BASE_URL)
+
     def test_default_ark_interfaces_create_volcengine_client_from_ark_env(self):
         from models import AIInterfaceSetting, AIUsageRecord
         from services import ai_service as ai_module

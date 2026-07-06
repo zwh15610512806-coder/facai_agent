@@ -11,7 +11,7 @@ from schemas import (
     SeedancePromptUploadResponse,
     GeneratedScriptOut, GeneratedScriptPageOut, ApiResponse
 )
-from services.script_generator import ScriptGenerator
+from services.script_generator import ScriptGenerationError, ScriptGenerator
 from services.product_detail import build_product_detail_payload
 from services.script_rewriter import script_rewriter
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
@@ -153,15 +153,20 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         )
     else:
         # AI生成模式：全新创作，不注入模板库参考脚本
-        script_content = await generator.generate(
-            product=product_context,
-            template=template_context,
-            video_type=video_type,
-            tone=request.tone,
-            extra_requirements=request.extra_requirements,
-            reference_scripts=reference_scripts,
-            include_shot_design=request.include_shot_design,
-        )
+        try:
+            script_content = await generator.generate(
+                product=product_context,
+                template=template_context,
+                video_type=video_type,
+                tone=request.tone,
+                extra_requirements=request.extra_requirements,
+                reference_scripts=reference_scripts,
+                include_shot_design=request.include_shot_design,
+            )
+        except ScriptGenerationError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=f"AI生成失败：{exc}") from exc
+        if not (script_content or "").strip():
+            raise HTTPException(status_code=502, detail="AI生成失败：模型未返回有效脚本，请检查 AI 配置后重试")
 
     # 保存生成记录
     using_template_library = engine == "template" and reference_scripts
