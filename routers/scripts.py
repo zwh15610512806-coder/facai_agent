@@ -12,6 +12,7 @@ from schemas import (
     GeneratedScriptOut, GeneratedScriptPageOut, ApiResponse
 )
 from services.script_generator import ScriptGenerator
+from services.product_detail import build_product_detail_payload
 from services.script_rewriter import script_rewriter
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
 from services.seedance_prompt_generator import SeedancePromptGenerationError, seedance_prompt_generator
@@ -106,6 +107,8 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             for sp in sorted(product.selling_points, key=lambda x: x.priority)
         ],
     }
+    if engine != "template":
+        product_context.update(build_product_detail_payload(product))
 
     # 准备模板上下文；AI生成不使用脚本模板库内容
     template_context = None

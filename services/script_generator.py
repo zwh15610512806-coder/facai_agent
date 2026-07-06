@@ -596,6 +596,127 @@ class ScriptGenerator:
 
 请严格按照上述策略创作，确保脚本具备抖音跑量能力。"""
 
+    def _format_prompt_price(self, value: Any) -> str:
+        if value is None or value == "":
+            return ""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return str(value).strip()
+        if number.is_integer():
+            return str(int(number))
+        return f"{number:.2f}".rstrip("0").rstrip(".")
+
+    def _trim_prompt_text(self, value: Any, limit: int = 180) -> str:
+        text = re.sub(r"\s+", " ", str(value or "")).strip()
+        if len(text) <= limit:
+            return text
+        return f"{text[:limit].rstrip()}..."
+
+    def _dedupe_prompt_texts(self, values: List[Any], limit: int = 6) -> List[str]:
+        seen = set()
+        result = []
+        for value in values:
+            text = self._trim_prompt_text(value, limit=120)
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            result.append(text)
+            if len(result) >= limit:
+                break
+        return result
+
+    def _format_sku_prompt_line(self, sku: Dict) -> str:
+        if sku.get("line"):
+            return self._trim_prompt_text(sku["line"], limit=220)
+
+        name = sku.get("name") or " / ".join(
+            part for part in [sku.get("product"), sku.get("spec")] if part
+        ) or "默认规格"
+        bits = []
+        price = self._format_prompt_price(sku.get("price"))
+        daily_price = self._format_prompt_price(sku.get("daily_price"))
+        if price:
+            bits.append(f"售价¥{price}")
+        if daily_price and daily_price != price:
+            bits.append(f"日常价¥{daily_price}")
+
+        for activity in (sku.get("activity_prices") or [])[:3]:
+            activity_price = (
+                activity.get("price")
+                or activity.get("final_price")
+                or activity.get("activity_price")
+                or activity.get("tag_price")
+            )
+            formatted_price = self._format_prompt_price(activity_price)
+            if not formatted_price:
+                continue
+            mechanism = activity.get("mechanism") or "活动价"
+            meta = []
+            if activity.get("meta"):
+                meta.append(str(activity["meta"]))
+            if activity.get("discount"):
+                meta.append(str(activity["discount"]))
+            if activity.get("coupon") and activity.get("coupon") != "0":
+                meta.append(f"券{activity['coupon']}")
+            suffix = f"（{' / '.join(meta)}）" if meta else ""
+            bits.append(f"{mechanism}¥{formatted_price}{suffix}")
+
+        if not bits:
+            return self._trim_prompt_text(name, limit=220)
+        return self._trim_prompt_text(f"{name}：" + "；".join(bits), limit=220)
+
+    def _format_product_knowledge_context(self, product: Dict) -> List[str]:
+        sections = product.get("profile_sections") or []
+        sku_prices = product.get("sku_prices") or []
+        if not sections and not sku_prices and not product.get("knowledge_sources"):
+            return []
+
+        pending_price = "price" in set(product.get("pending_fields") or [])
+        lines = ["\n【产品知识库资料】"]
+        sources = self._dedupe_prompt_texts([
+            product.get("source_name"),
+            product.get("manual_source"),
+            *(product.get("knowledge_sources") or []),
+        ])
+        if sources:
+            lines.append(f"资料来源：{'、'.join(sources)}")
+
+        rendered_sku_lines = 0
+        for section in sections[:5]:
+            section_id = section.get("id") or ""
+            if pending_price and section_id == "product_price":
+                continue
+            items = section.get("items") or []
+            section_skus = [] if pending_price else (section.get("sku_prices") or [])
+            useful_lines = []
+            for item in items[:5]:
+                content = self._trim_prompt_text(item.get("content"))
+                if not content:
+                    continue
+                label = self._trim_prompt_text(item.get("label") or "资料", limit=40)
+                useful_lines.append(f"- {label}：{content}")
+            for sku in section_skus[:3]:
+                sku_line = self._format_sku_prompt_line(sku)
+                if sku_line:
+                    useful_lines.append(f"- {sku_line}")
+                    rendered_sku_lines += 1
+            if not useful_lines:
+                continue
+            lines.append(f"【{section.get('title') or '产品资料'}】")
+            lines.extend(useful_lines)
+
+        if sku_prices and not pending_price and rendered_sku_lines == 0:
+            lines.append("【SKU/价格】")
+            for sku in sku_prices[:4]:
+                sku_line = self._format_sku_prompt_line(sku)
+                if sku_line:
+                    lines.append(f"- {sku_line}")
+
+        if len(lines) <= 1:
+            return []
+        return lines
+
     def _build_user_prompt(
         self,
         product: Dict,
@@ -629,9 +750,12 @@ class ScriptGenerator:
         if selling_points:
             parts.append("\n【核心卖点话术】（按优先级排序）")
             for i, sp in enumerate(selling_points, 1):
-                parts.append(f"{i}. [{sp.get('type', '')}] {sp.get('content', '')}")
+                point_type = sp.get("type") or sp.get("point_type") or "卖点"
+                parts.append(f"{i}. [{point_type}] {sp.get('content', '')}")
         else:
             parts.append("\n【核心卖点】（请根据产品信息提炼）")
+
+        parts.extend(self._format_product_knowledge_context(product))
 
         # 3. 创作要求
         parts.append(f"\n【创作要求】")

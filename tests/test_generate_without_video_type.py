@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Product, ViralScript
+from models import Product, SellingPoint, ViralScript
 from routers import scripts as scripts_router
 from schemas import ScriptGenerateRequest
 from services.script_generator import ScriptGenerator
@@ -16,6 +16,7 @@ class FakeTemplateLibraryGenerator:
         self.high_only_called = False
         self.library_called = False
         self.include_shot_design = None
+        self.product = None
 
     def get_model_name(self, interface_key="script_generate"):
         return "fake-model"
@@ -57,6 +58,7 @@ class FakeTemplateLibraryGenerator:
         include_shot_design=None,
     ):
         self.library_called = True
+        self.product = product
         self.include_shot_design = include_shot_design
         assert video_type == "高成交模板库"
         assert reference_scripts
@@ -72,6 +74,7 @@ class FakeDeepSeekGenerator:
         self.reference_scripts = None
         self.template = None
         self.video_type = None
+        self.product = None
 
     def get_model_name(self, interface_key="script_generate"):
         return "fake-model"
@@ -108,6 +111,7 @@ class FakeDeepSeekGenerator:
         include_shot_design=False,
     ):
         self.generate_called = True
+        self.product = product
         self.template = template
         self.reference_scripts = reference_scripts
         self.video_type = video_type
@@ -124,6 +128,13 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.db.add(product)
         self.db.commit()
         self.db.refresh(product)
+        self.db.add(SellingPoint(
+            product_id=product.id,
+            point_type="使用场景",
+            content="门店做糖珠蛋糕、甜品杯和儿童款装饰时使用",
+            priority=1,
+        ))
+        self.db.commit()
         self.product = product
         self.original_generator = scripts_router.generator
 
@@ -146,6 +157,10 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertEqual(fake.reference_scripts, [])
         self.assertIsNone(fake.template)
         self.assertEqual(fake.video_type, "AI智能生成")
+        self.assertIn("profile_sections", fake.product)
+        self.assertTrue(fake.product["profile_sections"])
+        section_titles = {section["title"] for section in fake.product["profile_sections"]}
+        self.assertIn("使用场景", section_titles)
         self.assertEqual(response.video_type, "AI智能生成")
         record = self.db.query(scripts_router.GeneratedScript).first()
         self.assertEqual(record.video_type, "AI智能生成")
@@ -160,6 +175,7 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
 
         self.assertTrue(fake.high_only_called)
         self.assertTrue(fake.library_called)
+        self.assertNotIn("profile_sections", fake.product)
         self.assertEqual(response.video_type, "高成交模板库")
         self.assertIn("高成交模板库", self.db.query(scripts_router.GeneratedScript).first().video_type)
 
@@ -199,6 +215,8 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertFalse(fake.high_only_called)
         self.assertEqual(fake.reference_scripts, [])
         self.assertIsNone(fake.template)
+        self.assertIn("profile_sections", fake.product)
+        self.assertTrue(fake.product["profile_sections"])
         self.assertEqual(response.script_content, "DeepSeek 只结合产品资料和跑量逻辑生成的脚本")
         self.assertEqual(self.db.query(scripts_router.GeneratedScript).first().ai_model, "AI生成 · fake-model")
 

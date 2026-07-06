@@ -49,6 +49,75 @@ def make_product(**overrides):
     return product
 
 
+def make_product_with_knowledge(**overrides):
+    product = make_product(
+        name="糖珠",
+        category="烘焙装饰",
+        price=9.18,
+        description="适合蛋糕和甜品表面装饰",
+        source_name="糖珠产品档案.md",
+        manual_source="FC法采产品手册24年5月6日更新版.md",
+        knowledge_sources=["【法采】2026年产品手卡.xlsx"],
+        sku_prices=[
+            {
+                "product": "糖珠",
+                "spec": "500g",
+                "price": 9.18,
+                "daily_price": 9.18,
+                "activity_prices": [
+                    {"mechanism": "淘宝A级-调整202603", "final_price": 8.26}
+                ],
+                "line": "糖珠 500g 售价¥9.18，活动到手¥8.26",
+            }
+        ],
+        profile_sections=[
+            {
+                "id": "product_usage",
+                "title": "产品用途",
+                "items": [
+                    {"label": "用途简述", "content": "用于蛋糕表面装饰、甜品杯点缀和节日款出样"},
+                ],
+                "sku_prices": [],
+            },
+            {
+                "id": "usage_scenarios",
+                "title": "使用场景",
+                "items": [
+                    {"label": "门店方案", "content": "适合烘焙门店做儿童款、节日款和陈列款蛋糕"},
+                ],
+                "sku_prices": [],
+            },
+            {
+                "id": "main_selling_points",
+                "title": "主要卖点",
+                "items": [
+                    {"label": "核心亮点", "content": "不用重新改配方，撒在表面就能增加成品视觉记忆点"},
+                ],
+                "sku_prices": [],
+            },
+            {
+                "id": "product_price",
+                "title": "产品价格",
+                "items": [],
+                "sku_prices": [
+                    {
+                        "product": "糖珠",
+                        "spec": "500g",
+                        "price": 9.18,
+                        "daily_price": 9.18,
+                        "activity_prices": [
+                            {"mechanism": "淘宝A级-调整202603", "final_price": 8.26}
+                        ],
+                        "line": "糖珠 500g 售价¥9.18，活动到手¥8.26",
+                    }
+                ],
+            },
+        ],
+    )
+    product.update(overrides)
+    return product
+
+
 def make_template():
     return {
         "name": "模板库机制模板",
@@ -239,6 +308,52 @@ class DeepSeekPromptTests(unittest.TestCase):
         self.assertNotIn("推荐CTA话术", prompt)
         self.assertNotIn("模板库示例脚本", prompt)
         self.assertNotIn("不应进入 prompt 的模板库脚本", prompt)
+
+    def test_ai_prompt_includes_product_knowledge_sections_and_sku_prices(self):
+        ai = PromptCaptureAI("糖珠适合门店做节日蛋糕装饰。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate(
+            product=make_product_with_knowledge(),
+            template=None,
+            video_type="场景类",
+            tone="直接",
+            include_shot_design=False,
+        ))
+
+        user_prompt = ai.messages[-1]["content"]
+
+        self.assertIn("【产品知识库资料】", user_prompt)
+        self.assertIn("资料来源：糖珠产品档案.md、FC法采产品手册24年5月6日更新版.md", user_prompt)
+        self.assertIn("【产品用途】", user_prompt)
+        self.assertIn("用于蛋糕表面装饰、甜品杯点缀和节日款出样", user_prompt)
+        self.assertIn("【使用场景】", user_prompt)
+        self.assertIn("适合烘焙门店做儿童款、节日款和陈列款蛋糕", user_prompt)
+        self.assertIn("【主要卖点】", user_prompt)
+        self.assertIn("不用重新改配方", user_prompt)
+        self.assertIn("糖珠 500g 售价¥9.18，活动到手¥8.26", user_prompt)
+
+    def test_shot_design_prompt_includes_product_knowledge_and_camera_requirements(self):
+        ai = PromptCaptureAI("（近景展示糖珠）糖珠适合做节日款蛋糕装饰。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate(
+            product=make_product_with_knowledge(),
+            template=None,
+            video_type="场景类",
+            tone="直接",
+            include_shot_design=True,
+        ))
+
+        user_prompt = ai.messages[-1]["content"]
+
+        self.assertIn("【产品知识库资料】", user_prompt)
+        self.assertIn("糖珠 500g 售价¥9.18，活动到手¥8.26", user_prompt)
+        self.assertIn("每句话添加镜头说明", user_prompt)
+        self.assertIn("（镜头/画面说明）口播文案", user_prompt)
+        self.assertNotIn("参考模板库脚本", user_prompt)
 
     def test_deepseek_prompt_ignores_template_and_reference_script_content(self):
         ai = PromptCaptureAI("姐妹们，别等恢复原价了才后悔。")
