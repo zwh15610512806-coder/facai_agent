@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 INSPIRATION_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_AI_TIMEOUT_SECONDS
 INSPIRATION_THINKING_AI_TIMEOUT_SECONDS = CONFIG_INSPIRATION_THINKING_AI_TIMEOUT_SECONDS
 InspirationToolMode = Literal["chat", "thinking", "research", "analysis", "seedance"]
-ProductContextMode = Literal["auto", "always"]
+ProductContextMode = Literal["off", "auto", "always"]
 
 
 class ChatTurn(BaseModel):
@@ -70,7 +70,7 @@ class InspirationChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=40)
     tool_mode: InspirationToolMode = "chat"
-    product_context_mode: ProductContextMode = "auto"
+    product_context_mode: ProductContextMode = "off"
     attachments: list[InspirationAttachment] = Field(default_factory=list, max_length=6)
 
     @field_validator("message")
@@ -114,6 +114,12 @@ SYSTEM_PROMPT = """你是法采新媒体运营AI工作助手。
 回答要直接、可执行、适合本地运营团队拿去改写使用。
 如果用户问题和法采业务无关，也可以正常协助，但优先把建议落回内容创作和运营执行。
 """
+
+NO_PRODUCT_CONTEXT_INSTRUCTION = (
+    "当前未启用“基于产品资料”。遇到“法采的产品怎么样”这类泛问题时，"
+    "只做高层判断、分析维度或追问用户想看哪类产品/场景；"
+    "不要编造 SKU、价格、具体产品资料，不要输出产品资料式清单或脚本模板。"
+)
 
 TOOL_MODE_INSTRUCTIONS = {
     "chat": "",
@@ -518,7 +524,11 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
     model_override = _model_for_tool_mode(data.tool_mode)
     model = ai_service.get_model_name(model_override, interface_key=interface_key, db=db)
     force_product_context = data.product_context_mode == "always"
-    product_context = _safe_product_context(message, db, force=force_product_context)
+    product_context = (
+        _safe_product_context(message, db, force=True)
+        if force_product_context
+        else {"used": False, "context": "", "products": []}
+    )
     products = product_context.get("products") or []
     product_context_used = bool(products)
     sources = await _safe_web_search(message, data.tool_mode)
@@ -539,6 +549,8 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
     tool_instruction = TOOL_MODE_INSTRUCTIONS.get(data.tool_mode, "")
     if tool_instruction:
         system_prompt = f"{system_prompt}\n{tool_instruction}"
+    if not force_product_context and data.tool_mode == "chat":
+        system_prompt = f"{system_prompt}\n{NO_PRODUCT_CONTEXT_INSTRUCTION}"
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(_recent_history(data.history))
     messages.append({

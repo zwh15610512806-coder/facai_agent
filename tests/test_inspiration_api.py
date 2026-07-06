@@ -660,7 +660,78 @@ class InspirationApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_chat_uses_product_context_when_message_mentions_product_intent(self):
+    def test_chat_does_not_use_product_context_by_default_for_general_product_question(self):
+        self._add_product(
+            "水性色素",
+            "烘焙调色",
+            18.59,
+            "适合蛋糕调色和翻糖上色",
+            "少量即可上色，适合烘焙门店做调色备货。",
+        )
+        self.inspiration.ai_service.client = object()
+        captured = {}
+        original_finder = self.inspiration.find_product_context_for_inspiration
+
+        def fail_if_product_context_is_requested(*args, **kwargs):
+            raise AssertionError("product context should not be looked up unless explicitly enabled")
+
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
+            captured["messages"] = messages
+            return "法采产品整体适合围绕门店出品效率、稳定性和内容表达去评估。"
+
+        self.inspiration.find_product_context_for_inspiration = fail_if_product_context_is_requested
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            response = self.client.post(
+                "/api/inspiration/chat",
+                json={"message": "法采的产品怎么样"},
+            )
+        finally:
+            self.inspiration.find_product_context_for_inspiration = original_finder
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["product_context_used"])
+        self.assertEqual(data["products"], [])
+        self.assertNotIn("可引用的产品资料", captured["messages"][-1]["content"])
+
+    def test_chat_product_context_mode_off_and_auto_do_not_use_product_context(self):
+        self._add_product(
+            "水性色素",
+            "烘焙调色",
+            18.59,
+            "适合蛋糕调色和翻糖上色",
+            "少量即可上色，适合烘焙门店做调色备货。",
+        )
+        self.inspiration.ai_service.client = object()
+        original_finder = self.inspiration.find_product_context_for_inspiration
+        calls = []
+
+        def fail_if_product_context_is_requested(*args, **kwargs):
+            calls.append(kwargs.get("force"))
+            raise AssertionError("product context should not be looked up for off/auto")
+
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, **kwargs):
+            return "普通对话回答。"
+
+        self.inspiration.find_product_context_for_inspiration = fail_if_product_context_is_requested
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            for mode in ("off", "auto"):
+                response = self.client.post(
+                    "/api/inspiration/chat",
+                    json={"message": "调色产品怎么拍", "product_context_mode": mode},
+                )
+                self.assertEqual(response.status_code, 200)
+                data = response.json()
+                self.assertFalse(data["product_context_used"])
+                self.assertEqual(data["products"], [])
+        finally:
+            self.inspiration.find_product_context_for_inspiration = original_finder
+
+        self.assertEqual(calls, [])
+
+    def test_chat_uses_product_context_when_explicitly_enabled_for_product_intent(self):
         product = self._add_product(
             "水性色素",
             "烘焙调色",
@@ -679,7 +750,7 @@ class InspirationApiTests(unittest.TestCase):
 
         response = self.client.post(
             "/api/inspiration/chat",
-            json={"message": "帮我想一个调色产品短视频脚本"},
+            json={"message": "帮我想一个调色产品短视频脚本", "product_context_mode": "always"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -761,11 +832,11 @@ class InspirationApiTests(unittest.TestCase):
 
         fondant_response = self.client.post(
             "/api/inspiration/chat",
-            json={"message": "翻糖怎么做内容选题"},
+            json={"message": "翻糖怎么做内容选题", "product_context_mode": "always"},
         )
         puree_response = self.client.post(
             "/api/inspiration/chat",
-            json={"message": "果泥适合什么活动文案"},
+            json={"message": "果泥适合什么活动文案", "product_context_mode": "always"},
         )
 
         self.assertEqual(fondant_response.status_code, 200)
@@ -787,7 +858,7 @@ class InspirationApiTests(unittest.TestCase):
         self.assertIn("AI 服务暂时不可用", data["answer"])
         self.assertIn("今天拍什么内容？", data["answer"])
 
-    def test_chat_ai_unavailable_still_returns_product_references(self):
+    def test_chat_ai_unavailable_does_not_return_product_references_by_default(self):
         product = self._add_product(
             "水性色素",
             "烘焙调色",
@@ -805,8 +876,16 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["mode"], "fallback")
-        self.assertTrue(data["product_context_used"])
-        self.assertEqual(data["products"][0]["product_id"], product.id)
+        self.assertFalse(data["product_context_used"])
+        self.assertEqual(data["products"], [])
+
+        forced_response = self.client.post(
+            "/api/inspiration/chat",
+            json={"message": "调色产品怎么拍", "product_context_mode": "always"},
+        )
+        forced_data = forced_response.json()
+        self.assertTrue(forced_data["product_context_used"])
+        self.assertEqual(forced_data["products"][0]["product_id"], product.id)
 
     def test_chat_sends_only_recent_valid_history(self):
         self.inspiration.ai_service.client = object()

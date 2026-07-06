@@ -116,9 +116,10 @@ class InspirationPageTests(unittest.TestCase):
     def test_inspiration_composer_has_tool_modes_and_upload(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
-        for label in ["产品库优先", "上传文件", "思考模式", "深入研究", "数据分析", "分镜提示词生成"]:
+        for label in ["基于产品资料", "上传文件", "思考模式", "深入研究", "数据分析", "分镜提示词生成"]:
             self.assertIn(label, page)
-        self.assertLess(page.index("产品库优先"), page.index("上传文件"))
+        self.assertNotIn("产品库优先", page)
+        self.assertLess(page.index("基于产品资料"), page.index("上传文件"))
         self.assertIn('id="productContextToggle"', page)
         self.assertIn("function toggleProductContextMode()", page)
         self.assertIn("function getProductContextMode()", page)
@@ -152,7 +153,8 @@ class InspirationPageTests(unittest.TestCase):
 
         self.assertIn("function updateModelPillForMode(mode,overrideModel,productContextUsed)", page)
         self.assertIn("updateModelPillForMode(data.tool_mode||getActiveInspirationMode(),data.model,data.product_context_used)", page)
-        self.assertIn("产品库优先", page)
+        self.assertIn("基于产品资料", page)
+        self.assertNotIn("parts.push('产品资料')", page)
         self.assertIn("isProductContextAlways()", page)
         self.assertIn("modelPill.title=labelText", page)
 
@@ -161,6 +163,8 @@ class InspirationPageTests(unittest.TestCase):
 
         self.assertIn("tool_mode:getActiveInspirationMode()", page)
         self.assertIn("product_context_mode:getProductContextMode()", page)
+        self.assertIn("?'always':'off'", page)
+        self.assertNotIn("?'always':'auto'", page)
         self.assertIn("attachments:attachmentsForRequest", page)
         self.assertIn("addConversationMessage('user',message,{attachments:selectedAttachments})", page)
         self.assertIn("selectedAttachments=[]", page)

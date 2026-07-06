@@ -137,7 +137,7 @@ body{overflow:hidden}
     <div id="inspirationThread" class="inspiration-thread"></div>
     <div class="inspiration-composer">
       <div class="composer-tools" aria-label="AI工作对话功能">
-        <button id="productContextToggle" class="tool-button" type="button" aria-pressed="false" onclick="toggleProductContextMode()"><i data-lucide="package-search"></i>产品库优先</button>
+        <button id="productContextToggle" class="tool-button" type="button" aria-pressed="false" onclick="toggleProductContextMode()"><i data-lucide="package-search"></i>基于产品资料</button>
         <button class="tool-button" type="button" onclick="document.getElementById('inspirationFileInput').click()"><i data-lucide="paperclip"></i>上传文件</button>
         <button class="tool-button mode-button" type="button" data-tool-mode="thinking" onclick="setInspirationMode('thinking')"><i data-lucide="brain-circuit"></i>思考模式</button>
         <button class="tool-button mode-button" type="button" data-tool-mode="seedance" onclick="setInspirationMode('seedance')"><i data-lucide="clapperboard"></i>分镜提示词生成</button>
@@ -356,8 +356,7 @@ function modelPillTextForMode(mode,overrideModel,productContextUsed){
  const parts=[label];
  if(provider)parts.push(provider);
  parts.push(model||(inspirationModelConfigLoaded?'模型未配置':'模型读取中'));
- if(isProductContextAlways()&&mode!=='seedance')parts.push('产品库优先');
- else if(productContextUsed)parts.push('产品资料');
+ if(isProductContextAlways()&&mode!=='seedance')parts.push('基于产品资料');
  return parts.join(' · ');
 }
 function updateModelPillForMode(mode,overrideModel,productContextUsed){
@@ -499,7 +498,7 @@ function isProductContextAlways(){
  return productContextAlways;
 }
 function getProductContextMode(){
- return isProductContextAlways()&&getActiveInspirationMode()!=='seedance'?'always':'auto';
+ return isProductContextAlways()&&getActiveInspirationMode()!=='seedance'?'always':'off';
 }
 function renderProductContextMode(){
  const button=document.getElementById('productContextToggle');
@@ -507,7 +506,7 @@ function renderProductContextMode(){
  const active=isProductContextAlways();
  button.classList.toggle('is-active',active);
  button.setAttribute('aria-pressed',active?'true':'false');
- button.title=active?'已开启：提问会优先检索产品资料库':'开启后，提问会优先检索产品资料库';
+ button.title=active?'已开启：回答会基于产品资料':'开启后，回答会基于产品资料';
 }
 function toggleProductContextMode(){
  productContextAlways=!productContextAlways;
