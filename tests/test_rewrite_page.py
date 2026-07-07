@@ -81,11 +81,18 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("2. [00:01] 我们采访老师就是说明黄水无所谓", structure)
         self.assertIn("3. [00:04] 但是社交距离内口气一定要清新", structure)
 
-    def test_rewriter_prompt_prioritizes_reference_structure(self):
-        self.assertIn("用户参考文案结构", ScriptRewriter.SYSTEM_PROMPT)
-        self.assertIn("不能让同类参考脚本覆盖用户参考文案结构", ScriptRewriter.SYSTEM_PROMPT)
-        self.assertIn("拍摄主体、景别/镜头、动作或展示细节", ScriptRewriter.SYSTEM_PROMPT)
-        self.assertIn("不要只写（口播画面）（产品空镜）（产品展示）", ScriptRewriter.SYSTEM_PROMPT)
+    def test_rewriter_uses_user_supplied_ai_rewrite_prompt(self):
+        prompt = ScriptRewriter.SYSTEM_PROMPT
+
+        self.assertIn("# 角色", prompt)
+        self.assertIn("专业的带货文案结构分析师与改写专家", prompt)
+        self.assertIn("精准分析原文案结构", prompt)
+        self.assertIn("深度理解产品核心信息", prompt)
+        self.assertIn("结构化改写并保持一致性", prompt)
+        self.assertIn("严格禁止改变原文案的核心结构", prompt)
+        self.assertIn("只专注于文案改写任务", prompt)
+        self.assertIn("输出1条文案，500字以内", prompt)
+        self.assertIn("结构分析只在内部完成，不输出结构分析", prompt)
 
     def test_rewriter_cleanup_converts_sectioned_output_to_material_style(self):
         text = """改写后的脚本：

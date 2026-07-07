@@ -1,5 +1,6 @@
 """脚本改写服务 — 保留参考结构，并统一输出为资料脚本表格式"""
 from services.ai_service import ai_service
+from services.rewrite_prompts import build_rewrite_system_prompt
 from models import ViralScript
 from sqlalchemy.orm import Session
 import re
@@ -21,31 +22,8 @@ class ScriptRewriter:
 - 不允许用同类爆款脚本或产品资料重新生成一条全新结构；同类脚本只能参考语气和括号画面写法。
 - 口播要保持资料表里的抖音烘焙带货口吻：自然、直接、有画面感，能开拍即用。"""
 
-    SYSTEM_PROMPT = """你是法采食品店的脚本改写专家。你的任务是将一段现有带货脚本改写为法采目标产品版本。
-
-核心要求：
-1. **统一输出格式**：无论原脚本是带时间戳、分段标题，还是一整段话，输出都必须按资料脚本生成文件的格式。
-2. **保留参考结构**：必须沿着用户原脚本的顺序逐句/逐段改写，不能重排、不能另起一套新结构。
-3. **替换所有产品相关信息**：产品名、品类名、卖点、价格、规格全部替换为目标产品信息。
-4. **补足拍摄指令**：每个关键表达前用中文全角括号标注具体画面，括号里要写清楚拍摄主体、景别/镜头、动作或展示细节，不要只写“口播画面”“产品空镜”这种泛标签。
-5. **卖点自然融入**：新产品卖点要自然嵌入脚本，不生搬硬套。
-6. **学习资料表表达方式**：只学习资料表的画面括号、口播质感和连续成稿形式，不改变用户参考文案的结构。
-
-优先级：
-用户参考文案结构 > 目标产品信息替换 > 资料脚本格式 > 同类爆款表达。任何时候都不能让同类参考脚本覆盖用户参考文案结构。
-
-输出：直接输出改写后的完整脚本，不要任何解释说明。
-
-""" + MATERIAL_SCRIPT_FORMAT
-
-    PLAIN_SYSTEM_PROMPT = """你是法采食品店的脚本改写专家。你的任务是把一段现有带货脚本改写为法采目标产品版本。
-核心要求：
-1. 保留用户参考文案的信息顺序和表达节奏，不重排、不另起一套新结构。
-2. 替换所有产品相关信息：产品名、品类名、卖点、价格、规格都换成目标产品信息。
-3. 输出纯口播文案：只输出一段连续自然的短视频口播，不要镜头说明、画面说明、分镜标题、时间戳、Markdown、编号或解释。
-4. 如果参考文案里有画面括号或时间戳，只吸收节奏和信息，不保留这些格式。
-5. 口播保持资料表里的抖音烘焙带货口吻：自然、直接、接地气，能开拍即用。
-输出：直接输出改写后的完整口播文案。"""
+    SYSTEM_PROMPT = build_rewrite_system_prompt(include_shot_design=True)
+    PLAIN_SYSTEM_PROMPT = build_rewrite_system_prompt(include_shot_design=False)
 
     def __init__(self):
         self.ai = ai_service
@@ -269,19 +247,14 @@ class ScriptRewriter:
 {reference_structure}
 
 改写要求：
-- 不管原脚本是带时间戳、分段标题，还是一整段话，输出都必须统一为资料脚本生成文件里的连续脚本格式
-- 输出使用“（具体画面/动作/剪辑指令）+口播文案”的连续成稿，不要 Markdown、不要编号、不要解释
-- 每个括号里的画面信息都要参考模板库脚本的拍摄描述写法，写清楚主体、景别/镜头、动作或道具，例如“主播半身站在烘焙台前开场，手边摆放产品包装”“产品包装正面近景，手拿转动展示规格”“俯拍操作台，手部倒入原料并搅拌”“切开成品蛋糕近景，展示夹心层次”
-- 不要只写“口播画面”“产品空镜”“产品展示”这种泛标签；如果模型想写这些标签，必须扩写成可直接拍摄的详细画面
-- 不要保留原文的时间戳、【开场钩子】这类段落标题或小标题
-- 原文如果没有画面指令，要根据内容逐句补出具体拍摄提示：口播句写主播位置和动作，产品句写包装/规格/质地近景，操作句写手部动作和步骤，对比句写左右或前后对比，成交句写价格牌/小黄车/手指引导
 - 必须按上面的结构骨架逐条改写：第1条对应开头，第2条接第2条，第3条接第3条，不要跳段、不要重排
-- 可以把特别短的相邻两条自然合并进同一个画面括号，但不能改变原文信息出现顺序
-- 同类爆款脚本只用于学习资料表的表达质感，不能替代用户参考文案的结构
+- 可以把特别短的相邻两条自然合并，但不能改变原文信息出现顺序
+- 同类爆款脚本只用于学习表达质感，不能替代用户参考文案的结构
 - 将所有产品名、卖点、价格、规格替换为新产品信息
 - 吸收原脚本的语言风格、情绪节奏和转化逻辑
 - 产品卖点自然融入，不生搬硬套
-- 参考同类脚本的表达方式，让脚本更接地气"""
+- 参考同类脚本的表达方式，让脚本更接地气
+- 最终只输出1条500字以内的文案，不要 Markdown、编号、标题、解释或结构分析"""
 
         if video_type:
             instructions += f"\n- 保持{video_type}类型脚本的特征"
@@ -289,7 +262,16 @@ class ScriptRewriter:
         if extra_requirements:
             instructions += f"\n\n额外要求：{extra_requirements}"
 
-        if not include_shot_design:
+        if include_shot_design:
+            instructions += (
+                "\n\n【输出格式要求】用户勾选“需要设计画面”："
+                "输出使用“（具体画面/动作/剪辑指令）+口播文案”的连续成稿。"
+                "每个关键括号里的画面信息都要写清楚主体、景别/镜头、动作或道具，"
+                "例如“主播半身站在烘焙台前开场，手边摆放产品包装”“产品包装正面近景，手拿转动展示规格”。"
+                "不要只写“口播画面”“产品空镜”“产品展示”这种泛标签。"
+                "不要保留原文的时间戳、【开场钩子】这类段落标题或小标题。"
+            )
+        else:
             instructions += (
                 "\n\n【输出格式覆盖】用户未勾选“需要设计画面”："
                 "最终只输出一段连续自然口播文案，禁止输出任何中文括号画面说明、镜头说明、分镜标题、时间戳、换行、列表或解释。"
@@ -322,7 +304,7 @@ class ScriptRewriter:
             name, category, price_text, selling_points, original_script=original_script
         )
         if include_shot_design:
-            return fallback
+            return self._limit_rewrite_text(fallback)
         return self._cleanup_plain_rewrite_output(fallback)
 
     def _enrich_scene_label(
@@ -503,7 +485,7 @@ class ScriptRewriter:
         cleaned = re.sub(r"\n(?=（)", "", cleaned)
         cleaned = re.sub(r"\n+", " ", cleaned)
         cleaned = self._enrich_scene_labels(cleaned)
-        return cleaned.strip()
+        return self._limit_rewrite_text(cleaned.strip())
 
     def _cleanup_plain_rewrite_output(self, text: str) -> str:
         """Remove shot notes and formatting when the user only wants spoken copy."""
@@ -541,7 +523,20 @@ class ScriptRewriter:
         )
         cleaned = re.sub(r"\s+", " ", cleaned)
         cleaned = re.sub(r"\s+([，。！？；、])", r"\1", cleaned)
-        return cleaned.strip()
+        return self._limit_rewrite_text(cleaned.strip())
+
+    def _limit_rewrite_text(self, text: str, limit: int = 500) -> str:
+        """Keep the public rewrite result to one compact copy block."""
+        cleaned = (text or "").strip()
+        if len(cleaned) <= limit:
+            return cleaned
+
+        cut = cleaned[:limit]
+        sentence_breaks = [cut.rfind(mark) for mark in "。！？!?；;"]
+        last_break = max(sentence_breaks) if sentence_breaks else -1
+        if last_break >= int(limit * 0.65):
+            cut = cut[:last_break + 1]
+        return cut.strip()
 
 
 script_rewriter = ScriptRewriter()

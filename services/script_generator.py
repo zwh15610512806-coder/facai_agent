@@ -1,5 +1,6 @@
 """脚本生成引擎 — 核心业务逻辑"""
-from services.ai_service import ai_service, AIService, build_faicai_script
+from services.ai_service import ai_service, build_faicai_script
+from services.rewrite_prompts import build_rewrite_system_prompt
 from models import ViralScript, ReferenceScript
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -1097,20 +1098,7 @@ class ScriptGenerator:
         return self._post_process_script_output(response, include_shot_design)
 
     def _build_library_system_prompt(self, include_shot_design: bool) -> str:
-        if include_shot_design:
-            return AIService.TEMPLATE_REWRITE_SYSTEM_PROMPT
-
-        return """你是法采食品店的高成交模板库口播改写专家，擅长把已验证的爆款结构改写成一段可直接拍摄的自然带货口播。
-
-当前输出模式：纯口播一段话。
-
-改写原则：
-1. 参考脚本只作为成交逻辑、痛点推进、卖点顺序和口语节奏的依据。
-2. 必须替换为目标产品的名称、卖点、价格、规格和法采品牌表达。
-3. 不保留参考脚本的结构化格式，不保留段落标题，不保留时间标注，不保留镜头或画面说明。
-4. 只输出一段连续自然口播文案，不换行，不用列表，不用 Markdown，不写“改写自”或脚本编号。
-5. 口吻要接近真实达人带货，一口气讲完，逻辑顺序是痛点/需求、产品解决、卖点证明、促销下单。
-6. CTA 必须有明确左下角下单引导。"""
+        return build_rewrite_system_prompt(include_shot_design)
 
 
 # 全局单例

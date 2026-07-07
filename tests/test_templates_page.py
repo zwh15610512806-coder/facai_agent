@@ -279,17 +279,22 @@ class TemplatesPageTests(unittest.TestCase):
         self.assertIn("+' 条</span>'", self.page)
 
     def test_view_modal_product_search_uses_two_slot_click_to_rewrite_layout(self):
-        self.assertIn(
-            ".modal-product-toolbar{display:block;margin-bottom:0;min-width:0}",
-            self.page,
-        )
-        self.assertIn(".modal-product-list{display:none;gap:10px;overflow-x:auto;overflow-y:hidden;min-height:0;max-height:88px;padding:2px 2px 6px;min-width:0;align-items:stretch}", self.page)
-        self.assertIn(".modal-product-list .modal-product-card{flex:0 0 184px;min-height:88px;height:88px}", self.page)
+        self.assertIn(".modal-product-toolbar{display:flex;align-items:stretch;margin-bottom:0;min-width:0;height:60px}", self.page)
+        self.assertIn(".modal-product-toolbar .input{width:100%;height:60px;font-size:13px}", self.page)
+        self.assertIn(".modal-product-list{display:none;gap:10px;overflow-x:auto;overflow-y:hidden;min-height:0;max-height:60px;padding:0 2px;min-width:0;align-items:stretch}", self.page)
+        self.assertIn(".modal-product-list .modal-product-card{flex:0 0 184px;min-height:60px;height:60px}", self.page)
+        self.assertIn(".modal-product-card{border-radius:var(--r);border:1px solid var(--border);padding:8px 10px;cursor:pointer;background:var(--surface);transition:all var(--normal) var(--ease);position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto;column-gap:8px;row-gap:2px;align-content:center;align-items:center}", self.page)
+        self.assertIn(".modal-product-card .pcat{grid-row:1/3;grid-column:1;display:inline-flex;align-items:center;justify-content:center;min-height:20px;max-width:68px;padding:2px 8px;border-radius:var(--r-pill);background:var(--facai-soft);color:var(--facai);font-size:11px;line-height:1.2;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}", self.page)
+        self.assertIn(".modal-product-card .pname{grid-column:2;font-size:13px;font-weight:700;margin:0;line-height:1.2;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}", self.page)
+        self.assertIn(".modal-product-card .ppoints{grid-column:2;font-size:12px;line-height:1.2;color:var(--text-3);margin:0}", self.page)
+        self.assertIn("function productSellingPointLabel(p)", self.page)
+        self.assertIn("selling_point_count", self.page)
         self.assertIn(".modal-product-card.rewriting{border-color:var(--facai);background:var(--facai-soft);box-shadow:0 0 0 2px var(--facai-subtle)}", self.page)
-        self.assertIn(".modal-product-card.rewriting:after{content:'改写中...';position:absolute;right:10px;bottom:10px;font-size:12px;font-weight:800;color:var(--facai)}", self.page)
+        self.assertIn(".modal-product-card.rewriting:after{content:'改写中...';position:absolute;right:8px;bottom:8px;font-size:11px;font-weight:800;color:var(--facai)}", self.page)
         self.assertNotIn(".modal-product-action", self.page)
         self.assertNotIn(".modal-product-card-action", self.page)
         self.assertNotIn(".modal-product-card.sel .modal-product-card-action", self.page)
+        self.assertNotIn('class="pprice"', self.page)
 
     def test_view_modal_uses_fixed_layout_and_locks_background_scroll(self):
         self.assertIn(
@@ -301,15 +306,16 @@ class TemplatesPageTests(unittest.TestCase):
             self.page,
         )
         self.assertIn(
-            ".script-detail-shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.86fr);flex:1;min-height:0;min-width:0;overflow:hidden}",
+            ".script-detail-shell{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));flex:1;min-height:0;min-width:0;overflow:hidden}",
             self.page,
         )
         self.assertIn(".qianchuan-scroll{flex:1;min-height:0;overflow-y:auto", self.page)
         self.assertIn(
-            ".rewrite-product-bar{border-top:1px solid var(--border-soft);padding:12px 24px 14px;background:var(--muted);min-width:0;flex:0 0 112px;height:112px;min-height:112px;max-height:112px;display:grid;grid-template-columns:minmax(320px,1.4fr) minmax(360px,1fr);gap:22px;align-items:stretch;overflow:hidden}",
+            ".rewrite-product-bar{border-top:1px solid var(--border-soft);padding:10px 24px;background:var(--muted);min-width:0;flex:0 0 82px;height:82px;min-height:82px;max-height:82px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:center;overflow:hidden}",
             self.page,
         )
         self.assertIn(".rewrite-product-bar { display:grid; grid-template-columns:1fr; flex:initial; height:auto; min-height:0; max-height:none; overflow:visible; padding:16px; gap:10px; }", self.page)
+        self.assertNotIn(".rewrite-product-bar:before", self.page)
         self.assertNotIn(".rewrite-product-bar{position:absolute", self.page)
         self.assertIn("html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-behavior:none}", self.page)
         self.assertIn("var modalScrollY=0", self.page)

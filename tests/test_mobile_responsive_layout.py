@@ -137,6 +137,9 @@ class PageSpecificMobileLayoutTests(unittest.TestCase):
         self.assertIn(".script-preview-actions .btn", page)
         self.assertIn(".modal-product-list.has-results", page)
         self.assertIn("grid-template-columns:1fr", page)
+        self.assertIn(".modal-product-toolbar { display:block; height:auto; }", page)
+        self.assertIn(".modal-product-toolbar .input { height:auto; min-height:44px; }", page)
+        self.assertIn(".modal-product-list .modal-product-card { flex:initial; height:auto; min-height:60px; }", page)
         self.assertNotIn(".modal-product-toolbar .btn", page)
 
     def test_search_page_mobile_filter_chips_scroll_horizontally(self):

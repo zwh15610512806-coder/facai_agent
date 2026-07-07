@@ -18,6 +18,7 @@ from services.ai_config import (
     record_usage,
     resolve_interface_connection,
 )
+from services.rewrite_prompts import build_rewrite_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -308,22 +309,7 @@ class AIService:
 - 每个卖点都要具体量化
 - CTA必须直接有力：点击下方小黄车、手慢无"""
 
-    TEMPLATE_REWRITE_SYSTEM_PROMPT = """你是法采食品店的脚本改写专家，拥有抖音烘焙带货5年经验。
-
-改写的核心原则：
-1. **以参考脚本为主体**：参考脚本是经过验证的高成交爆款，你的任务是把它改写成目标产品的版本
-2. **替换产品信息**：产品名称、卖点、价格、规格全部替换为目标产品信息
-3. **保持结构和节奏**：原脚本的段落分割、时间标注、情绪起伏节奏保持不变
-4. **保持情绪和语气**：原脚本的感叹语气、紧迫感、口语化表达风格保持一致
-5. **适配镜头描述**：镜头指令根据新产品做微调，但保留原镜头的功能和时机
-6. **品牌统一**：所有品牌名统一称为"法采"
-7. **CTA 重新对齐**：保留原 CTA 的结构和紧迫感，但根据新产品价格和活动做微调
-
-输出格式：
-- 用【】标记每个段落功能（如【开场钩子-前3秒】【痛点激发】【产品卖点展示】【促销信息】【促单话术】）
-- 保持原脚本的段落结构，只替换内容
-- 每个时间标注与原脚本保持一致
-- 使用口语化表达：姐妹们、烘焙人、你看、就是、直接"""
+    TEMPLATE_REWRITE_SYSTEM_PROMPT = build_rewrite_system_prompt(include_shot_design=True)
 
     def __init__(self):
         self.client = None

@@ -94,7 +94,9 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
 
         system_prompt = ai.messages[0]["content"]
         prompt = ai.messages[-1]["content"]
-        self.assertIn("高成交模板库口播改写专家", system_prompt)
+        self.assertIn("专业的带货文案结构分析师与改写专家", system_prompt)
+        self.assertIn("结构分析只在内部完成，不输出结构分析", system_prompt)
+        self.assertIn("当前输出模式：纯口播一段话", system_prompt)
         self.assertIn("只输出一段连续自然口播文案", system_prompt)
         self.assertNotIn("保持结构和节奏", system_prompt)
         self.assertNotIn("用【】标记每个段落功能", system_prompt)
@@ -116,6 +118,34 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
         self.assertNotIn("前3秒", result)
         self.assertIn("姐妹们！2024年了", result)
         self.assertIn("以前做个蛋糕夹心", result)
+
+    def test_shot_design_library_rewrite_uses_unified_rewrite_prompt_and_keeps_shot_requirements(self):
+        ai = CapturingAI("（主播半身站在烘焙台前开场，手边摆放慕斯粉包装）老板们看过来。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate_from_library(
+            product=make_product(),
+            video_type="需求类",
+            reference_scripts=[
+                {
+                    "title": "高成交脚本",
+                    "content": "老板们看过来，这个原料能解决出品不稳定的问题。",
+                    "video_type": "需求类",
+                    "category": "烘焙夹心",
+                    "is_high_conversion": True,
+                }
+            ],
+            tone="活泼",
+            include_shot_design=True,
+        ))
+
+        system_prompt = ai.messages[0]["content"]
+        self.assertIn("专业的带货文案结构分析师与改写专家", system_prompt)
+        self.assertIn("输出1条文案，500字以内", system_prompt)
+        self.assertIn("当前输出模式：画面括号 + 口播文案", system_prompt)
+        self.assertIn("拍摄主体、镜头/景别、动作或道具", system_prompt)
+        self.assertIn("（主播半身站在烘焙台前开场", result)
 
     def test_plain_library_rewrite_removes_ai_preamble_and_format_scaffold(self):
         ai = CapturingAI(
