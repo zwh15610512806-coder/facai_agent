@@ -94,6 +94,10 @@ body{overflow:hidden}
 .reasoning-block{margin-top:10px;border:1px solid var(--facai-subtle);border-radius:var(--r-sm);background:var(--facai-ghost);white-space:normal;overflow:hidden}
 .reasoning-block summary{cursor:pointer;padding:7px 9px;font-size:12px;font-weight:900;color:var(--facai)}
 .reasoning-body{padding:0 9px 9px;font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap}
+.agent-trace{margin-top:10px;padding-top:8px;border-top:1px solid var(--border-soft);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.agent-trace-label{font-size:12px;font-weight:900;color:var(--text-3)}
+.agent-trace-chip{display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface-darker);color:var(--text-2);padding:3px 8px;font-size:12px;font-weight:800;line-height:1.4}
+.agent-trace-chip.is-error{border-color:#ffd3cc;background:#fff7f5;color:#b42318}
 .source-label{font-size:12px;font-weight:900;color:var(--text-3)}
 .source-chip{display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface);color:var(--text-2);padding:3px 8px;font-size:12px;font-weight:800;line-height:1.4;text-decoration:none}
 .source-chip:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
@@ -291,6 +295,16 @@ function sanitizeSource(source){
  if(!url)return null;
  return {title:title,url:url,snippet:String(source.snippet||'')};
 }
+function sanitizeAgentTraceStep(step){
+ if(!step||typeof step!=='object')return null;
+ const label=String(step.label||step.tool||'工具').trim()||'工具';
+ return {
+  tool:String(step.tool||'').trim(),
+  label:label,
+  status:String(step.status||'success').trim()||'success',
+  summary:String(step.summary||'').trim()
+ };
+}
 function sanitizeMessage(message){
  if(!message||typeof message!=='object')return null;
  const role=message.role==='assistant'?'assistant':'user';
@@ -299,7 +313,9 @@ function sanitizeMessage(message){
  const products=Array.isArray(message.products)?message.products.map(sanitizeProduct).filter(Boolean).slice(0,6):[];
  const attachments=Array.isArray(message.attachments)?message.attachments.map(sanitizeAttachment).filter(Boolean).slice(0,6):[];
  const sources=Array.isArray(message.sources)?message.sources.map(sanitizeSource).filter(Boolean).slice(0,6):[];
- return {role:role,content:content,products:products,attachments:attachments,sources:sources,reasoning:String(message.reasoning||'')};
+ const rawAgentTrace=Array.isArray(message.agentTrace)?message.agentTrace:(Array.isArray(message.agent_trace)?message.agent_trace:[]);
+ const agentTrace=rawAgentTrace.map(sanitizeAgentTraceStep).filter(Boolean).slice(0,6);
+ return {role:role,content:content,products:products,attachments:attachments,sources:sources,reasoning:String(message.reasoning||''),agentTrace:agentTrace};
 }
 function deriveConversationTitle(messages){
  const firstUser=(messages||[]).find(function(message){return message.role==='user'&&message.content;});
@@ -564,7 +580,7 @@ function renderConversation(){
  const thread=document.getElementById('inspirationThread');
  thread.innerHTML='';
  conversation.messages.forEach(function(message){
-  appendMessage(message.role,message.content,{products:message.products,attachments:message.attachments,reasoning:message.reasoning,sources:message.sources,scroll:'none'});
+  appendMessage(message.role,message.content,{products:message.products,attachments:message.attachments,reasoning:message.reasoning,sources:message.sources,agentTrace:message.agentTrace,scroll:'none'});
  });
  thread.scrollTop=thread.scrollHeight;
  const hasProductContext=conversation.messages.some(function(message){return message.products&&message.products.length;});
@@ -648,7 +664,7 @@ function deleteConversation(id,event){
 }
 function addConversationMessage(role,content,extras){
  const conversation=ensureActiveConversation();
- const message=sanitizeMessage({role:role,content:content,products:extras&&extras.products,attachments:extras&&extras.attachments,reasoning:extras&&extras.reasoning,sources:extras&&extras.sources});
+ const message=sanitizeMessage({role:role,content:content,products:extras&&extras.products,attachments:extras&&extras.attachments,reasoning:extras&&extras.reasoning,sources:extras&&extras.sources,agentTrace:extras&&extras.agentTrace});
  if(!message)return null;
  conversation.messages.push(message);
  conversation.messages=conversation.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
@@ -735,6 +751,19 @@ function renderMessageAttachments(attachments){
 function renderReasoning(reasoning){
  if(!reasoning)return '';
  return '<details class="reasoning-block"><summary>思考过程</summary><div class="reasoning-body">'+escHtml(reasoning)+'</div></details>';
+}
+function renderAgentTrace(agentTrace){
+ if(!agentTrace||!agentTrace.length)return '';
+ const chips=agentTrace.slice(0,6).map(function(step){
+  if(!step)return '';
+  const label=String(step.label||step.tool||'工具').trim()||'工具';
+  const summary=String(step.summary||'').trim();
+  const status=String(step.status||'success').trim();
+  const className='agent-trace-chip'+(status==='error'?' is-error':'');
+  return '<span class="'+className+'" title="'+escHtml(summary)+'">'+escHtml(label)+'</span>';
+ }).filter(Boolean).join('');
+ if(!chips)return '';
+ return '<div class="agent-trace"><span class="agent-trace-label">已使用</span>'+chips+'</div>';
 }
 function renderSources(sources){
  if(!sources||!sources.length)return '';
@@ -877,10 +906,11 @@ function appendMessage(role,content,options){
  const bodyHtml='<div class="message-content">'+safe+'</div>';
  const attachmentHtml=options?renderMessageAttachments(options.attachments):'';
  const reasoningHtml=role==='assistant'&&options?renderReasoning(options.reasoning):'';
+ const agentTraceHtml=role==='assistant'&&options?renderAgentTrace(options.agentTrace):'';
  const references=role==='assistant'&&options?(options.referenceProductsHtml||renderReferenceProducts(options.products)):'';
  const sourceHtml=role==='assistant'&&options?renderSources(options.sources):'';
  const tools=role==='assistant'&&!(options&&options.thinking)?'<div class="message-tools"><button class="message-tool" type="button" onclick="copyAssistantMessage(this)">复制</button><button class="message-tool" type="button" onclick="generateAssistantDocument(this)">生成文档</button></div>':'';
- const bubbleContent=role==='user'?attachmentHtml+bodyHtml:bodyHtml+attachmentHtml+reasoningHtml+references+sourceHtml+tools;
+ const bubbleContent=role==='user'?attachmentHtml+bodyHtml:bodyHtml+attachmentHtml+reasoningHtml+agentTraceHtml+references+sourceHtml+tools;
  msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')+'<div class="chat-bubble '+(options&&options.thinking?'thinking':'')+'">'+bubbleContent+'</div>'+(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
  thread.appendChild(msg);
  const scrollMode=(options&&options.scroll)||((role==='assistant'&&!(options&&options.thinking))?'top':'bottom');
@@ -1014,10 +1044,10 @@ async function sendInspirationChat(event){
   const data=await response.json();
   loading.remove();
   if(!response.ok)throw new Error(data.detail||data.message||'发送失败');
-  addConversationMessage('assistant',data.answer||'',{products:data.products,reasoning:data.reasoning,sources:data.sources});
+  addConversationMessage('assistant',data.answer||'',{products:data.products,reasoning:data.reasoning,sources:data.sources,agentTrace:data.agent_trace});
   const referenceProductsHtml=renderReferenceProducts(data.products);
   updateModelPillForMode(data.tool_mode||getActiveInspirationMode(),data.model,data.product_context_used);
- appendMessage('assistant',data.answer||'没有收到回复',{products:data.products,referenceProductsHtml:referenceProductsHtml,reasoning:data.reasoning,sources:data.sources});
+ appendMessage('assistant',data.answer||'没有收到回复',{products:data.products,referenceProductsHtml:referenceProductsHtml,reasoning:data.reasoning,sources:data.sources,agentTrace:data.agent_trace});
  }catch(error){
   loading.remove();
   appendMessage('assistant','发送失败：'+formatInspirationChatError(error));

@@ -24,6 +24,7 @@ from services.inspiration_attachments import (
     load_image_attachment_data_url,
     resolve_image_attachment,
 )
+from services.inspiration_agent import InspirationAgentResult, run_inspiration_agent
 from services import inspiration_documents
 from services.product_rag import find_product_context_for_inspiration
 from services.seedance_prompt_generator import (
@@ -78,6 +79,13 @@ class ProductReference(BaseModel):
     price: float | None = None
 
 
+class AgentTraceStep(BaseModel):
+    tool: str = Field(default="", max_length=40)
+    label: str = Field(default="", max_length=40)
+    status: str = Field(default="success", max_length=20)
+    summary: str = Field(default="", max_length=240)
+
+
 class InspirationChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=40)
@@ -105,6 +113,7 @@ class InspirationChatResponse(BaseModel):
     attachments_used: list[InspirationAttachment] = Field(default_factory=list)
     product_context_used: bool = False
     products: list["ProductReference"] = Field(default_factory=list)
+    agent_trace: list[AgentTraceStep] = Field(default_factory=list)
 
 
 class InspirationDocumentRequest(BaseModel):
@@ -428,6 +437,25 @@ def _web_context(sources: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
+def _agent_trace_context(agent_trace: list[dict] | None) -> str:
+    if not agent_trace:
+        return ""
+    lines = []
+    for step in agent_trace[:6]:
+        if not isinstance(step, dict):
+            continue
+        label = str(step.get("label") or step.get("tool") or "工具").strip()
+        summary = str(step.get("summary") or "").strip()
+        status = str(step.get("status") or "").strip()
+        if not label and not summary:
+            continue
+        suffix = summary or status or "已执行"
+        lines.append(f"- {label}：{suffix}")
+    if not lines:
+        return ""
+    return "Agent 工具摘要：\n" + "\n".join(lines)
+
+
 def _should_search_web(message: str, tool_mode: str, web_search_mode: str = "auto") -> bool:
     if web_search_mode == "always" and tool_mode != "seedance":
         return True
@@ -470,11 +498,15 @@ def _compose_user_message(
     sources: list[dict],
     tool_mode: str,
     web_search_mode: str = "auto",
+    agent_trace: list[dict] | None = None,
 ) -> str:
     sections = [f"用户问题：{message}" if product_context.get("context") or attachments or sources or tool_mode != "chat" else message]
     instruction = TOOL_MODE_INSTRUCTIONS.get(tool_mode, "")
     if instruction:
         sections.append(f"模式要求：{instruction}")
+    agent_context = _agent_trace_context(agent_trace)
+    if agent_context:
+        sections.append(agent_context)
     attachment_context = _attachment_context(attachments)
     if attachment_context:
         sections.append(attachment_context)
@@ -686,17 +718,47 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
     model_override = _model_for_tool_mode(data.tool_mode)
     model = ai_service.get_model_name(model_override, interface_key=interface_key, db=db)
     force_product_context = data.product_context_mode == "always"
-    product_context = (
-        _safe_product_context(message, db, force=True)
-        if force_product_context
-        else {"used": False, "context": "", "products": []}
-    )
-    products = product_context.get("products") or []
-    product_context_used = bool(products)
-    sources = await _safe_web_search(message, data.tool_mode, data.web_search_mode)
     text_attachments_used = _text_attachments(data.attachments)
     image_attachments_used = _image_attachments(data.attachments, data.tool_mode)
     attachments_used = text_attachments_used + image_attachments_used
+    agent_trace: list[dict] = []
+    if force_product_context:
+        try:
+            agent_result = await run_inspiration_agent(
+                message=message,
+                db=db,
+                product_context_enabled=True,
+                web_search_enabled=_should_search_web(message, data.tool_mode, data.web_search_mode),
+                attachments=text_attachments_used,
+                tool_mode=data.tool_mode,
+                product_context_func=find_product_context_for_inspiration,
+                web_search_func=search_web,
+                product_limit=6,
+                web_query=_web_search_query(message),
+                web_max_results=5,
+            )
+        except Exception as exc:
+            logger.warning("AI-work agentic RAG failed: %s", exc)
+            agent_result = InspirationAgentResult(
+                product_context={"used": False, "context": "", "products": []},
+                sources=[],
+                agent_trace=[
+                    {
+                        "tool": "agent",
+                        "label": "Agent",
+                        "status": "error",
+                        "summary": "工具编排失败，已降级为普通回答。",
+                    }
+                ],
+            )
+        product_context = agent_result.product_context
+        sources = agent_result.sources
+        agent_trace = agent_result.agent_trace
+    else:
+        product_context = {"used": False, "context": "", "products": []}
+        sources = await _safe_web_search(message, data.tool_mode, data.web_search_mode)
+    products = product_context.get("products") or []
+    product_context_used = bool(products)
     if not ai_service.is_interface_available(interface_key, db=db):
         return InspirationChatResponse(
             answer=_fallback_answer_with_products(message, products),
@@ -707,6 +769,7 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
             attachments_used=attachments_used,
             product_context_used=product_context_used,
             products=products,
+            agent_trace=agent_trace,
         )
 
     system_prompt = SYSTEM_PROMPT
@@ -724,6 +787,7 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
         sources,
         data.tool_mode,
         data.web_search_mode,
+        agent_trace,
     )
     messages.append({
         "role": "user",
@@ -772,6 +836,7 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
             attachments_used=attachments_used,
             product_context_used=product_context_used,
             products=products,
+            agent_trace=agent_trace,
         )
     return InspirationChatResponse(
         answer=answer,
@@ -783,4 +848,5 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
         attachments_used=attachments_used,
         product_context_used=product_context_used,
         products=products,
+        agent_trace=agent_trace,
     )

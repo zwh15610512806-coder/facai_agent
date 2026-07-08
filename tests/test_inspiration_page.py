@@ -126,7 +126,7 @@ class InspirationPageTests(unittest.TestCase):
 
         self.assertIn("ensureActiveConversation()", page)
         self.assertIn("addConversationMessage('user',message,{attachments:selectedAttachments})", page)
-        self.assertIn("addConversationMessage('assistant',data.answer||'',{products:data.products,reasoning:data.reasoning,sources:data.sources})", page)
+        self.assertIn("addConversationMessage('assistant',data.answer||'',{products:data.products,reasoning:data.reasoning,sources:data.sources,agentTrace:data.agent_trace})", page)
         self.assertIn("renderConversationHistory()", page)
         self.assertIn("clearCurrentConversation()", page)
 
@@ -138,6 +138,16 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("renderReferenceProducts(data.products)", page)
         self.assertIn("if(!products||!products.length)return ''", page)
         self.assertIn("product_context_used", page)
+
+    def test_inspiration_template_renders_agent_trace_tools(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("function renderAgentTrace(agentTrace)", page)
+        self.assertIn("已使用", page)
+        self.assertIn("agent_trace", page)
+        self.assertIn("agentTrace:data.agent_trace", page)
+        self.assertIn("renderAgentTrace(options.agentTrace)", page)
+        self.assertIn("agentTrace:message.agentTrace", page)
 
     def test_inspiration_template_can_generate_word_document_from_answer(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
@@ -203,7 +213,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn(".chat-message.user .message-attachments{order:0;margin:0 0 8px;padding:0 0 8px;", page)
         self.assertIn(".chat-message.user .message-content{order:1}", page)
         self.assertIn("const bodyHtml='<div class=\"message-content\">'+safe+'</div>';", page)
-        self.assertIn("const bubbleContent=role==='user'?attachmentHtml+bodyHtml:bodyHtml+attachmentHtml+reasoningHtml+references+sourceHtml+tools;", page)
+        self.assertIn("const bubbleContent=role==='user'?attachmentHtml+bodyHtml:bodyHtml+attachmentHtml+reasoningHtml+agentTraceHtml+references+sourceHtml+tools;", page)
 
     def test_inspiration_seedance_mode_updates_label_and_placeholder(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")

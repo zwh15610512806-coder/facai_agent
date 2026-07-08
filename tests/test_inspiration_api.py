@@ -909,6 +909,150 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["products"][0]["name"], "水性色素")
         self.assertIn("产品资料", captured["messages"][-1]["content"])
         self.assertIn("水性色素", captured["messages"][-1]["content"])
+        self.assertTrue(data["agent_trace"])
+        self.assertEqual(data["agent_trace"][0]["tool"], "product_rag")
+
+    def test_chat_product_context_uses_agentic_rag_orchestrator(self):
+        self._enable_test_ai()
+        captured = {}
+        original_agent = getattr(self.inspiration, "run_inspiration_agent", None)
+
+        async def fake_agent(**kwargs):
+            captured.update(kwargs)
+            return self.inspiration.InspirationAgentResult(
+                product_context={
+                    "used": True,
+                    "context": "1. 产品：水性色素\n卖点：少量即可上色。",
+                    "products": [{"product_id": 12, "name": "水性色素", "category": "烘焙调色", "price": 18.59}],
+                },
+                sources=[],
+                agent_trace=[
+                    {"tool": "planner", "label": "规划", "status": "success", "summary": "识别为脚本创作任务"},
+                    {"tool": "product_rag", "label": "产品资料", "status": "success", "summary": "命中 1 个产品"},
+                ],
+            )
+
+        async def fake_chat(messages, **kwargs):
+            captured["messages"] = messages
+            return {"content": "可以围绕水性色素做调色对比脚本。", "reasoning": "", "model": "fake-agent-model"}
+
+        self.inspiration.run_inspiration_agent = fake_agent
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            response = self.client.post(
+                "/api/inspiration/chat",
+                json={"message": "帮我想一个调色产品短视频脚本", "product_context_mode": "always"},
+            )
+        finally:
+            if original_agent is None:
+                delattr(self.inspiration, "run_inspiration_agent")
+            else:
+                self.inspiration.run_inspiration_agent = original_agent
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(captured["product_context_enabled"])
+        self.assertFalse(captured["web_search_enabled"])
+        self.assertEqual(captured["tool_mode"], "chat")
+        self.assertIn("Agent 工具摘要", captured["messages"][-1]["content"])
+        self.assertIn("水性色素", captured["messages"][-1]["content"])
+        self.assertTrue(data["product_context_used"])
+        self.assertEqual(data["products"][0]["name"], "水性色素")
+        self.assertEqual(data["agent_trace"][1]["tool"], "product_rag")
+
+    def test_chat_agentic_rag_combines_product_web_and_attachments(self):
+        self._enable_test_ai()
+        captured = {}
+        original_agent = getattr(self.inspiration, "run_inspiration_agent", None)
+
+        async def fake_agent(**kwargs):
+            captured.update(kwargs)
+            return self.inspiration.InspirationAgentResult(
+                product_context={
+                    "used": True,
+                    "context": "1. 产品：奶冻粉\n卖点：口感稳定。",
+                    "products": [{"product_id": 21, "name": "奶冻粉", "category": "烘焙夹心", "price": 12.71}],
+                },
+                sources=[{"title": "烘焙趋势", "url": "https://example.com/trend", "snippet": "奶冻蛋糕趋势"}],
+                agent_trace=[
+                    {"tool": "product_rag", "label": "产品资料", "status": "success", "summary": "命中 1 个产品"},
+                    {"tool": "web_search", "label": "联网搜索", "status": "success", "summary": "找到 1 条外网资料"},
+                    {"tool": "attachment", "label": "附件", "status": "success", "summary": "读取 1 个附件"},
+                ],
+            )
+
+        async def fake_chat(messages, **kwargs):
+            captured["messages"] = messages
+            return {"content": "结合奶冻粉和趋势做活动脚本。", "reasoning": "", "model": "fake-agent-model"}
+
+        self.inspiration.run_inspiration_agent = fake_agent
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            response = self.client.post(
+                "/api/inspiration/chat",
+                json={
+                    "message": "根据附件和网上趋势做奶冻粉活动脚本",
+                    "product_context_mode": "always",
+                    "web_search_mode": "always",
+                    "attachments": [
+                        {
+                            "filename": "活动节奏.txt",
+                            "file_type": "txt",
+                            "text": "主推第二件半价。",
+                            "char_count": 8,
+                            "kind": "text",
+                        }
+                    ],
+                },
+            )
+        finally:
+            if original_agent is None:
+                delattr(self.inspiration, "run_inspiration_agent")
+            else:
+                self.inspiration.run_inspiration_agent = original_agent
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(captured["web_search_enabled"])
+        self.assertEqual(captured["attachments"][0].filename, "活动节奏.txt")
+        self.assertEqual(data["products"][0]["name"], "奶冻粉")
+        self.assertEqual(data["sources"][0]["url"], "https://example.com/trend")
+        self.assertEqual([step["tool"] for step in data["agent_trace"]], ["product_rag", "web_search", "attachment"])
+
+    def test_chat_agentic_rag_tool_failure_returns_trace_without_500(self):
+        self._enable_test_ai()
+        original_agent = getattr(self.inspiration, "run_inspiration_agent", None)
+
+        async def fake_agent(**kwargs):
+            return self.inspiration.InspirationAgentResult(
+                product_context={"used": False, "context": "", "products": []},
+                sources=[],
+                agent_trace=[
+                    {"tool": "product_rag", "label": "产品资料", "status": "error", "summary": "产品资料检索失败"},
+                ],
+            )
+
+        async def fake_chat(messages, **kwargs):
+            return {"content": "", "reasoning": "", "model": "fake-agent-model"}
+
+        self.inspiration.run_inspiration_agent = fake_agent
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            response = self.client.post(
+                "/api/inspiration/chat",
+                json={"message": "调色产品怎么拍", "product_context_mode": "always"},
+            )
+        finally:
+            if original_agent is None:
+                delattr(self.inspiration, "run_inspiration_agent")
+            else:
+                self.inspiration.run_inspiration_agent = original_agent
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["mode"], "fallback")
+        self.assertFalse(data["product_context_used"])
+        self.assertEqual(data["agent_trace"][0]["status"], "error")
 
     def test_chat_product_context_mode_always_forces_product_context_lookup(self):
         self._enable_test_ai()
