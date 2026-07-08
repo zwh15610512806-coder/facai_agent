@@ -97,6 +97,11 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("conversation-action-pin", page)
         self.assertIn("conversation-menu-button", page)
         self.assertIn("conversation-action-menu", page)
+        self.assertIn('id="conversationFloatingMenu"', page)
+        self.assertIn("function showConversationMenu(id,isArchived,anchor,event)", page)
+        self.assertIn("function positionConversationMenu(anchor,menu)", page)
+        self.assertIn("function hideConversationMenu()", page)
+        self.assertIn("function hideConversationMenuOnOutsideClick(event)", page)
         self.assertIn("conversation-archive-section", page)
         self.assertIn('id="archivedConversationList"', page)
         self.assertIn("event.stopPropagation()", page)
@@ -110,6 +115,9 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("grid-template-columns:minmax(0,1fr) auto", page)
         self.assertIn(".conversation-item.is-pinned .conversation-action-pin", page)
         self.assertIn(".conversation-item:hover .conversation-action", page)
+        self.assertIn(".conversation-floating-menu{position:fixed", page)
+        self.assertIn(".conversation-action-menu.is-open", page)
+        self.assertNotIn(".conversation-menu-wrap:focus-within .conversation-action-menu", page)
         self.assertIn("aria-label=\"置顶对话\"", page)
         self.assertIn("aria-label=\"更多对话操作\"", page)
 
@@ -176,13 +184,26 @@ class InspirationPageTests(unittest.TestCase):
     def test_inspiration_composer_input_is_taller_and_auto_resizes(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
-        self.assertIn(".inspiration-input{flex:1;min-height:76px;max-height:220px;", page)
+        self.assertIn(".inspiration-input{flex:1;min-height:96px;max-height:260px;", page)
+        self.assertIn(".inspiration-input{min-height:82px;max-height:210px}", page)
         self.assertIn("overflow-y:auto", page)
-        self.assertIn('rows="3"', page)
+        self.assertIn('rows="4"', page)
         self.assertIn("function resizeInspirationInput()", page)
-        self.assertIn("Math.min(Math.max(input.scrollHeight,76),220)", page)
+        self.assertIn("const minHeight=Number.parseFloat(computed.minHeight)||96;", page)
+        self.assertIn("const maxHeight=Number.parseFloat(computed.maxHeight)||260;", page)
+        self.assertIn("Math.min(Math.max(input.scrollHeight,minHeight),maxHeight)", page)
+        self.assertIn("input.style.overflowY=input.scrollHeight>maxHeight?'auto':'hidden';", page)
         self.assertIn("addEventListener('input',resizeInspirationInput)", page)
         self.assertIn("resizeInspirationInput();", page)
+
+    def test_inspiration_user_message_visuals_put_attachments_above_text(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn(".chat-message.user .chat-bubble{background:#f4f7ea;border-color:#d9e5b5;color:var(--text);", page)
+        self.assertIn(".chat-message.user .message-attachments{order:0;margin:0 0 8px;padding:0 0 8px;", page)
+        self.assertIn(".chat-message.user .message-content{order:1}", page)
+        self.assertIn("const bodyHtml='<div class=\"message-content\">'+safe+'</div>';", page)
+        self.assertIn("const bubbleContent=role==='user'?attachmentHtml+bodyHtml:bodyHtml+attachmentHtml+reasoningHtml+references+sourceHtml+tools;", page)
 
     def test_inspiration_seedance_mode_updates_label_and_placeholder(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
