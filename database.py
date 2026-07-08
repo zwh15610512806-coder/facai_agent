@@ -35,14 +35,35 @@ def _ensure_compatible_columns():
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     with engine.begin() as connection:
-        if "products" in table_names:
-            columns = {column["name"] for column in inspector.get_columns("products")}
-            if "pending_fields" not in columns:
-                connection.execute(text("ALTER TABLE products ADD COLUMN pending_fields JSON"))
-
-        if "ai_interface_settings" in table_names:
-            columns = {column["name"] for column in inspector.get_columns("ai_interface_settings")}
-            if "api_key_secret" not in columns:
-                connection.execute(text("ALTER TABLE ai_interface_settings ADD COLUMN api_key_secret TEXT"))
-            if "base_url_override" not in columns:
-                connection.execute(text("ALTER TABLE ai_interface_settings ADD COLUMN base_url_override VARCHAR(500)"))
+        column_specs = {
+            "products": {
+                "pending_fields": "JSON",
+            },
+            "viral_scripts": {
+                "is_high_conversion": "INTEGER DEFAULT 0",
+            },
+            "generated_scripts": {
+                "ai_model": "VARCHAR(100)",
+                "is_high_conversion": "INTEGER DEFAULT 0",
+            },
+            "reference_scripts": {
+                "is_high_conversion": "INTEGER DEFAULT 0",
+                "embedding_id": "VARCHAR(200)",
+            },
+            "ai_interface_settings": {
+                "provider": "VARCHAR(50) NOT NULL DEFAULT 'deepseek'",
+                "model": "VARCHAR(120) NOT NULL DEFAULT 'deepseek-chat'",
+                "max_tokens": "INTEGER NOT NULL DEFAULT 2400",
+                "api_key_secret": "TEXT",
+                "base_url_override": "VARCHAR(500)",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        }
+        for table_name, specs in column_specs.items():
+            if table_name not in table_names:
+                continue
+            columns = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, column_type in specs.items():
+                if column_name not in columns:
+                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))

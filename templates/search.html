@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>文件检索 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260706-modal-layout">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-import-nav-xss">
 <script src="/static/vendor/lucide.min.js"></script>
 <style>
 /* -- 检索页专用样式 -- */
@@ -451,11 +451,11 @@ body{overflow:hidden}
 <div class="nav-inner">
 <div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<a href="/app/import" class="nav-import-btn" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 </div>
 <div class="nav-links">
 <a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link on">检索</a>
 </div></div></nav>
-<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 <a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
 
 <main class="page-main search-page">
@@ -690,9 +690,9 @@ function fmtSize(b) {
   return b.toFixed(1) + ' ' + u[i];
 }
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('zh-CN') : '-'; }
-function escPath(p) { return (p || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 function escHtml(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); }
 function escAttr(v) { return escHtml(v).replace(/`/g, '&#96;'); }
+function jsStringLiteral(v) { return "'" + String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\x22').replace(/</g, '\\x3C').replace(/>/g, '\\x3E').replace(/&/g, '\\x26').replace(/\r/g, '\\r').replace(/\n/g, '\\n').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029') + "'"; }
 
 // ====== Render ======
 function renderFiles(files) {
@@ -703,9 +703,12 @@ function renderFiles(files) {
   }
   $('fileList').innerHTML = files.map(f => {
     const isF = f.file_type === 'folder';
-    const ep = escPath(f.file_path);
-    const ch = isF ? `onclick="filterByFolder('${ep}')" style="cursor:pointer"` : '';
-    return `<div class="file-item${isF ? ' folder' : ''}" data-id="${f.id}" ${ch}>
+    const fileId = Number(f.id)||0;
+    const folderArg = jsStringLiteral(f.file_path);
+    const typeArg = jsStringLiteral(f.file_type);
+    const extArg = jsStringLiteral(f.file_extension||'');
+    const ch = isF ? `onclick="filterByFolder(${folderArg})" style="cursor:pointer"` : '';
+    return `<div class="file-item${isF ? ' folder' : ''}" data-id="${fileId}" ${ch}>
       <div class="file-icon ${iconClass(f.file_type)}">${fileIcon(f.file_type)}</div>
       <div class="file-info">
         <div class="file-name" title="${escAttr(f.file_name)}">${escHtml(f.file_name)}</div>
@@ -718,9 +721,9 @@ function renderFiles(files) {
       </div>
       <div class="file-actions">
         ${isF
-          ? `<button class="act-btn pri" onclick="event.stopPropagation();filterByFolder('${ep}')"><i data-lucide="folder-open"></i>查看</button>`
-          : `<button class="act-btn pri" onclick="event.stopPropagation();previewFile(${f.id},'${escAttr(f.file_type)}','${escAttr(f.file_extension||'')}')"><i data-lucide="eye"></i>预览</button>
-             <button class="act-btn" onclick="event.stopPropagation();downloadFile(${f.id})"><i data-lucide="download"></i>下载</button>`}
+          ? `<button class="act-btn pri" onclick="event.stopPropagation();filterByFolder(${folderArg})"><i data-lucide="folder-open"></i>查看</button>`
+          : `<button class="act-btn pri" onclick="event.stopPropagation();previewFile(${fileId},${typeArg},${extArg})"><i data-lucide="eye"></i>预览</button>
+             <button class="act-btn" onclick="event.stopPropagation();downloadFile(${fileId})"><i data-lucide="download"></i>下载</button>`}
       </div>
     </div>`;
   }).join('');

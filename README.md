@@ -51,7 +51,7 @@
 pip install -r requirements.txt
 ```
 
-创建 `.env`：
+从 `.env.example` 复制创建 `.env`，真实密钥只写入本地 `.env`，不要提交到 Git：
 
 ```env
 DEEPSEEK_API_KEY=你的 DeepSeek Key
@@ -78,10 +78,10 @@ curl -X POST http://localhost:8001/api/templates/reindex
 
 如果重建失败，请优先检查 `ARK_API_KEY`、`ARK_BASE_URL`、`EMBEDDING_MODEL_NAME` 和火山方舟 endpoint 权限。`EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL` 只在需要为向量服务单独配置凭据时使用。
 
-局域网上线前必须设置管理员口令；设置后 `/app/*` 和 `/api/*` 会要求登录或携带 `Authorization: Bearer <口令>`：
+当前版本不启用内置管理员口令登录，能访问服务地址的局域网用户可以直接打开 `/app/*` 和调用 `/api/*`。如果服务要离开可信局域网，请先用防火墙、VPN 或反向代理统一加访问控制。
 
 ```env
-FACAI_ADMIN_TOKEN=请换成高强度随机口令
+FACAI_AUTH_ENABLED=0
 ```
 
 AI 配置里的自定义 Base URL 默认只允许已知供应商域名。确实需要新增供应商网关时，再显式加入允许列表：

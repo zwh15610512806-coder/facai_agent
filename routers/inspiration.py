@@ -17,7 +17,13 @@ from config import (
 from database import get_db
 from services.ai_service import ai_service
 from services.ai_config import get_or_create_interface_setting, get_provider_definition
-from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
+from services.inspiration_attachments import (
+    AttachmentExtractionError,
+    MAX_ATTACHMENT_BYTES,
+    extract_inspiration_attachment,
+    load_image_attachment_data_url,
+    resolve_image_attachment,
+)
 from services import inspiration_documents
 from services.product_rag import find_product_context_for_inspiration
 from services.seedance_prompt_generator import (
@@ -53,6 +59,10 @@ class InspirationAttachment(BaseModel):
     file_type: str = Field(default="", max_length=32)
     text: str = Field(default="", max_length=24000)
     char_count: int = 0
+    kind: Literal["text", "image"] = "text"
+    attachment_id: str = Field(default="", max_length=80)
+    mime_type: str = Field(default="", max_length=80)
+    preview_url: str = Field(default="", max_length=240)
 
 
 class WebSource(BaseModel):
@@ -228,6 +238,15 @@ def _fallback_answer_with_products(
     return answer + f"\n\n已先匹配到可参考产品：{names}。AI 响应恢复后可以继续把这些资料整理成完整创意方案。"
 
 
+def _image_fallback_answer(message: str) -> str:
+    return (
+        "图片已上传，但当前 AI 接口没有返回图片理解结果。"
+        "这通常是当前模型或火山方舟 Endpoint 暂不支持图片输入，"
+        "请在 AI配置里切换到支持视觉/多模态的模型后再试。\n\n"
+        f"你刚才的问题是：{message}"
+    )
+
+
 def _model_for_tool_mode(tool_mode: str) -> str | None:
     return None
 
@@ -361,6 +380,41 @@ def _attachment_context(attachments: list[InspirationAttachment]) -> str:
     return "\n\n".join(parts)
 
 
+def _text_attachments(attachments: list[InspirationAttachment]) -> list[InspirationAttachment]:
+    return [attachment for attachment in attachments if (attachment.text or "").strip()]
+
+
+def _image_attachments(attachments: list[InspirationAttachment], tool_mode: str) -> list[InspirationAttachment]:
+    if tool_mode == "seedance":
+        return []
+    return [
+        attachment
+        for attachment in attachments
+        if attachment.kind == "image" and (attachment.attachment_id or "").strip()
+    ]
+
+
+def _multimodal_user_content(
+    text: str,
+    attachments: list[InspirationAttachment],
+) -> str | list[dict]:
+    if not attachments:
+        return text
+    image_parts: list[dict] = []
+    image_names: list[str] = []
+    for attachment in attachments[:6]:
+        try:
+            image_url = load_image_attachment_data_url(attachment.attachment_id)
+        except AttachmentExtractionError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        image_names.append(attachment.filename or "图片附件")
+        image_parts.append({"type": "image_url", "image_url": {"url": image_url}})
+    prompt = text
+    if image_names:
+        prompt = f"{text}\n\n图片附件：{', '.join(image_names)}\n请结合图片内容回答。"
+    return [{"type": "text", "text": prompt}, *image_parts]
+
+
 def _web_context(sources: list[dict]) -> str:
     if not sources:
         return ""
@@ -474,7 +528,7 @@ def _document_user_payload(data: InspirationDocumentRequest) -> str:
         attachments = [
             f"- {attachment.filename}：{(attachment.text or '').strip()[:800]}"
             for attachment in data.attachments[:6]
-            if (attachment.filename or "").strip()
+            if (attachment.filename or "").strip() and (attachment.text or "").strip()
         ]
         if attachments:
             sections.append("附件摘录：\n" + "\n".join(attachments))
@@ -517,7 +571,7 @@ async def _build_document_content(data: InspirationDocumentRequest, db: Session)
 
 
 def _seedance_payload_from_chat(data: InspirationChatRequest) -> tuple[str, str | None, list[InspirationAttachment]]:
-    attachments_used = [attachment for attachment in data.attachments if (attachment.text or "").strip()]
+    attachments_used = _text_attachments(data.attachments)
     if attachments_used:
         script_content = "\n\n".join((attachment.text or "").strip() for attachment in attachments_used)
         requirements = data.message.strip() or None
@@ -555,7 +609,7 @@ async def _chat_with_seedance(data: InspirationChatRequest, db: Session) -> Insp
 async def upload_inspiration_attachment(file: UploadFile = File(...)):
     data = await read_upload_bytes(file, max_bytes=MAX_ATTACHMENT_BYTES)
     try:
-        attachment = extract_attachment_text(file.filename or "attachment", file.content_type or "", data)
+        attachment = extract_inspiration_attachment(file.filename or "attachment", file.content_type or "", data)
     except AttachmentExtractionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return InspirationAttachment(
@@ -563,7 +617,20 @@ async def upload_inspiration_attachment(file: UploadFile = File(...)):
         file_type=attachment.file_type,
         text=attachment.text,
         char_count=attachment.char_count,
+        kind=attachment.kind,
+        attachment_id=attachment.attachment_id,
+        mime_type=attachment.mime_type,
+        preview_url=attachment.preview_url,
     )
+
+
+@router.get("/attachments/{attachment_id}/preview")
+async def preview_inspiration_attachment(attachment_id: str):
+    try:
+        path, mime_type = resolve_image_attachment(attachment_id)
+    except AttachmentExtractionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return FileResponse(path, media_type=mime_type)
 
 
 @router.post("/documents", response_model=InspirationDocumentResponse)
@@ -627,7 +694,9 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
     products = product_context.get("products") or []
     product_context_used = bool(products)
     sources = await _safe_web_search(message, data.tool_mode, data.web_search_mode)
-    attachments_used = [attachment for attachment in data.attachments if (attachment.text or "").strip()]
+    text_attachments_used = _text_attachments(data.attachments)
+    image_attachments_used = _image_attachments(data.attachments, data.tool_mode)
+    attachments_used = text_attachments_used + image_attachments_used
     if not ai_service.is_interface_available(interface_key, db=db):
         return InspirationChatResponse(
             answer=_fallback_answer_with_products(message, products),
@@ -648,16 +717,17 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
         system_prompt = f"{system_prompt}\n{NO_PRODUCT_CONTEXT_INSTRUCTION}"
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(_recent_history(data.history))
+    user_message_text = _compose_user_message(
+        message,
+        product_context,
+        text_attachments_used,
+        sources,
+        data.tool_mode,
+        data.web_search_mode,
+    )
     messages.append({
         "role": "user",
-        "content": _compose_user_message(
-            message,
-            product_context,
-            attachments_used,
-            sources,
-            data.tool_mode,
-            data.web_search_mode,
-        ),
+        "content": _multimodal_user_content(user_message_text, image_attachments_used),
     })
     timed_out = False
     timeout_seconds = _ai_timeout_for_tool_mode(data.tool_mode)
@@ -684,12 +754,17 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
     answer, reasoning, result_model = _normalize_ai_result(result, model)
     answer = answer.strip()
     if not answer:
-        return InspirationChatResponse(
-            answer=_fallback_answer_with_products(
+        fallback_answer = (
+            _image_fallback_answer(message)
+            if image_attachments_used and not timed_out
+            else _fallback_answer_with_products(
                 message,
                 products,
                 reason="timeout" if timed_out else "unavailable",
-            ),
+            )
+        )
+        return InspirationChatResponse(
+            answer=fallback_answer,
             mode="fallback",
             model=model,
             tool_mode=data.tool_mode,

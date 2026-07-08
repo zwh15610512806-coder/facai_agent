@@ -759,18 +759,28 @@ def _import_product_input(product_input, db: Session) -> dict[str, Any]:
     product = _find_existing_product(db, product_input.name)
     action = "updated" if product else "created"
     if product is None:
-        product = Product(name=product_input.name)
+        product = Product(
+            name=product_input.name,
+            category=product_input.category,
+            price=product_input.price or 0.0,
+            original_price=product_input.original_price,
+            commission_rate=0.0,
+            brand=product_input.brand,
+            description=product_input.description,
+            status="active",
+        )
         db.add(product)
-        db.flush()
+    else:
+        product.name = product_input.name
+        product.category = product_input.category
+        product.price = product_input.price or 0.0
+        product.original_price = product_input.original_price
+        product.commission_rate = 0.0
+        product.brand = product_input.brand
+        product.description = product_input.description
+        product.status = "active"
 
-    product.name = product_input.name
-    product.category = product_input.category
-    product.price = product_input.price or 0.0
-    product.original_price = product_input.original_price
-    product.commission_rate = 0.0
-    product.brand = product_input.brand
-    product.description = product_input.description
-    product.status = "active"
+    db.flush()
 
     content = (product_input.section_text or product_input.description or product_input.name).encode("utf-8")
     product.info_file = _save_markdown_product_file(product.id, f"{product_input.name}.md", content)

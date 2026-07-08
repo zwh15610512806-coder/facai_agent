@@ -686,6 +686,27 @@ class AiServiceRoutingTests(unittest.TestCase):
         Base.metadata.drop_all(bind=self.engine)
         self.engine.dispose()
 
+    def test_handles_multimodal_message_content_for_usage_and_fallback(self):
+        from services.ai_service import AIService
+
+        service = AIService()
+        messages = [
+            {"role": "system", "content": "你是图片理解助手。"},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "看看这张图适合怎么拍"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+                ],
+            },
+        ]
+
+        self.assertIn("看看这张图适合怎么拍", service._message_content_text(messages[1]["content"]))
+        self.assertGreater(service._estimate_prompt_tokens(messages), 0)
+        fallback = service._fallback_response(messages)
+        self.assertIsInstance(fallback, str)
+        self.assertTrue(fallback.strip())
+
     def test_chat_routes_to_interface_provider_and_records_provider_usage(self):
         from models import AIUsageRecord
         from services.ai_service import AIService
@@ -1204,7 +1225,6 @@ class AiConfigPageTests(unittest.TestCase):
 
         config_page = (ROOT / "templates" / "ai_config.html").read_text(encoding="utf-8-sig")
         self.assertNotIn('class="ai-config-fab"', config_page)
-
 
 if __name__ == "__main__":
     unittest.main()

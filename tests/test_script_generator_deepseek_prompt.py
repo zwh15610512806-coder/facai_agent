@@ -10,12 +10,14 @@ class PromptCaptureAI:
     def __init__(self, response="生成脚本正文"):
         self.response = response
         self.messages = None
+        self.allow_fallback = None
 
     def get_model_name(self, *args, **kwargs):
         return "fake-model"
 
-    async def chat(self, messages, temperature=0.85, interface_key="script_generate"):
+    async def chat(self, messages, temperature=0.85, interface_key="script_generate", **kwargs):
         self.messages = messages
+        self.allow_fallback = kwargs.get("allow_fallback")
         return self.response
 
 
@@ -41,12 +43,14 @@ class UnavailableInterfaceAI(PromptCaptureAI):
 class EmptyResponseAI(PromptCaptureAI):
     async def chat(self, messages, temperature=0.85, interface_key="script_generate", **kwargs):
         self.messages = messages
+        self.allow_fallback = kwargs.get("allow_fallback")
         return ""
 
 
 class FailingResponseAI(PromptCaptureAI):
     async def chat(self, messages, temperature=0.85, interface_key="script_generate", **kwargs):
         self.messages = messages
+        self.allow_fallback = kwargs.get("allow_fallback")
         raise RuntimeError("provider authentication failed")
 
 
@@ -170,6 +174,42 @@ class DeepSeekPromptTests(unittest.TestCase):
                     template=None,
                     video_type="AI智能生成",
                 ))
+
+    def test_library_rewrite_fails_instead_of_using_local_template_when_interface_unavailable(self):
+        generator = ScriptGenerator()
+        generator.ai = UnavailableInterfaceAI()
+
+        with self.assertRaisesRegex(ScriptGenerationError, "模板库改写模型未配置"):
+            asyncio.run(generator.generate_from_library(
+                product=make_product(name="糖珠", category="烘焙装饰"),
+                video_type="高成交模板库",
+                reference_scripts=[{
+                    "title": "高成交脚本",
+                    "content": "老板们看这个产品，门店很好用。",
+                    "video_type": "需求类",
+                    "category": "烘焙装饰",
+                    "is_high_conversion": True,
+                }],
+            ))
+
+    def test_library_rewrite_fails_without_ai_fallback_when_provider_errors_or_returns_empty(self):
+        for ai in (FailingResponseAI(), EmptyResponseAI()):
+            generator = ScriptGenerator()
+            generator.ai = ai
+
+            with self.assertRaisesRegex(ScriptGenerationError, "模板库改写"):
+                asyncio.run(generator.generate_from_library(
+                    product=make_product(name="糖珠", category="烘焙装饰"),
+                    video_type="高成交模板库",
+                    reference_scripts=[{
+                        "title": "高成交脚本",
+                        "content": "老板们看这个产品，门店很好用。",
+                        "video_type": "需求类",
+                        "category": "烘焙装饰",
+                        "is_high_conversion": True,
+                    }],
+                ))
+            self.assertIs(ai.allow_fallback, False)
 
     def test_generation_uses_interface_availability_instead_of_deepseek_global_flag(self):
         ai = InterfaceAvailableAI("火山方舟生成脚本正文")

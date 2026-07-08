@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>爆款脚本改写 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260706-modal-layout">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-import-nav-xss">
 <script src="/static/vendor/lucide.min.js"></script>
 <style>
 .pci{cursor:pointer;transition:all var(--normal) var(--ease);border:2px solid transparent;background:var(--surface);border-radius:var(--r);padding:14px}
@@ -75,12 +75,12 @@
 <div class="nav-inner">
 <div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<a href="/app/import" class="nav-import-btn" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 </div>
 <div class="nav-links">
 <a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link on">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
-<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 <a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
 
 <main class="page-main rewrite-main">
@@ -191,10 +191,11 @@ function toast(msg,type){var e=document.createElement('div');e.className='toast 
 function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
 function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
 function escHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+function jsStringLiteral(v){return "'"+String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\x22').replace(/</g,'\\x3C').replace(/>/g,'\\x3E').replace(/&/g,'\\x26').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029')+"'";}
 function getEditedScript(){var el=document.getElementById('scriptOutput');return (el.innerText||el.textContent||'').trim();}
 function resetSeedancePrompts(msg){currentSeedancePrompts=[];document.getElementById('seedancePromptList').innerHTML='<div class="seedance-empty">'+escHtml(msg||'改写完成后，点击上方「生成提示词」，再按当前脚本文案生成 Seedance 2.0 画面提示词。')+'</div>';}
 
-function showTip(e,summary){var tip=document.getElementById('tooltip');var parts=summary.split('；').slice(0,4);tip.innerHTML=parts.map(function(s){var m=s.match(/^\[(.+?)\](.+)/);return m?'<div style="padding:2px 0"><span style="color:var(--facai)">['+m[1]+']</span>'+m[2]+'</div>':'<div style="padding:2px 0;color:var(--text)">'+s+'</div>';}).join('');tip.style.display='';tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY-10)+'px';}
+function showTip(e,summary){var tip=document.getElementById('tooltip');var parts=summary.split('；').slice(0,4);tip.innerHTML=parts.map(function(s){var m=s.match(/^\[(.+?)\](.+)/);return m?'<div style="padding:2px 0"><span style="color:var(--facai)">['+escHtml(m[1])+']</span>'+escHtml(m[2])+'</div>':'<div style="padding:2px 0;color:var(--text)">'+escHtml(s)+'</div>';}).join('');tip.style.display='';tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY-10)+'px';}
 function hideTip(){document.getElementById('tooltip').style.display='none';}
 
 async function loadProducts(){var r=await fetch('/api/products/');products=await r.json();renderProducts();}
@@ -206,10 +207,10 @@ function productPriceLabel(p){return hasPendingProductField(p,'price')?'待更�
 function renderProducts(filter){
  filter=filter||'';var cat=document.getElementById('categoryFilter').value;
  var filtered=products;if(cat)filtered=filtered.filter(function(p){return productCategoryLabel(p)===cat;});
- if(filter)filtered=filtered.filter(function(p){return p.name.includes(filter)||productCategoryLabel(p).includes(filter);});
+ if(filter)filtered=filtered.filter(function(p){return (p.name||'').includes(filter)||productCategoryLabel(p).includes(filter);});
  var grid=document.getElementById('productGrid');
  if(!filtered.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:20px 0;color:var(--text-3);font-size:13px">无匹配产品</div>';return;}
- grid.innerHTML=filtered.map(function(p){return'<div class="pci'+(selectedProduct&&selectedProduct.id===p.id?' sel':'')+'" onclick="selectProduct('+p.id+')" onmouseenter="showTip(event,\''+(p.selling_point_summary||'暂无卖点').replace(/'/g,'&#39;').replace(/"/g,'&quot;')+'\')" onmouseleave="hideTip()"><span class="pcat">'+productCategoryLabel(p)+'</span><div class="pname" style="font-size:13px;margin:6px 0 4px">'+p.name+'</div><div style="display:flex;align-items:baseline;gap:6px"><span class="pprice" style="font-size:18px">'+productPriceLabel(p)+'</span>'+(!hasPendingProductField(p,'price')&&p.original_price?'<span style="font-size:12px;color:var(--text-3);text-decoration:line-through">&yen;'+p.original_price+'</span>':'')+'</div><div class="pmeta">'+p.selling_point_count+' 个卖点</div></div>';}).join('');
+ grid.innerHTML=filtered.map(function(p){var id=Number(p.id)||0;var count=Number(p.selling_point_count||0);var summaryArg=jsStringLiteral(p.selling_point_summary||'暂无卖点');var selected=selectedProduct&&String(selectedProduct.id)===String(p.id);var originalPrice=!hasPendingProductField(p,'price')&&p.original_price?'<span style="font-size:12px;color:var(--text-3);text-decoration:line-through">&yen;'+escHtml(p.original_price)+'</span>':'';return'<div class="pci'+(selected?' sel':'')+'" onclick="selectProduct('+id+')" onmouseenter="showTip(event,'+summaryArg+')" onmouseleave="hideTip()"><span class="pcat">'+escHtml(productCategoryLabel(p))+'</span><div class="pname" style="font-size:13px;margin:6px 0 4px">'+escHtml(p.name)+'</div><div style="display:flex;align-items:baseline;gap:6px"><span class="pprice" style="font-size:18px">'+escHtml(productPriceLabel(p))+'</span>'+originalPrice+'</div><div class="pmeta">'+count+' 个卖点</div></div>';}).join('');
 }
 
 function selectProduct(id){selectedProduct=products.find(function(p){return p.id===id;});document.getElementById('productPicker').style.display='none';var hint=document.getElementById('selectedHint');hint.style.display='flex';document.getElementById('selectedProductText').textContent='目标产品：'+selectedProduct.name+' | '+productCategoryLabel(selectedProduct)+(hasPendingProductField(selectedProduct,'price')?' | 待更新':' | ¥'+selectedProduct.price);document.getElementById('btnRewrite').disabled=false;}
@@ -243,7 +244,7 @@ async function submitRewrite(extraOverride){
   if(!r.ok)throw new Error((await r.json()).detail||'改写失败');
   var d=await r.json();currentRewritten=d.rewritten_script;
   document.getElementById('scriptOutput').textContent=currentRewritten;
-  document.getElementById('resultMeta').innerHTML='目标产品：<b>'+d.product_name+'</b> | '+(includeShotDesign?'已保留参考结构并按资料脚本格式输出':'已保留参考结构并输出纯口播文案');
+  document.getElementById('resultMeta').innerHTML='目标产品：<b>'+escHtml(d.product_name)+'</b> | '+(includeShotDesign?'已保留参考结构并按资料脚本格式输出':'已保留参考结构并输出纯口播文案');
   document.getElementById('compareOriginal').textContent=d.original_script;
   document.getElementById('compareRewritten').textContent=d.rewritten_script;
   resetSeedancePrompts('可先直接编辑左侧改写脚本，确认后点击上方「生成提示词」。');

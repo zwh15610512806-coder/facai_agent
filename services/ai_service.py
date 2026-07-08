@@ -456,11 +456,34 @@ class AIService:
             return 0
         return max(1, math.ceil(len(str(text)) / 4))
 
+    def _message_content_text(self, content) -> str:
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "text":
+                    parts.append(str(item.get("text") or ""))
+                elif item.get("type") == "image_url":
+                    parts.append("[图片]")
+            return "\n".join(part for part in parts if part)
+        return str(content or "")
+
+    def _estimate_message_content_tokens(self, content) -> int:
+        if isinstance(content, list):
+            image_count = sum(
+                1
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "image_url"
+            )
+            return self._estimate_text_tokens(self._message_content_text(content)) + image_count * 1000
+        return self._estimate_text_tokens(content)
+
     def _estimate_prompt_tokens(self, messages: List[Dict]) -> int:
         total = 0
         for message in messages or []:
             total += self._estimate_text_tokens(message.get("role", ""))
-            total += self._estimate_text_tokens(message.get("content", ""))
+            total += self._estimate_message_content_tokens(message.get("content", ""))
         return total
 
     def _usage_from_response(self, response, messages: List[Dict], content: str) -> tuple[int, int, int, str]:
@@ -611,7 +634,7 @@ class AIService:
         user_message = ""
         for m in messages:
             if m["role"] == "user":
-                user_message = m["content"]
+                user_message = self._message_content_text(m["content"])
                 break
 
         # 解析用户消息中的产品信息

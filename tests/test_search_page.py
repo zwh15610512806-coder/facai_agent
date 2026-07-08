@@ -117,6 +117,17 @@ class SearchPageTests(unittest.TestCase):
         self.assertIn("simpleMD(escHtml(d.summary))", self.page)
         self.assertIn("escHtml(d.message||'生成失败')", self.page)
 
+    def test_inline_actions_use_js_string_literal_escaping(self):
+        self.assertIn("function jsStringLiteral", self.page)
+        self.assertIn("const folderArg = jsStringLiteral(f.file_path);", self.page)
+        self.assertIn("const typeArg = jsStringLiteral(f.file_type);", self.page)
+        self.assertIn("const extArg = jsStringLiteral(f.file_extension||'');", self.page)
+        self.assertIn("filterByFolder(${folderArg})", self.page)
+        self.assertIn("previewFile(${fileId},${typeArg},${extArg})", self.page)
+        self.assertNotIn("escPath(f.file_path)", self.page)
+        self.assertNotIn("escAttr(f.file_type)", self.page)
+        self.assertNotIn("escAttr(f.file_extension||'')", self.page)
+
 
 if __name__ == "__main__":
     unittest.main()

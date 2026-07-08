@@ -4,8 +4,11 @@ __pycache__/
 *.db
 *.sqlite3
 .env
+.env.*
+!.env.example
 *.log
 *.err.log
+.codex-cloudflared.exe
 node_modules/
 temp_impeccable/
 temp_impeccable.zip

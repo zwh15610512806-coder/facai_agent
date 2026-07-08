@@ -11,6 +11,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = ROOT / "logs"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from services.security import assert_startup_security
 
 
 def log(message: str) -> None:
@@ -56,6 +60,8 @@ def stop_legacy_servers(target_port: int) -> None:
 
 
 def start_server(port: int) -> subprocess.Popen:
+    bind_host = "0.0.0.0"
+    assert_startup_security(bind_host)
     LOG_DIR.mkdir(exist_ok=True)
     stdout = (LOG_DIR / "facai-agent-server.out.log").open("a", encoding="utf-8")
     stderr = (LOG_DIR / "facai-agent-server.err.log").open("a", encoding="utf-8")
@@ -65,7 +71,7 @@ def start_server(port: int) -> subprocess.Popen:
         "uvicorn",
         "main:app",
         "--host",
-        "0.0.0.0",
+        bind_host,
         "--port",
         str(port),
     ]

@@ -2,7 +2,6 @@
 import sys, os
 sys.stdout.reconfigure(encoding='utf-8')
 from contextlib import asynccontextmanager
-from urllib.parse import quote
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -10,7 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from database import init_db
 from config import APP_TITLE, APP_VERSION, APP_DESCRIPTION, ALLOWED_ORIGINS
-from services.security import auth_configured, auth_enabled, is_admin_request
 LOCAL = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = LOCAL
 
@@ -68,33 +66,13 @@ async def protect_api_and_app_requests(request: Request, call_next):
         fetch_site = request.headers.get("sec-fetch-site", "").lower()
         if fetch_site == "cross-site":
             return JSONResponse({"detail": "Cross-site API requests are not allowed"}, status_code=403)
-    if auth_enabled() and _requires_admin(path):
-        if not auth_configured():
-            return _auth_failure(path, "FACAI_ADMIN_TOKEN is not configured", status_code=503)
-        if not is_admin_request(request):
-            if path.startswith("/api/"):
-                return JSONResponse({"detail": "Authentication required"}, status_code=401)
-            next_url = path + (("?" + request.url.query) if request.url.query else "")
-            return RedirectResponse(url="/app/login?next=" + quote(next_url, safe=""), status_code=303)
     return await call_next(request)
-
-
-def _requires_admin(path: str) -> bool:
-    if path.startswith("/static/") or path.startswith("/api/auth/") or path == "/app/login":
-        return False
-    return path.startswith("/api/") or path.startswith("/app")
-
-
-def _auth_failure(path: str, detail: str, status_code: int):
-    if path.startswith("/api/"):
-        return JSONResponse({"detail": detail}, status_code=status_code)
-    return RedirectResponse(url="/app/login", status_code=303)
 
 
 @app.get("/")
 def home(): return RedirectResponse(url="/app")
 @app.get("/app/login")
-def login_page(request: Request): return templates.TemplateResponse(request, "login.html", {"request": request})
+def login_page(): return RedirectResponse(url="/app", status_code=303)
 @app.get("/app")
 def app_page(request: Request): return templates.TemplateResponse(request, "inspiration.html", {"request": request})
 @app.get("/app/generate")
@@ -119,4 +97,5 @@ def inspiration_page(): return RedirectResponse(url="/app", status_code=303)
 def ai_config_page(request: Request): return templates.TemplateResponse(request, "ai_config.html", {"request": request})
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    bind_host = "0.0.0.0"
+    uvicorn.run(app, host=bind_host, port=8001)

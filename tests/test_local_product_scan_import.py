@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database import Base
+from import_materials import ProductInput
 from models import Product, SellingPoint
 from routers import import_data as import_router
 from services import selling_point_extractor
@@ -151,6 +152,36 @@ brand: 法采
         self.assertEqual(self.db.query(SellingPoint).count(), 1)
         self.assertEqual(self.sync_calls, [product.id])
         self.assertEqual(status["ids"], [product.id])
+
+    def test_2026_knowledge_product_import_sets_required_fields_before_first_flush(self):
+        product_input = ProductInput(
+            name="知识包新品",
+            category="烘焙调味",
+            price=26.8,
+            original_price=None,
+            brand="法采",
+            description="来自 2026 产品知识包",
+            selling_points=[
+                {"point_type": "场景", "content": "适合门店新品上架", "priority": 1},
+            ],
+            section_text="## 产品名称：知识包新品\n\n适合门店新品上架",
+        )
+
+        try:
+            result = import_router._import_product_input(product_input, self.db)
+        except Exception as exc:
+            self.db.rollback()
+            self.fail(f"new knowledge-package product import should not flush before required fields are set: {exc}")
+
+        self.assertEqual(result["action"], "created")
+        product = self.db.query(Product).one()
+        self.assertEqual(product.name, "知识包新品")
+        self.assertEqual(product.category, "烘焙调味")
+        self.assertEqual(product.price, 26.8)
+        self.assertTrue(product.info_file)
+        self.assertTrue(Path(product.info_file).exists())
+        self.assertEqual(self.db.query(SellingPoint).one().content, "适合门店新品上架")
+        self.assertEqual(self.sync_calls, [product.id])
 
     def test_scan_imports_csv_products_with_existing_rules(self):
         csv_path = self.local_source / "products.csv"

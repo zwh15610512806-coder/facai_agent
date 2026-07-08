@@ -1054,11 +1054,17 @@ def semantic_search_scripts(
 def reindex_scripts(db: Session = Depends(get_db)):
     """批量重建所有脚本的向量索引"""
     try:
+        from vector_store import VectorStoreError
         from vector_store.script_store import ScriptVectorStore
         svs = ScriptVectorStore()
         svs.store.reset_script_collection()
         count = svs.index_all_scripts(db)
         return ApiResponse(message=f"已重建 {count} 个脚本的向量索引")
+    except VectorStoreError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"索引未重建：向量集合重置或写入失败，已停止以避免混用旧索引；请检查 ARK_API_KEY、ARK_BASE_URL、EMBEDDING_MODEL_NAME 和火山方舟 endpoint 权限: {e}",
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,

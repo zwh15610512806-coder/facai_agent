@@ -3,6 +3,7 @@ import os
 import logging
 from typing import Any
 import chromadb
+from chromadb.errors import InvalidCollectionException, NotFoundError
 from chromadb.config import Settings
 from chromadb.telemetry.product import ProductTelemetryClient
 from openai import OpenAI
@@ -198,8 +199,10 @@ class ChromaStore:
         self._ensure_client()
         try:
             self._client.delete_collection(CHROMA_COLLECTION_PRODUCTS)
-        except Exception:
-            pass
+        except (InvalidCollectionException, NotFoundError):
+            logger.info("Product vector collection did not exist before reset")
+        except Exception as exc:
+            raise VectorStoreError(f"删除产品向量集合失败，已停止重建以避免混用旧索引: {exc}") from exc
         self._product_col = None
         return self.get_product_collection()
 
@@ -207,8 +210,10 @@ class ChromaStore:
         self._ensure_client()
         try:
             self._client.delete_collection(CHROMA_COLLECTION_SCRIPTS)
-        except Exception:
-            pass
+        except (InvalidCollectionException, NotFoundError):
+            logger.info("Script vector collection did not exist before reset")
+        except Exception as exc:
+            raise VectorStoreError(f"删除脚本向量集合失败，已停止重建以避免混用旧索引: {exc}") from exc
         self._script_col = None
         return self.get_script_collection()
 

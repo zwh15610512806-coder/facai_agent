@@ -324,11 +324,17 @@ def semantic_search_products(
 def reindex_products(db: Session = Depends(get_db)):
     """批量重建所有产品的向量索引"""
     try:
+        from vector_store import VectorStoreError
         from vector_store.product_store import ProductVectorStore
         pvs = ProductVectorStore()
         pvs.store.reset_product_collection()
         count = pvs.index_all_products(db)
         return ApiResponse(message=f"已重建 {count} 个产品的向量索引")
+    except VectorStoreError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"索引未重建：向量集合重置或写入失败，已停止以避免混用旧索引；请检查 ARK_API_KEY、ARK_BASE_URL、EMBEDDING_MODEL_NAME 和火山方舟 endpoint 权限: {e}",
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,

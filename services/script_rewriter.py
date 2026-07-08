@@ -6,6 +6,14 @@ from sqlalchemy.orm import Session
 import re
 
 
+class ScriptRewriteGenerationError(RuntimeError):
+    """Raised when script rewrite cannot produce a real AI result."""
+
+    def __init__(self, message: str, status_code: int = 502):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class ScriptRewriter:
     """脚本改写器：保留原参考结构，统一输出为法采资料脚本格式"""
 
@@ -27,6 +35,14 @@ class ScriptRewriter:
 
     def __init__(self):
         self.ai = ai_service
+
+    def _ai_available_for_interface(self, interface_key: str) -> bool:
+        checker = getattr(self.ai, "is_interface_available", None)
+        if checker:
+            return bool(checker(interface_key))
+        if hasattr(self.ai, "is_available"):
+            return bool(getattr(self.ai, "is_available"))
+        return True
 
     def _extract_keywords(self, product_name: str) -> list:
         """从产品名提取多个候选关键词（从长到短）"""
@@ -185,6 +201,12 @@ class ScriptRewriter:
         db: Session = None,
     ) -> str:
         """改写脚本"""
+        if not self._ai_available_for_interface("script_rewrite"):
+            raise ScriptRewriteGenerationError(
+                "脚本改写失败：脚本改写模型未配置，请到 AI配置 中检查脚本改写接口后重试。",
+                status_code=503,
+            )
+
         name = target_product.get("name", "")
         category = target_product.get("category", "")
         price = target_product.get("price", 0)
@@ -293,19 +315,26 @@ class ScriptRewriter:
                 max_tokens=2200,
                 interface_key="script_rewrite",
             )
-            if result:
-                if include_shot_design:
-                    return self._cleanup_rewrite_output(result)
-                return self._cleanup_plain_rewrite_output(result)
-        except Exception:
-            pass
+        except Exception as exc:
+            raise ScriptRewriteGenerationError(
+                "脚本改写失败：AI 模型调用失败，请检查 AI 配置后重试。",
+                status_code=503,
+            ) from exc
 
-        fallback = self._offline_material_rewrite(
-            name, category, price_text, selling_points, original_script=original_script
-        )
+        if not (result or "").strip():
+            raise ScriptRewriteGenerationError(
+                "脚本改写失败：模型未返回有效改写脚本，请检查 AI 配置后重试。"
+            )
+
         if include_shot_design:
-            return self._limit_rewrite_text(fallback)
-        return self._cleanup_plain_rewrite_output(fallback)
+            rewritten = self._cleanup_rewrite_output(result)
+        else:
+            rewritten = self._cleanup_plain_rewrite_output(result)
+        if not rewritten.strip():
+            raise ScriptRewriteGenerationError(
+                "脚本改写失败：模型未返回有效改写脚本，请检查 AI 配置后重试。"
+            )
+        return rewritten
 
     def _enrich_scene_label(
         self,

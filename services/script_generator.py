@@ -1,5 +1,5 @@
 """脚本生成引擎 — 核心业务逻辑"""
-from services.ai_service import ai_service, build_faicai_script
+from services.ai_service import ai_service
 from services.rewrite_prompts import build_rewrite_system_prompt
 from models import ViralScript, ReferenceScript
 from sqlalchemy.orm import Session
@@ -999,9 +999,9 @@ class ScriptGenerator:
         4. Prompt 指令是"改写"而非"创作"
         """
         if not self._ai_available_for_interface("script_library_rewrite"):
-            return self._post_process_script_output(
-                build_faicai_script(product, tone),
-                include_shot_design,
+            raise ScriptGenerationError(
+                "模板库改写模型未配置，请到 AI配置 中检查模板库改写接口后重试。",
+                status_code=503,
             )
 
         # 构建改写专用 Prompt
@@ -1094,8 +1094,28 @@ class ScriptGenerator:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = await self._chat_with_interface(messages, temperature=0.75, interface_key="script_library_rewrite")
-        return self._post_process_script_output(response, include_shot_design)
+        try:
+            response = await self._chat_with_interface(
+                messages,
+                temperature=0.75,
+                interface_key="script_library_rewrite",
+                allow_fallback=False,
+            )
+        except ScriptGenerationError:
+            raise
+        except Exception as exc:
+            raise ScriptGenerationError(
+                f"模板库改写模型调用失败：{exc}",
+                status_code=503,
+            ) from exc
+
+        if not (response or "").strip():
+            raise ScriptGenerationError("模板库改写模型未返回有效脚本，请检查 AI 配置后重试。")
+
+        script = self._post_process_script_output(response, include_shot_design)
+        if not script.strip():
+            raise ScriptGenerationError("模板库改写模型返回内容为空，请重试或检查 AI 配置。")
+        return script
 
     def _build_library_system_prompt(self, include_shot_design: bool) -> str:
         return build_rewrite_system_prompt(include_shot_design)

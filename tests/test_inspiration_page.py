@@ -10,7 +10,7 @@ from main import app
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NAV_STYLE_VERSION = "nav-20260706-modal-layout"
+NAV_STYLE_VERSION = "nav-20260708-import-nav-xss"
 
 
 class InspirationPageTests(unittest.TestCase):
@@ -82,6 +82,37 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("localStorage.getItem(INSPIRATION_HISTORY_KEY)", page)
         self.assertIn("localStorage.setItem(INSPIRATION_HISTORY_KEY", page)
 
+    def test_inspiration_history_has_pin_archive_delete_actions(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn("pinned:Boolean(raw.pinned)", page)
+        self.assertIn("archived:Boolean(raw.archived)", page)
+        self.assertIn("function toggleConversationPin(id,event)", page)
+        self.assertIn("function archiveConversation(id,event)", page)
+        self.assertIn("function restoreConversation(id,event)", page)
+        self.assertIn("function deleteConversation(id,event)", page)
+        self.assertIn("function selectNextAvailableConversation()", page)
+        self.assertIn("!conversation.archived", page)
+        self.assertIn("conversation.archived", page)
+        self.assertIn("conversation-action-pin", page)
+        self.assertIn("conversation-menu-button", page)
+        self.assertIn("conversation-action-menu", page)
+        self.assertIn("conversation-archive-section", page)
+        self.assertIn('id="archivedConversationList"', page)
+        self.assertIn("event.stopPropagation()", page)
+        self.assertIn("confirm('删除这条对话？此操作不可恢复。')", page)
+
+    def test_inspiration_history_uses_compact_chatgpt_style_rows(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn(".conversation-row", page)
+        self.assertIn(".conversation-actions", page)
+        self.assertIn("grid-template-columns:minmax(0,1fr) auto", page)
+        self.assertIn(".conversation-item.is-pinned .conversation-action-pin", page)
+        self.assertIn(".conversation-item:hover .conversation-action", page)
+        self.assertIn("aria-label=\"置顶对话\"", page)
+        self.assertIn("aria-label=\"更多对话操作\"", page)
+
     def test_inspiration_send_and_clear_sync_current_conversation(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
@@ -130,11 +161,28 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("function toggleWebSearchMode()", page)
         self.assertIn("function getWebSearchMode()", page)
         self.assertIn('id="inspirationFileInput"', page)
-        self.assertIn('accept=".txt,.md,.json,.csv,.pdf,.docx,.xlsx"', page)
+        self.assertIn('accept=".txt,.md,.json,.csv,.pdf,.docx,.xlsx,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"', page)
         self.assertIn('data-tool-mode="seedance"', page)
         self.assertIn("function setInspirationMode(mode)", page)
         self.assertIn("function uploadInspirationFiles(files)", page)
         self.assertIn("fetch('/api/inspiration/attachments'", page)
+        self.assertIn("function handleInspirationPaste(event)", page)
+        self.assertIn("clipboardData.items", page)
+        self.assertIn("item.type.indexOf('image/')===0", page)
+        self.assertIn("uploadInspirationFiles(files)", page)
+        self.assertIn("attachment.kind==='image'", page)
+        self.assertIn("preview_url", page)
+
+    def test_inspiration_composer_input_is_taller_and_auto_resizes(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn(".inspiration-input{flex:1;min-height:76px;max-height:220px;", page)
+        self.assertIn("overflow-y:auto", page)
+        self.assertIn('rows="3"', page)
+        self.assertIn("function resizeInspirationInput()", page)
+        self.assertIn("Math.min(Math.max(input.scrollHeight,76),220)", page)
+        self.assertIn("addEventListener('input',resizeInspirationInput)", page)
+        self.assertIn("resizeInspirationInput();", page)
 
     def test_inspiration_seedance_mode_updates_label_and_placeholder(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
@@ -257,7 +305,7 @@ class InspirationNavigationTests(unittest.TestCase):
                 name,
             )
 
-    def test_data_import_is_bottom_right_fab_not_top_nav_item(self):
+    def test_data_import_is_brand_group_button_not_fab_or_nav_link(self):
         pages = [
             "index.html",
             "rewrite.html",
@@ -277,9 +325,20 @@ class InspirationNavigationTests(unittest.TestCase):
                 flags=re.S,
             )
             self.assertIsNotNone(brand_group, name)
-            self.assertNotIn('class="nav-import-btn', brand_group.group("body"), name)
-            self.assertNotIn('href="/app/import"', brand_group.group("body"), name)
-            self.assertNotIn(">数据导入</a>", brand_group.group("body"), name)
+            brand_body = brand_group.group("body")
+            self.assertIn('href="/app/import"', brand_body, name)
+            self.assertIn('class="nav-import-btn', brand_body, name)
+            self.assertIn('data-lucide="upload"', brand_body, name)
+            self.assertIn(">数据导入</span></a>", brand_body, name)
+            if name == "import.html":
+                self.assertRegex(
+                    brand_body,
+                    r'href="/app/import" class="nav-import-btn on"[^>]*aria-current="page"',
+                    name,
+                )
+            else:
+                self.assertNotIn('class="nav-import-btn on"', brand_body, name)
+                self.assertNotIn('aria-current="page"', brand_body, name)
 
             nav_links = re.search(
                 r'<div class="nav-links">(?P<body>.*?)</div></div></nav>',
@@ -287,15 +346,9 @@ class InspirationNavigationTests(unittest.TestCase):
                 flags=re.S,
             )
             self.assertIsNotNone(nav_links, name)
+            self.assertNotIn('href="/app/import"', nav_links.group("body"), name)
             self.assertNotIn(">数据导入</a>", nav_links.group("body"), name)
-
-            if name == "import.html":
-                self.assertNotIn('class="data-import-fab"', page, name)
-            else:
-                self.assertIn('class="data-import-fab"', page, name)
-                self.assertIn('href="/app/import"', page, name)
-                self.assertIn('aria-label="打开 数据导入"', page, name)
-                self.assertIn('data-lucide="upload"', page, name)
+            self.assertNotIn('class="data-import-fab"', page, name)
 
     def test_data_import_nav_button_uses_fresh_shared_css_version(self):
         pages = [

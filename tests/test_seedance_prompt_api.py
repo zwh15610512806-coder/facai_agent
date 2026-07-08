@@ -168,7 +168,7 @@ class SeedancePromptApiTests(unittest.TestCase):
 
         class FailingSeedanceService:
             async def generate(self, *, script_content, requirements=None, db=None):
-                raise SeedancePromptGenerationError(503, "DeepSeek V4 Pro / 脚本改写配置不可用")
+                raise SeedancePromptGenerationError(503, "Seedance 分镜提示词生成接口不可用，请检查 AI 配置后重试。")
 
         scripts_router.seedance_prompt_generator = FailingSeedanceService()
 
@@ -178,7 +178,8 @@ class SeedancePromptApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 503)
-        self.assertIn("DeepSeek V4 Pro", response.json()["detail"])
+        self.assertIn("Seedance 分镜提示词生成接口不可用", response.json()["detail"])
+        self.assertNotIn("DeepSeek V4 Pro", response.json()["detail"])
 
 
 class SeedancePromptServiceTests(unittest.TestCase):
@@ -393,6 +394,8 @@ class SeedancePromptServiceTests(unittest.TestCase):
                 ))
 
             self.assertEqual(cm.exception.status_code, 502)
+            self.assertNotIn("DeepSeek V4 Pro", cm.exception.detail)
+            self.assertIn("Seedance 分镜提示词生成接口", cm.exception.detail)
 
     def test_service_rejects_ai_call_errors_without_fallback(self):
         from services.seedance_prompt_generator import SeedancePromptGenerationError, SeedancePromptGenerator
@@ -406,6 +409,31 @@ class SeedancePromptServiceTests(unittest.TestCase):
             ))
 
         self.assertEqual(cm.exception.status_code, 503)
+        self.assertNotIn("DeepSeek V4 Pro", cm.exception.detail)
+        self.assertIn("Seedance 分镜提示词生成接口", cm.exception.detail)
+
+    def test_service_config_unavailable_message_is_provider_neutral(self):
+        import services.seedance_prompt_generator as seedance_module
+        from services.seedance_prompt_generator import SeedancePromptGenerationError, SeedancePromptGenerator
+
+        original_get_setting = seedance_module.get_or_create_interface_setting
+        original_resolve = seedance_module.resolve_interface_connection
+        seedance_module.get_or_create_interface_setting = lambda db, interface_key: object()
+        seedance_module.resolve_interface_connection = lambda setting: {"configured": False}
+        try:
+            generator = SeedancePromptGenerator(ai=FakeAI("画面1：竖屏9:16，产品包装近景，无字幕无水印。"))
+            with self.assertRaises(SeedancePromptGenerationError) as cm:
+                asyncio.run(generator.generate(
+                    script_content="老板们看这个奶冻粉。",
+                    db=object(),
+                ))
+        finally:
+            seedance_module.get_or_create_interface_setting = original_get_setting
+            seedance_module.resolve_interface_connection = original_resolve
+
+        self.assertEqual(cm.exception.status_code, 503)
+        self.assertIn("Seedance 分镜提示词生成接口未配置", cm.exception.detail)
+        self.assertNotIn("DeepSeek V4 Pro", cm.exception.detail)
 
 if __name__ == "__main__":
     unittest.main()

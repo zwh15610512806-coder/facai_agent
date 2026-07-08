@@ -20,9 +20,12 @@ class IndexHeroTests(unittest.TestCase):
         self.assertNotIn(".hero-copy", self.page)
 
     def test_generate_page_content_starts_without_intro_banner(self):
+        self.assertIn('class="nav-import-btn"', self.page)
+        self.assertIn('href="/app/import"', self.page)
+        self.assertNotIn('class="data-import-fab"', self.page)
         self.assertRegex(
             self.page,
-            r'</nav>\s*<a class="data-import-fab" href="/app/import"[^>]*>.*?</a>\s*<a class="ai-config-fab" href="/app/ai-config"[^>]*>.*?</a>\s*<style>\s*\.generate-main',
+            r'</nav>\s*<a class="ai-config-fab" href="/app/ai-config"[^>]*>.*?</a>\s*<style>\s*\.generate-main',
         )
         self.assertNotRegex(
             self.page,
@@ -259,6 +262,34 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
         self.assertIn("function toggleScrollTopButton(){const btn=document.getElementById('scrollTopBtn')", self.page)
         self.assertIn("window.addEventListener('scroll',toggleScrollTopButton,{passive:true});", self.page)
         self.assertIn("toggleScrollTopButton();", self.page)
+
+    def test_product_cards_escape_api_fields_before_innerhtml(self):
+        match = re.search(
+            r"function renderProducts\(\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("jsStringLiteral(p.selling_point_summary||'暂无卖点')", body)
+        self.assertIn("escHtml(p.category)", body)
+        self.assertIn("escHtml(p.name)", body)
+        self.assertIn("Number(p.selling_point_count||0)", body)
+        self.assertNotIn("'+esc(p.selling_point_summary||'暂无卖点')+'", body)
+
+    def test_generate_result_meta_escapes_api_fields_before_innerhtml(self):
+        match = re.search(
+            r"async function doGenerate\(extra\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("escHtml(d.product_name)", body)
+        self.assertIn("escHtml(d.video_type)", body)
+        self.assertNotIn("'<b>'+d.product_name+'</b>", body)
 
     def test_product_tooltip_escapes_summary_parts_before_innerhtml(self):
         match = re.search(

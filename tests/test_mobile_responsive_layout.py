@@ -57,8 +57,8 @@ class SharedMobileResponsiveCssTests(unittest.TestCase):
         self.assertIn("bottom: 32px", body)
         self.assertIn("right: 32px", body)
 
-    def test_bottom_right_fabs_are_fixed_and_mobile_safe(self):
-        fab = re.search(r"\.ai-config-fab,\s*\n\.data-import-fab\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S)
+    def test_ai_config_is_only_bottom_right_fab_and_import_stays_in_nav(self):
+        fab = re.search(r"\.ai-config-fab\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S)
         mobile = re.search(r"@media \(max-width: 768px\)\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S)
 
         self.assertIsNotNone(fab)
@@ -68,13 +68,14 @@ class SharedMobileResponsiveCssTests(unittest.TestCase):
         self.assertIn("position: fixed", fab_body)
         self.assertIn("right: 28px", fab_body)
         self.assertIn("z-index: 90", fab_body)
-        self.assertIn(".ai-config-fab { bottom: 28px; }", self.css)
-        self.assertIn(".data-import-fab { bottom: 88px; }", self.css)
+        self.assertIn("bottom: 28px", fab_body)
+        self.assertIn(".nav-import-btn", self.css)
+        self.assertIn(".nav-import-btn.on", self.css)
         self.assertIn(".ai-config-fab", mobile_body)
-        self.assertIn(".data-import-fab", mobile_body)
         self.assertIn("bottom: max(72px", mobile_body)
-        self.assertIn("bottom: max(126px", mobile_body)
         self.assertIn("env(safe-area-inset-bottom)", mobile_body)
+        self.assertIn(".nav-import-btn", mobile_body)
+        self.assertNotIn(".data-import-fab", self.css)
 
 
 class GeneratePageMobileLayoutTests(unittest.TestCase):

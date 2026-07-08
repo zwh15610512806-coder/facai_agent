@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>生成脚本 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260706-modal-layout">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-import-nav-xss">
 </head>
 <body>
 
@@ -12,6 +12,7 @@
 <div class="nav-inner">
 <div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<a href="/app/import" class="nav-import-btn" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 </div>
 <div class="nav-links">
 <a href="/app" class="nav-link">AI工作</a>
@@ -22,7 +23,6 @@
 <a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
-<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 <a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
 
 <style>
@@ -557,6 +557,7 @@ function toast(msg,type){const t=document.createElement('div');t.className='toas
 function fallbackCopyText(text){return new Promise(function(resolve,reject){var ta=document.createElement('textarea');ta.value=String(text||'');ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);try{var ok=document.execCommand('copy');document.body.removeChild(ta);ok?resolve():reject(new Error('copy rejected'));}catch(e){document.body.removeChild(ta);reject(e);}});}
 function copyText(text){text=String(text||'');if(!text)return Promise.reject(new Error('empty'));return fallbackCopyText(text).catch(function(err){if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}throw err;});}
 function escHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+function jsStringLiteral(v){return "'"+String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\x22').replace(/</g,'\\x3C').replace(/>/g,'\\x3E').replace(/&/g,'\\x26').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029')+"'";}
 function getEditedScript(){const el=document.getElementById('scriptOutput');return (el.innerText||el.textContent||'').trim();}
 function buildRegenerateRequirement(){
  const previous=(getEditedScript()||currentScript||'').replace(/\s+/g,' ').trim();
@@ -666,7 +667,7 @@ async function loadCategories(){
 function renderProducts(){
  const g=document.getElementById('productGrid');
  if(!state.products.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px 0;color:var(--text-3)">暂无产品，请先导入</div>';return;}
- g.innerHTML=state.products.map(function(p){return'<div class="product-card'+(state.selectedProduct&&state.selectedProduct.id===p.id?' sel':'')+'" onclick="selectProduct('+p.id+')" onmouseenter="showTip(event,\''+esc(p.selling_point_summary||'暂无卖点')+'\')" onmouseleave="hideTip()"><span class="pcat">'+esc(p.category)+'</span><div class="pname">'+esc(p.name)+'</div><div class="pmeta">'+p.selling_point_count+' 个卖点</div></div>';}).join('');
+ g.innerHTML=state.products.map(function(p){const id=Number(p.id)||0;const count=Number(p.selling_point_count||0);const summaryArg=jsStringLiteral(p.selling_point_summary||'暂无卖点');const selected=state.selectedProduct&&String(state.selectedProduct.id)===String(p.id);return'<div class="product-card'+(selected?' sel':'')+'" onclick="selectProduct('+id+')" onmouseenter="showTip(event,'+summaryArg+')" onmouseleave="hideTip()"><span class="pcat">'+escHtml(p.category)+'</span><div class="pname">'+escHtml(p.name)+'</div><div class="pmeta">'+count+' 个卖点</div></div>';}).join('');
  document.getElementById('btnToStep2').disabled=!state.selectedProduct;
 }
 
@@ -720,7 +721,7 @@ document.getElementById('btnChangeProduct').addEventListener('click',showProduct
 
 function renderVideoTypes(){
  const recs=CAT_RECOMMEND[state.selectedProduct&&state.selectedProduct.category]||["机制类","痛点类","需求类"];
- document.getElementById('recommendHint').innerHTML='<span style="display:inline-block;width:6px;height:6px;background:var(--facai);border-radius:50%;vertical-align:middle;margin-right:4px"></span><b style="color:var(--accent);font-weight:600">'+state.selectedProduct.category+'</b> 推荐：'+recs.map(function(r){return'<span style="color:var(--accent);font-weight:500">'+r+'</span>';}).join(' &middot; ');
+ document.getElementById('recommendHint').innerHTML='<span style="display:inline-block;width:6px;height:6px;background:var(--facai);border-radius:50%;vertical-align:middle;margin-right:4px"></span><b style="color:var(--accent);font-weight:600">'+escHtml(state.selectedProduct.category)+'</b> 推荐：'+recs.map(function(r){return'<span style="color:var(--accent);font-weight:500">'+r+'</span>';}).join(' &middot; ');
  document.getElementById('videoTypes').innerHTML=getAllVideoTypes().map(function(vt){const rec=recs.includes(vt.v);return'<div class="type-tag'+(state.selectedType===vt.v?' sel':'')+'" onclick="selectType(\''+vt.v+'\')"><button class="type-delete" type="button" aria-label="删除视频类型'+esc(vt.v)+'" onclick="deleteVideoType(event,\''+vt.v+'\')"></button><span class="tag-icon"><i data-lucide="'+vt.icon+'" style="width:16px;height:16px"></i></span>'+esc(vt.v)+(rec?' <span class="star">&starf;</span>':'')+'</div>';}).join('');
  if(window.lucide)lucide.createIcons();
  document.getElementById('btnGenerate').disabled=false;
@@ -753,7 +754,7 @@ async function doGenerate(extra){
   const d=await r.json();currentScript=d.script_content;currentScriptId=d.id;
   document.getElementById('scriptOutput').textContent=currentScript;
   var metaExtra='';if(preFill||extra)metaExtra=' <span class="text-accent" style="font-weight:600">（'+(preFill?'含需求':'')+(preFill&&extra?'+':'')+(extra?'已优化':'')+'）</span>';
-  document.getElementById('resultMeta').innerHTML='产品：<b>'+d.product_name+'</b> &middot; 类型：<b class="text-accent">'+d.video_type+'</b>'+metaExtra;
+  document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(d.product_name)+'</b> &middot; 类型：<b class="text-accent">'+escHtml(d.video_type)+'</b>'+metaExtra;
   resetSeedancePrompts('可先直接编辑左侧生成脚本，确认后点击上方「生成提示词」。');
  }catch(e){currentScript='';currentScriptId=null;resetSeedancePrompts('生成失败后暂无提示词，请重新生成脚本。');document.getElementById('scriptOutput').textContent='生成失败：'+e.message}
  finally{state.generating=false;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnOptimize').disabled=false;document.getElementById('btnGenerateSeedance').disabled=false;}

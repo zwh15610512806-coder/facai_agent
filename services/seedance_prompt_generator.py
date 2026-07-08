@@ -16,6 +16,10 @@ MAX_AUTO_SCENES = 24
 BRACKET_RE = re.compile(r"[（(]([^（）()]{1,140})[）)]")
 TALKING_HEAD_KEYWORDS = ("口播", "主播", "出镜", "真人", "面对镜头", "对镜", "讲解", "边说")
 TALKING_HEAD_PATTERNS = (re.compile(r"拿着.{0,40}说"),)
+SEEDANCE_CONFIG_UNAVAILABLE_DETAIL = "Seedance 分镜提示词生成接口未配置，请检查 AI 配置后重试。"
+SEEDANCE_CALL_FAILED_DETAIL = "Seedance 分镜提示词生成接口不可用或调用失败，请检查 AI 配置后重试。"
+SEEDANCE_EMPTY_OUTPUT_DETAIL = "Seedance 分镜提示词生成接口未返回可解析的分镜提示词，请重试。"
+SEEDANCE_COUNT_MISMATCH_DETAIL = "Seedance 分镜提示词生成接口返回的分镜数量与脚本断句不一致，请重试。"
 
 
 class SeedancePromptGenerationError(Exception):
@@ -58,19 +62,19 @@ class SeedancePromptGenerator:
         except Exception as exc:
             raise SeedancePromptGenerationError(
                 503,
-                "DeepSeek V4 Pro / 脚本改写配置不可用或调用失败，请检查 AI 配置后重试。",
+                SEEDANCE_CALL_FAILED_DETAIL,
             ) from exc
 
         parsed = self._parse_prompt_text(content, MAX_AUTO_SCENES)
         if not parsed:
             raise SeedancePromptGenerationError(
                 502,
-                "DeepSeek V4 Pro 未返回可解析的 Seedance 分镜提示词，请重试。",
+                SEEDANCE_EMPTY_OUTPUT_DETAIL,
             )
         if len(parsed) != target_count:
             raise SeedancePromptGenerationError(
                 502,
-                "DeepSeek V4 Pro 返回的分镜数量与脚本断句不一致，请重试。",
+                SEEDANCE_COUNT_MISMATCH_DETAIL,
             )
         self._attach_script_labels(parsed, beats)
         return {
@@ -88,12 +92,12 @@ class SeedancePromptGenerator:
         except Exception as exc:
             raise SeedancePromptGenerationError(
                 503,
-                "DeepSeek V4 Pro / 脚本改写配置不可用，请检查 AI 配置后重试。",
+                SEEDANCE_CONFIG_UNAVAILABLE_DETAIL,
             ) from exc
         if not connection.get("configured"):
             raise SeedancePromptGenerationError(
                 503,
-                "DeepSeek V4 Pro / 脚本改写配置不可用，请检查 AI 配置后重试。",
+                SEEDANCE_CONFIG_UNAVAILABLE_DETAIL,
             )
 
     def _build_messages(

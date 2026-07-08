@@ -1,3 +1,4 @@
+import asyncio
 import re
 import subprocess
 import tempfile
@@ -9,6 +10,16 @@ from services.script_rewriter import ScriptRewriter
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class RewriteFailingAI:
+    async def chat(self, *args, **kwargs):
+        raise RuntimeError("provider unavailable")
+
+
+class RewriteEmptyAI:
+    async def chat(self, *args, **kwargs):
+        return ""
 
 
 class RewritePageTests(unittest.TestCase):
@@ -45,6 +56,38 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("| ¥", self.page)
         self.assertIn("selectedProduct.price", self.page)
         self.assertIn("+'...'", self.page)
+
+    def test_product_cards_escape_api_fields_before_innerhtml(self):
+        match = re.search(
+            r"function renderProducts\(filter\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("jsStringLiteral(p.selling_point_summary||'暂无卖点')", body)
+        self.assertIn("escHtml(productCategoryLabel(p))", body)
+        self.assertIn("escHtml(p.name)", body)
+        self.assertIn("escHtml(productPriceLabel(p))", body)
+        self.assertIn("Number(p.selling_point_count||0)", body)
+        self.assertNotIn("'+p.name+'", body)
+        self.assertNotIn("'+productCategoryLabel(p)+'", body)
+
+    def test_product_tooltip_escapes_summary_parts_before_innerhtml(self):
+        match = re.search(
+            r"function showTip\(e,summary\)\{(?P<body>.*?)function hideTip",
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("escHtml(m[1])", body)
+        self.assertIn("escHtml(m[2])", body)
+        self.assertIn("escHtml(s)", body)
+        self.assertNotIn("'+m[1]+'", body)
+        self.assertNotIn("'+m[2]+'", body)
 
     def test_rewrite_page_promises_material_script_format(self):
         self.assertIn("保留参考结构并输出为资料脚本格式", self.page)
@@ -140,6 +183,36 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("奶冻粉包装正面近景", output)
         self.assertIn("俯拍操作台", output)
 
+    def test_rewriter_raises_clear_error_when_ai_call_fails_instead_of_offline_rewrite(self):
+        rewriter = ScriptRewriter()
+        rewriter.ai = RewriteFailingAI()
+
+        with self.assertRaisesRegex(RuntimeError, "脚本改写失败"):
+            asyncio.run(rewriter.rewrite(
+                original_script="老板们看过来，这款材料很适合门店用。",
+                target_product={
+                    "name": "奶冻粉",
+                    "category": "烘焙夹心",
+                    "price": 12.71,
+                    "selling_points": [{"type": "稳定性", "content": "凝固稳定，不容易出水"}],
+                },
+            ))
+
+    def test_rewriter_raises_clear_error_when_ai_returns_empty_instead_of_offline_rewrite(self):
+        rewriter = ScriptRewriter()
+        rewriter.ai = RewriteEmptyAI()
+
+        with self.assertRaisesRegex(RuntimeError, "模型未返回有效改写脚本"):
+            asyncio.run(rewriter.rewrite(
+                original_script="老板们看过来，这款材料很适合门店用。",
+                target_product={
+                    "name": "奶冻粉",
+                    "category": "烘焙夹心",
+                    "price": 12.71,
+                    "selling_points": [{"type": "稳定性", "content": "凝固稳定，不容易出水"}],
+                },
+            ))
+
     def test_rewriter_plain_cleanup_removes_shot_design(self):
         cleaned = ScriptRewriter()._cleanup_plain_rewrite_output(
             "【开场钩子】\n00:00 （主播半身站在烘焙台前开场，手边摆放产品包装）老板们看过来。\n"
@@ -192,6 +265,18 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("document.getElementById('scriptOutput').addEventListener('input'", self.page)
         self.assertIn("document.getElementById('compareRewritten').textContent=currentRewritten", self.page)
         self.assertIn("var t=getEditedScript()", self.page)
+
+    def test_rewrite_result_meta_escapes_api_product_name_before_innerhtml(self):
+        match = re.search(
+            r"async function submitRewrite\(extraOverride\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("escHtml(d.product_name)", body)
+        self.assertNotIn("'<b>'+d.product_name+'</b>", body)
 
     def test_redo_directly_submits_rewrite_without_returning_to_step2(self):
         self.assertIn("async function submitRewrite", self.page)

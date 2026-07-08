@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import os
 import tempfile
@@ -16,6 +17,10 @@ from models import AIInterfaceSetting, Product, SellingPoint
 
 
 class InspirationApiTests(unittest.TestCase):
+    TINY_PNG = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
+
     def setUp(self):
         from routers import inspiration
 
@@ -634,31 +639,89 @@ class InspirationApiTests(unittest.TestCase):
         self.assertEqual(data["file_type"], "docx")
         self.assertIn("Word 附件内容", data["text"])
 
-    def test_attachment_upload_rejects_images_for_now(self):
+    def test_attachment_upload_accepts_valid_image_file(self):
+        response = self.client.post(
+            "/api/inspiration/attachments",
+            files={"file": ("photo.png", self.TINY_PNG, "image/png")},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["kind"], "image")
+        self.assertEqual(data["filename"], "photo.png")
+        self.assertEqual(data["file_type"], "png")
+        self.assertEqual(data["mime_type"], "image/png")
+        self.assertEqual(data["text"], "")
+        self.assertTrue(data["attachment_id"])
+        self.assertTrue(data["preview_url"].startswith("/api/inspiration/attachments/"))
+        self.assertTrue(data["preview_url"].endswith("/preview"))
+
+        preview = self.client.get(data["preview_url"])
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.headers["content-type"], "image/png")
+
+    def test_attachment_upload_rejects_invalid_image_file(self):
         response = self.client.post(
             "/api/inspiration/attachments",
             files={"file": ("photo.png", b"not-real-image", "image/png")},
         )
 
-        self.assertEqual(response.status_code, 415)
+        self.assertEqual(response.status_code, 400)
         self.assertIn("图片", response.json()["detail"])
+
+    def test_chat_uses_multimodal_content_for_image_attachments(self):
+        self._enable_test_ai()
+        upload = self.client.post(
+            "/api/inspiration/attachments",
+            files={"file": ("photo.png", self.TINY_PNG, "image/png")},
+        )
+        self.assertEqual(upload.status_code, 200)
+        image_attachment = upload.json()
+        captured = {}
+
+        async def fake_chat(messages, temperature=0.7, allow_fallback=False, model=None, **kwargs):
+            captured["messages"] = messages
+            return {"content": "这张图适合做近景种草。", "reasoning": "", "model": "fake-vision-model"}
+
+        self.inspiration.ai_service.chat = fake_chat
+
+        response = self.client.post(
+            "/api/inspiration/chat",
+            json={
+                "message": "看看这张图适合怎么拍",
+                "attachments": [image_attachment],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["mode"], "ai")
+        self.assertEqual(data["model"], "fake-vision-model")
+        self.assertEqual(data["attachments_used"][0]["kind"], "image")
+        user_content = captured["messages"][-1]["content"]
+        self.assertIsInstance(user_content, list)
+        self.assertEqual(user_content[0]["type"], "text")
+        self.assertIn("看看这张图适合怎么拍", user_content[0]["text"])
+        image_parts = [part for part in user_content if part.get("type") == "image_url"]
+        self.assertEqual(1, len(image_parts))
+        self.assertTrue(image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,"))
 
     def test_attachment_upload_rejects_oversize_before_extracting(self):
         original_limit = getattr(self.inspiration, "MAX_ATTACHMENT_BYTES", None)
-        original_extract = self.inspiration.extract_attachment_text
+        original_extract = self.inspiration.extract_inspiration_attachment
         self.inspiration.MAX_ATTACHMENT_BYTES = 4
 
         def fail_if_called(*args, **kwargs):
             raise AssertionError("oversize uploads should be rejected before extraction")
 
-        self.inspiration.extract_attachment_text = fail_if_called
+        self.inspiration.extract_inspiration_attachment = fail_if_called
         try:
             response = self.client.post(
                 "/api/inspiration/attachments",
                 files={"file": ("too-large.txt", b"12345", "text/plain")},
             )
         finally:
-            self.inspiration.extract_attachment_text = original_extract
+            self.inspiration.extract_inspiration_attachment = original_extract
             if original_limit is None:
                 delattr(self.inspiration, "MAX_ATTACHMENT_BYTES")
             else:

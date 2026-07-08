@@ -13,7 +13,7 @@ from schemas import (
 )
 from services.script_generator import ScriptGenerationError, ScriptGenerator
 from services.product_detail import build_product_detail_payload
-from services.script_rewriter import script_rewriter
+from services.script_rewriter import ScriptRewriteGenerationError, script_rewriter
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
 from services.seedance_prompt_generator import SeedancePromptGenerationError, seedance_prompt_generator
 from services.upload_limits import read_upload_bytes
@@ -150,14 +150,19 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
     # 根据引擎类型分支调用
     if engine == "template" and reference_scripts:
         # 模板库改写模式：以参考脚本为主体进行改写
-        script_content = await generator.generate_from_library(
-            product=product_context,
-            video_type=video_type,
-            reference_scripts=reference_scripts,
-            tone=request.tone,
-            extra_requirements=request.extra_requirements,
-            include_shot_design=request.include_shot_design,
-        )
+        try:
+            script_content = await generator.generate_from_library(
+                product=product_context,
+                video_type=video_type,
+                reference_scripts=reference_scripts,
+                tone=request.tone,
+                extra_requirements=request.extra_requirements,
+                include_shot_design=request.include_shot_design,
+            )
+        except ScriptGenerationError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=f"模板库改写失败：{exc}") from exc
+        if not (script_content or "").strip():
+            raise HTTPException(status_code=502, detail="模板库改写失败：模型未返回有效脚本，请检查 AI 配置后重试")
     else:
         # AI生成模式：基于产品资料创作；明确选择类型时只参考同类型脚本结构
         try:
@@ -379,23 +384,28 @@ async def rewrite_script(request: ScriptRewriteRequest, db: Session = Depends(ge
         for sp in sorted(product.selling_points, key=lambda x: x.priority)
     ]
 
-    rewritten = await script_rewriter.rewrite(
-        original_script=request.original_script,
-        target_product={
-            "name": product.name,
-            "category": product.category,
-            "price": product.price,
-            "original_price": product.original_price,
-            "pending_fields": product.pending_fields or [],
-            "brand": product.brand,
-            "description": product.description,
-            "selling_points": selling_points,
-        },
-        video_type=request.video_type,
-        extra_requirements=request.extra_requirements,
-        include_shot_design=request.include_shot_design,
-        db=db,
-    )
+    try:
+        rewritten = await script_rewriter.rewrite(
+            original_script=request.original_script,
+            target_product={
+                "name": product.name,
+                "category": product.category,
+                "price": product.price,
+                "original_price": product.original_price,
+                "pending_fields": product.pending_fields or [],
+                "brand": product.brand,
+                "description": product.description,
+                "selling_points": selling_points,
+            },
+            video_type=request.video_type,
+            extra_requirements=request.extra_requirements,
+            include_shot_design=request.include_shot_design,
+            db=db,
+        )
+    except ScriptRewriteGenerationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    if not (rewritten or "").strip():
+        raise HTTPException(status_code=502, detail="脚本改写失败：模型未返回有效改写脚本，请检查 AI 配置后重试")
 
     return ScriptRewriteResponse(
         original_script=request.original_script,

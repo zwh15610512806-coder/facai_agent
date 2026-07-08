@@ -9,7 +9,7 @@ from database import Base
 from models import Product, ReferenceScript, SellingPoint, ViralScript
 from routers import scripts as scripts_router
 from schemas import ScriptGenerateRequest
-from services.script_generator import ScriptGenerator
+from services.script_generator import ScriptGenerationError, ScriptGenerator
 
 
 class FakeTemplateLibraryGenerator:
@@ -65,6 +65,34 @@ class FakeTemplateLibraryGenerator:
         assert reference_scripts
         assert all(script["is_high_conversion"] for script in reference_scripts)
         return "根据高成交模板库生成的脚本"
+
+
+class FakeFailingTemplateLibraryGenerator(FakeTemplateLibraryGenerator):
+    async def generate_from_library(
+        self,
+        product,
+        video_type,
+        reference_scripts,
+        tone="活泼",
+        extra_requirements=None,
+        include_shot_design=None,
+    ):
+        self.library_called = True
+        raise ScriptGenerationError("模板库改写模型调用失败：provider unavailable", status_code=503)
+
+
+class FakeEmptyTemplateLibraryGenerator(FakeTemplateLibraryGenerator):
+    async def generate_from_library(
+        self,
+        product,
+        video_type,
+        reference_scripts,
+        tone="活泼",
+        extra_requirements=None,
+        include_shot_design=None,
+    ):
+        self.library_called = True
+        return ""
 
 
 class FakeDeepSeekGenerator:
@@ -234,6 +262,32 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         asyncio.run(scripts_router.generate_script(request, db=self.db))
 
         self.assertTrue(fake.include_shot_design)
+
+    def test_template_library_generation_error_returns_clear_error_without_saving_record(self):
+        fake = FakeFailingTemplateLibraryGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(product_id=self.product.id, engine="template", video_type=None)
+
+        with self.assertRaises(HTTPException) as caught:
+            asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertTrue(fake.library_called)
+        self.assertEqual(caught.exception.status_code, 503)
+        self.assertIn("模板库改写失败", caught.exception.detail)
+        self.assertIsNone(self.db.query(scripts_router.GeneratedScript).first())
+
+    def test_template_library_empty_result_returns_clear_error_without_saving_record(self):
+        fake = FakeEmptyTemplateLibraryGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(product_id=self.product.id, engine="template", video_type=None)
+
+        with self.assertRaises(HTTPException) as caught:
+            asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertTrue(fake.library_called)
+        self.assertEqual(caught.exception.status_code, 502)
+        self.assertIn("模板库改写失败", caught.exception.detail)
+        self.assertIsNone(self.db.query(scripts_router.GeneratedScript).first())
 
     def test_explicit_ai_generation_uses_same_type_script_structure_references(self):
         fake = FakeDeepSeekGenerator()
