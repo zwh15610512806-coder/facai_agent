@@ -57,39 +57,54 @@ class VectorStoreEmbeddingConfigTests(unittest.TestCase):
 
 
 class VolcengineArkEmbeddingFunctionTests(unittest.TestCase):
-    def test_calls_openai_compatible_embeddings_create(self):
+    def test_calls_multimodal_embedding_endpoint_once_per_text(self):
         from vector_store import VolcengineArkEmbeddingFunction
 
-        captured = {}
+        captured = {"requests": []}
 
-        class FakeEmbeddings:
-            def create(self, model, input):
-                captured["model"] = model
-                captured["input"] = input
-                return SimpleNamespace(data=[
-                    SimpleNamespace(index=1, embedding=[3, 4.5]),
-                    SimpleNamespace(index=0, embedding=[1, 2]),
-                ])
+        class FakeResponse:
+            status_code = 200
 
-        class FakeClient:
-            def __init__(self, api_key, base_url):
-                captured["api_key"] = api_key
-                captured["base_url"] = base_url
-                self.embeddings = FakeEmbeddings()
+            def __init__(self, embedding):
+                self._embedding = embedding
+                self.text = "ok"
+
+            def json(self):
+                return {"data": {"embedding": self._embedding, "object": "embedding"}}
+
+        class FakeHttpClient:
+            def __init__(self, timeout):
+                captured["timeout"] = timeout
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def post(self, url, headers, json):
+                captured["requests"].append({"url": url, "headers": headers, "json": json})
+                if json["input"][0]["text"] == "产品资料":
+                    return FakeResponse([1, 2])
+                return FakeResponse([3, 4.5])
 
         fn = VolcengineArkEmbeddingFunction(
             api_key="key",
             base_url="https://ark.example/v3",
             model=ARK_EMBEDDING_MODEL,
-            client_factory=FakeClient,
+            http_client_factory=FakeHttpClient,
         )
 
         embeddings = fn(["产品资料", "脚本资料"])
 
-        self.assertEqual(captured["api_key"], "key")
-        self.assertEqual(captured["base_url"], "https://ark.example/v3")
-        self.assertEqual(captured["model"], ARK_EMBEDDING_MODEL)
-        self.assertEqual(captured["input"], ["产品资料", "脚本资料"])
+        self.assertEqual(captured["timeout"], 60)
+        self.assertEqual(len(captured["requests"]), 2)
+        self.assertEqual(captured["requests"][0]["url"], "https://ark.example/v3/embeddings/multimodal")
+        self.assertEqual(captured["requests"][0]["headers"]["Authorization"], "Bearer key")
+        self.assertEqual(captured["requests"][0]["json"], {
+            "model": ARK_EMBEDDING_MODEL,
+            "input": [{"type": "text", "text": "产品资料"}],
+        })
         self.assertEqual(embeddings, [[1.0, 2.0], [3.0, 4.5]])
 
     def test_missing_api_key_base_url_or_model_raises_clear_configuration_error(self):
@@ -105,19 +120,24 @@ class VolcengineArkEmbeddingFunctionTests(unittest.TestCase):
     def test_embedding_call_failure_raises_clear_runtime_error(self):
         from vector_store import EmbeddingCallError, VolcengineArkEmbeddingFunction
 
-        class FakeEmbeddings:
-            def create(self, model, input):
-                raise RuntimeError("endpoint forbidden")
+        class FakeHttpClient:
+            def __init__(self, timeout):
+                pass
 
-        class FakeClient:
-            def __init__(self, api_key, base_url):
-                self.embeddings = FakeEmbeddings()
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def post(self, url, headers, json):
+                raise RuntimeError("endpoint forbidden")
 
         fn = VolcengineArkEmbeddingFunction(
             api_key="key",
             base_url="https://ark.example/v3",
             model=ARK_EMBEDDING_MODEL,
-            client_factory=FakeClient,
+            http_client_factory=FakeHttpClient,
         )
 
         with self.assertRaisesRegex(EmbeddingCallError, "火山方舟 embedding 调用失败"):
@@ -150,6 +170,101 @@ class ExplicitVectorOperationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "火山方舟 embedding 不可用"):
             store.search("口播")
+
+
+class ProductChunkIndexingTests(unittest.TestCase):
+    def test_index_product_writes_multiple_metadata_chunks(self):
+        from vector_store.product_store import ProductVectorStore
+
+        captured = {}
+
+        class FakeCollection:
+            def delete(self, where):
+                captured["delete_where"] = where
+
+            def upsert(self, ids, documents, metadatas):
+                captured["ids"] = ids
+                captured["documents"] = documents
+                captured["metadatas"] = metadatas
+
+        class FakeStore:
+            def get_product_collection(self):
+                return FakeCollection()
+
+        product = SimpleNamespace(
+            id=7,
+            name="水性色素",
+            category="烘焙调色",
+            brand="法采",
+            description="适合蛋糕调色和翻糖上色。",
+            price=18.59,
+            selling_points=[
+                SimpleNamespace(point_type="核心卖点", content="少量即可上色，适合调色备货。", priority=1),
+                SimpleNamespace(point_type="使用场景", content="适合奶油、蛋糕胚和翻糖调色。", priority=2),
+            ],
+        )
+        store = ProductVectorStore()
+        store.store = FakeStore()
+
+        doc_ids = store.index_product(product)
+
+        self.assertGreaterEqual(len(doc_ids), 3)
+        self.assertEqual(captured["delete_where"], {"product_id": 7})
+        self.assertTrue(all(doc_id.startswith("product_7:") for doc_id in captured["ids"]))
+        sections = {meta["section"] for meta in captured["metadatas"]}
+        self.assertGreaterEqual(sections, {"product_info", "selling_point"})
+        self.assertTrue(all(meta["product_id"] == 7 for meta in captured["metadatas"]))
+        self.assertTrue(any(meta.get("intent_coloring") is True for meta in captured["metadatas"]))
+        self.assertTrue(any("少量即可上色" in document for document in captured["documents"]))
+
+    def test_search_passes_category_intent_and_product_metadata_filters(self):
+        from vector_store.product_store import ProductVectorStore
+
+        captured = {}
+
+        class FakeCollection:
+            def query(self, **kwargs):
+                captured["query"] = kwargs
+                return {
+                    "ids": [["product_7:info"]],
+                    "distances": [[0.12]],
+                    "metadatas": [[{
+                        "product_id": 7,
+                        "name": "水性色素",
+                        "category": "烘焙调色",
+                        "price": 18.59,
+                        "section": "product_info",
+                        "intent_tags": "coloring",
+                    }]],
+                    "documents": [["产品名称：水性色素\n适合调色"]],
+                }
+
+        class FakeStore:
+            def require_available(self):
+                return None
+
+            def get_product_collection(self):
+                return FakeCollection()
+
+        store = ProductVectorStore()
+        store.store = FakeStore()
+
+        results = store.search(
+            "调色怎么用",
+            limit=5,
+            category_filter="烘焙调色",
+            intent_filter=("coloring",),
+            product_id_filter=7,
+        )
+
+        where = captured["query"]["where"]
+        self.assertIn("$and", where)
+        self.assertIn({"category": "烘焙调色"}, where["$and"])
+        self.assertIn({"intent_coloring": True}, where["$and"])
+        self.assertIn({"product_id": 7}, where["$and"])
+        self.assertEqual(results[0]["product_id"], 7)
+        self.assertEqual(results[0]["chunk_id"], "product_7:info")
+        self.assertEqual(results[0]["section"], "product_info")
 
 
 if __name__ == "__main__":

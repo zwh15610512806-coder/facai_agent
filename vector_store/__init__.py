@@ -3,10 +3,10 @@ import os
 import logging
 from typing import Any
 import chromadb
+import httpx
 from chromadb.errors import InvalidCollectionException, NotFoundError
 from chromadb.config import Settings
 from chromadb.telemetry.product import ProductTelemetryClient
-from openai import OpenAI
 from overrides import override
 
 from config import (
@@ -52,14 +52,14 @@ class EmbeddingCallError(VectorStoreError):
 
 
 class VolcengineArkEmbeddingFunction:
-    """Chroma embedding function backed by Volcengine Ark OpenAI-compatible API."""
+    """Chroma embedding function backed by Volcengine Ark multimodal embeddings."""
 
     def __init__(
         self,
         api_key: str,
         base_url: str,
         model: str,
-        client_factory=OpenAI,
+        http_client_factory=httpx.Client,
     ):
         if not (api_key or "").strip():
             raise EmbeddingConfigurationError(
@@ -73,7 +73,8 @@ class VolcengineArkEmbeddingFunction:
             raise EmbeddingConfigurationError("EMBEDDING_MODEL_NAME 未配置")
         self.model = model.strip()
         self.base_url = base_url.strip()
-        self._client = client_factory(api_key=api_key.strip(), base_url=self.base_url)
+        self.api_key = api_key.strip()
+        self._http_client_factory = http_client_factory
 
     @staticmethod
     def name() -> str:
@@ -83,23 +84,15 @@ class VolcengineArkEmbeddingFunction:
         texts = [str(item) for item in input]
         if not texts:
             return []
+        embeddings = []
         try:
-            response = self._client.embeddings.create(model=self.model, input=texts)
+            with self._http_client_factory(timeout=60) as client:
+                for text in texts:
+                    embeddings.append(self._embed_text(client, text))
+        except EmbeddingCallError:
+            raise
         except Exception as exc:
             raise EmbeddingCallError(f"火山方舟 embedding 调用失败: {exc}") from exc
-
-        items = list(getattr(response, "data", []) or [])
-        if all(hasattr(item, "index") for item in items):
-            items.sort(key=lambda item: item.index)
-
-        embeddings = []
-        for item in items:
-            vector = getattr(item, "embedding", None)
-            if vector is None and isinstance(item, dict):
-                vector = item.get("embedding")
-            if vector is None:
-                raise EmbeddingCallError("火山方舟 embedding 响应缺少 embedding 字段")
-            embeddings.append([float(value) for value in vector])
 
         if len(embeddings) != len(texts):
             raise EmbeddingCallError(
@@ -109,6 +102,45 @@ class VolcengineArkEmbeddingFunction:
         if len(dimensions) > 1:
             raise EmbeddingCallError("火山方舟 embedding 响应维度不一致")
         return embeddings
+
+    def _embed_text(self, client, text: str) -> list[float]:
+        url = self.base_url.rstrip("/") + "/embeddings/multimodal"
+        payload = {
+            "model": self.model,
+            "input": [{"type": "text", "text": text}],
+        }
+        response = client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        if getattr(response, "status_code", 200) >= 400:
+            detail = getattr(response, "text", "")
+            try:
+                detail = response.json()
+            except Exception:
+                pass
+            raise EmbeddingCallError(f"火山方舟 embedding 调用失败: HTTP {response.status_code} - {detail}")
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise EmbeddingCallError(f"火山方舟 embedding 响应不是合法 JSON: {exc}") from exc
+        vector = None
+        payload_data = data.get("data") if isinstance(data, dict) else None
+        if isinstance(payload_data, dict):
+            vector = payload_data.get("embedding")
+        elif isinstance(payload_data, list) and payload_data:
+            first = payload_data[0]
+            if isinstance(first, dict):
+                vector = first.get("embedding")
+            else:
+                vector = getattr(first, "embedding", None)
+        if vector is None:
+            raise EmbeddingCallError("火山方舟 embedding 响应缺少 data.embedding 字段")
+        return [float(value) for value in vector]
 
 
 class ChromaStore:

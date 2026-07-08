@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database import Base
-from models import Product, SellingPoint
+from models import Product, ProductRagQueryLog, SellingPoint
 from routers import products as products_router
 from services import product_rag
 
@@ -158,8 +158,9 @@ class ProductRagApiTests(unittest.TestCase):
         self.assertEqual(product_rag._product_query_policy("适合打包的配件有哪些？").intent, "packaging")
 
         usage_policy = product_rag._product_query_policy("调色怎么用")
-        self.assertEqual(usage_policy.intent, "default")
+        self.assertEqual(usage_policy.intent, "coloring")
         self.assertFalse(usage_policy.broad)
+        self.assertTrue(usage_policy.strict_primary_filter)
 
         unknown_policy = product_rag._product_query_policy("有哪些适合新品上新的产品？")
         self.assertEqual(unknown_policy.intent, "broad_product")
@@ -200,6 +201,85 @@ class ProductRagApiTests(unittest.TestCase):
         for unexpected in ["翻糖压片", "手绘膏", "夹心芋泥", "夹心果泥", "开心果酱", "调味果酱", "糖珠", "盒装刀叉"]:
             self.assertNotIn(unexpected, names)
             self.assertNotIn(unexpected, answer)
+
+    def test_known_intent_usage_question_filters_context_and_writes_full_trace_log(self):
+        color = self._add_product(
+            "水性色素",
+            "烘焙调色",
+            18.59,
+            "适合蛋糕调色和翻糖上色。",
+            "少量即可上色，适合烘焙门店做调色备货。",
+        )
+        weak_filling = self._add_product(
+            "夹心芋泥",
+            "烘焙夹心",
+            49.29,
+            "免调色、芋头含量高、夹心支撑稳定。",
+            "夹心支撑稳定，适合做蛋糕夹心。",
+        )
+        weak_flavor = self._add_product(
+            "调味果酱",
+            "烘焙调味",
+            27.06,
+            "可搭配蛋糕调色和风味延展。",
+            "用于调味奶油、淋面和风味搭配。",
+        )
+        captured = {}
+
+        async def answer_from_context(messages, **kwargs):
+            captured["prompt"] = messages[-1]["content"]
+            return "简要回答：调色用水性色素这类调色主体产品。\n\n具体信息：\n- 水性色素：少量即可上色。"
+
+        product_rag.ai_service.chat = answer_from_context
+
+        response = self.client.post("/api/products/rag-chat", json={"query": "调色怎么用", "limit": 10})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        names = [item["name"] for item in data["results"]]
+        self.assertIn("水性色素", names)
+        self.assertNotIn("夹心芋泥", names)
+        self.assertNotIn("调味果酱", names)
+        self.assertIn("水性色素", captured["prompt"])
+        self.assertNotIn("夹心芋泥", captured["prompt"])
+        self.assertNotIn("调味果酱", captured["prompt"])
+
+        logs = self.db.query(ProductRagQueryLog).all()
+        self.assertEqual(len(logs), 1)
+        log = logs[0]
+        self.assertEqual(log.query, "调色怎么用")
+        self.assertIn("水性色素", log.answer)
+        self.assertEqual(log.scope, "global")
+        self.assertEqual(log.policy.get("intent"), "coloring")
+        self.assertEqual(log.final_product_ids, [color.id])
+        self.assertIn(weak_filling.id, log.excluded_product_ids)
+        self.assertIn(weak_flavor.id, log.excluded_product_ids)
+        self.assertIsInstance(log.hit_chunks, list)
+        self.assertGreaterEqual(log.latency_ms, 0)
+
+    def test_vector_degradation_is_recorded_when_keyword_fallback_answers(self):
+        color = self._add_product(
+            "水性色素",
+            "烘焙调色",
+            18.59,
+            "适合蛋糕调色和翻糖上色。",
+            "少量即可上色，适合烘焙门店做调色备货。",
+        )
+
+        class FailingProductVectorStore:
+            def hybrid_search(self, *args, **kwargs):
+                raise RuntimeError("embedding endpoint unavailable")
+
+        with patch("vector_store.product_store.ProductVectorStore", return_value=FailingProductVectorStore()):
+            response = self.client.post("/api/products/rag-chat", json={"query": "调色产品", "limit": 10})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual([item["name"] for item in data["results"]], ["水性色素"])
+        log = self.db.query(ProductRagQueryLog).one()
+        self.assertEqual(log.final_product_ids, [color.id])
+        self.assertIn("embedding endpoint unavailable", log.degraded_reason)
+        self.assertIn("keyword", log.retrieval_mode)
 
     def test_multi_intent_product_question_uses_union_of_primary_products(self):
         products = [
@@ -347,6 +427,30 @@ class ProductRagApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/app/products")
+
+    def test_semantic_search_deduplicates_chunk_hits_by_product(self):
+        product = self._add_product(
+            "水性色素",
+            "烘焙调色",
+            18.59,
+            "适合蛋糕调色",
+            "上色稳定。",
+        )
+
+        class ChunkSearchStore:
+            def search(self, *args, **kwargs):
+                return [
+                    {"product_id": product.id, "chunk_id": f"product_{product.id}:info"},
+                    {"product_id": product.id, "chunk_id": f"product_{product.id}:selling_point_1"},
+                ]
+
+        with patch("vector_store.product_store.ProductVectorStore", return_value=ChunkSearchStore()):
+            response = self.client.get("/api/products/search/semantic", params={"q": "调色", "limit": 10})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], product.id)
 
     def test_product_rag_chat_is_scoped_to_selected_product(self):
         tea = self._add_product(

@@ -3,14 +3,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+import logging
 import re
+import time
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from models import Product, SellingPoint
+from models import Product, ProductRagQueryLog, SellingPoint
 from services.ai_service import ai_service
+from services.product_knowledge_chunks import build_product_knowledge_chunks
 from services.product_detail import build_product_detail_payload
+
+
+logger = logging.getLogger("services.product_rag")
 
 
 PRODUCT_CHAT_SYSTEM_PROMPT = """你是法采产品资料助手。
@@ -88,6 +94,16 @@ class ProductQueryPolicy:
     categories: tuple[str, ...] = ()
 
 
+@dataclass
+class ProductRetrievalSelection:
+    products: list[Product]
+    policy: ProductQueryPolicy
+    hit_chunks: list[dict[str, Any]]
+    excluded_product_ids: list[int]
+    retrieval_mode: str
+    degraded_reason: str = ""
+
+
 def _clean_query(query: str) -> str:
     return re.sub(r"\s+", " ", (query or "").strip())
 
@@ -159,14 +175,14 @@ def _is_broad_product_query(query: str) -> bool:
 def _product_query_policy(query: str) -> ProductQueryPolicy:
     clean = _clean_query(query)
     broad = _is_broad_product_query(clean)
-    rules = _matched_intent_rules(clean) if broad else ()
+    rules = _matched_intent_rules(clean)
     if rules:
         intents = tuple(rule.intent for rule in rules)
         categories = tuple(rule.category for rule in rules)
         intent = intents[0] if len(intents) == 1 else "multi"
         return ProductQueryPolicy(
             intent=intent,
-            broad=True,
+            broad=broad,
             strict_primary_filter=True,
             intents=intents,
             categories=categories,
@@ -284,7 +300,13 @@ def _detail_sources(detail: dict[str, Any]) -> list[str]:
     return _unique(sources)
 
 
-def _detail_to_result(detail: dict[str, Any], query: str, *, scoped: bool = False) -> dict[str, Any]:
+def _detail_to_result(
+    detail: dict[str, Any],
+    query: str,
+    *,
+    scoped: bool = False,
+    hit_chunks: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     terms = _query_terms(query)
     selling_points = detail.get("selling_points") or []
     scored_points = []
@@ -328,6 +350,7 @@ def _detail_to_result(detail: dict[str, Any], query: str, *, scoped: bool = Fals
             if point.get("content")
         ],
         "sku_prices": sku_matches,
+        "retrieval_chunks": hit_chunks or [],
     }
 
 
@@ -352,21 +375,63 @@ def _keyword_products(query: str, db: Session, limit: int, category: str | None 
     return q.order_by(Product.created_at.desc()).limit(limit).all()
 
 
-def _candidate_products(query: str, db: Session, limit: int, category: str | None = None) -> list[Product]:
+def _vector_category_filter(policy: ProductQueryPolicy, category: str | None) -> str | None:
+    if category:
+        return category
+    if policy.strict_primary_filter and len(policy.categories) == 1:
+        return policy.categories[0]
+    return None
+
+
+def _hit_trace(hit: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "chunk_id": hit.get("chunk_id") or "",
+        "product_id": hit.get("product_id"),
+        "name": hit.get("name", ""),
+        "category": hit.get("category", ""),
+        "section": hit.get("section", ""),
+        "source_name": hit.get("source_name", ""),
+        "document": hit.get("document", ""),
+        "distance": hit.get("distance"),
+    }
+
+
+def _unique_ints(values: list[Any]) -> list[int]:
+    seen: set[int] = set()
+    out: list[int] = []
+    for value in values:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if number in seen:
+            continue
+        seen.add(number)
+        out.append(number)
+    return out
+
+
+def _retrieve_product_selection(query: str, db: Session, limit: int, category: str | None = None) -> ProductRetrievalSelection:
     policy = _product_query_policy(query)
-    pool_limit = max(limit, 30) if policy.broad else limit
+    pool_limit = max(limit, 30) if (policy.broad or policy.strict_primary_filter) else max(limit, 12)
     product_ids: list[int] = []
+    vector_hits: list[dict[str, Any]] = []
+    degraded_reason = ""
     try:
         from vector_store.product_store import ProductVectorStore
 
         hits = ProductVectorStore().hybrid_search(
             query=query,
             db=db,
-            limit=pool_limit,
-            category_filter=category,
+            limit=max(pool_limit, pool_limit * 2),
+            category_filter=_vector_category_filter(policy, category),
+            intent_filter=policy.intents if policy.strict_primary_filter else None,
         )
-        product_ids = [int(hit["product_id"]) for hit in hits if hit.get("product_id")]
-    except Exception:
+        vector_hits = [_hit_trace(hit) for hit in hits]
+        product_ids = _unique_ints([hit.get("product_id") for hit in hits])
+    except Exception as exc:
+        degraded_reason = str(exc)
+        logger.warning("Product vector retrieval degraded to keyword/category search: %s", exc)
         product_ids = []
 
     ordered: list[Product] = []
@@ -397,16 +462,42 @@ def _candidate_products(query: str, db: Session, limit: int, category: str | Non
             continue
         seen.add(product.id)
         merged.append(product)
+    before_filter_ids = [product.id for product in merged]
     if policy.strict_primary_filter:
         merged = [product for product in merged if _is_primary_product_for_policy(product, policy)]
-    if policy.broad:
+    if policy.broad or policy.strict_primary_filter:
         scored = [(_scenario_relevance_score(product, query, policy), index, product) for index, product in enumerate(merged)]
         minimum_score = 20 if policy.strict_primary_filter else 1
         relevant = [item for item in scored if item[0] >= minimum_score]
         scored = relevant or scored
         scored.sort(key=lambda item: (-item[0], item[1]))
         merged = [product for _, _, product in scored]
-    return merged[:limit]
+    selected = merged[:limit]
+    selected_ids = {product.id for product in selected}
+    excluded_product_ids = [
+        product_id for product_id in before_filter_ids
+        if product_id not in selected_ids
+    ]
+    modes = []
+    if vector_hits:
+        modes.append("vector")
+    modes.append("keyword")
+    if policy.categories:
+        modes.append("category")
+    if degraded_reason:
+        modes.append("degraded")
+    return ProductRetrievalSelection(
+        products=selected,
+        policy=policy,
+        hit_chunks=vector_hits,
+        excluded_product_ids=_unique_ints(excluded_product_ids),
+        retrieval_mode="+".join(dict.fromkeys(modes)),
+        degraded_reason=degraded_reason,
+    )
+
+
+def _candidate_products(query: str, db: Session, limit: int, category: str | None = None) -> list[Product]:
+    return _retrieve_product_selection(query, db, limit, category).products
 
 
 def _context_for_ai(results: list[dict[str, Any]]) -> str:
@@ -418,6 +509,17 @@ def _context_for_ai(results: list[dict[str, Any]]) -> str:
         ]
         if result.get("price") is not None:
             lines.append(f"售价：¥{_format_price(result.get('price'))}")
+        if result.get("retrieval_chunks"):
+            lines.append("命中资料块：")
+            for chunk in result["retrieval_chunks"][:6]:
+                parts = [
+                    chunk.get("section", ""),
+                    chunk.get("source_name", ""),
+                    chunk.get("document", ""),
+                ]
+                text = "；".join(str(part) for part in parts if part)
+                if text:
+                    lines.append(f"- {text[:500]}")
         if result.get("profile_sections"):
             lines.append("五维资料：")
             for section in result["profile_sections"]:
@@ -574,6 +676,61 @@ def _strip_answer_sources(answer: str) -> str:
     return re.sub(r"(^|\n)\s*来源：[\s\S]*$", "", answer or "").strip()
 
 
+def _policy_log_dict(policy: ProductQueryPolicy) -> dict[str, Any]:
+    return {
+        "intent": policy.intent,
+        "broad": policy.broad,
+        "strict_primary_filter": policy.strict_primary_filter,
+        "intents": list(policy.intents),
+        "categories": list(policy.categories),
+    }
+
+
+def _chunks_for_log_from_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    chunks: list[dict[str, Any]] = []
+    for result in results:
+        for chunk in result.get("retrieval_chunks") or []:
+            chunks.append(_hit_trace(chunk))
+    return chunks
+
+
+def _record_rag_query_log(
+    db: Session,
+    *,
+    query: str,
+    answer: str,
+    scope: str,
+    product_id: int | None,
+    policy: ProductQueryPolicy,
+    retrieval_mode: str,
+    hit_chunks: list[dict[str, Any]],
+    final_product_ids: list[int],
+    excluded_product_ids: list[int],
+    degraded_reason: str = "",
+    latency_ms: int = 0,
+    error_summary: str = "",
+) -> None:
+    try:
+        db.add(ProductRagQueryLog(
+            query=query,
+            answer=answer or "",
+            scope=scope,
+            product_id=product_id,
+            policy=_policy_log_dict(policy),
+            retrieval_mode=retrieval_mode or "unknown",
+            hit_chunks=hit_chunks or [],
+            final_product_ids=final_product_ids or [],
+            excluded_product_ids=excluded_product_ids or [],
+            degraded_reason=degraded_reason or "",
+            latency_ms=max(0, int(latency_ms or 0)),
+            error_summary=error_summary or "",
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Failed to record product RAG query log: %s", exc)
+
+
 async def _summarize_answer(query: str, results: list[dict[str, Any]], scope_label: str, db: Session) -> tuple[str, str]:
     if not results:
         return _fallback_answer(query, results, scope_label), "fallback"
@@ -610,17 +767,47 @@ async def answer_global_product_question(
     category: str | None = None,
     limit: int = 5,
 ) -> dict[str, Any]:
+    start_time = time.perf_counter()
     clean = _clean_query(query)
     requested_limit = max(1, min(limit, 30))
     policy = _product_query_policy(clean)
     candidate_limit = 30 if policy.broad else requested_limit
-    products = _candidate_products(clean, db, candidate_limit, category)
+    selection = _retrieve_product_selection(clean, db, candidate_limit, category)
+    products = selection.products
+    chunks_by_product: dict[int, list[dict[str, Any]]] = {}
+    for chunk in selection.hit_chunks:
+        product_id = chunk.get("product_id")
+        if product_id is None:
+            continue
+        try:
+            product_key = int(product_id)
+        except (TypeError, ValueError):
+            continue
+        chunks_by_product.setdefault(product_key, []).append(chunk)
     results = [
-        _detail_to_result(build_product_detail_payload(product), clean)
+        _detail_to_result(
+            build_product_detail_payload(product),
+            clean,
+            hit_chunks=chunks_by_product.get(product.id, []),
+        )
         for product in products
     ]
     sources = _unique([source for result in results for source in result.get("sources", [])])
     answer, mode = await _summarize_answer(clean, results, "global", db)
+    _record_rag_query_log(
+        db,
+        query=clean,
+        answer=answer,
+        scope="global",
+        product_id=None,
+        policy=selection.policy,
+        retrieval_mode=selection.retrieval_mode,
+        hit_chunks=selection.hit_chunks,
+        final_product_ids=[int(product.id) for product in products],
+        excluded_product_ids=selection.excluded_product_ids,
+        degraded_reason=selection.degraded_reason,
+        latency_ms=int((time.perf_counter() - start_time) * 1000),
+    )
     return {
         "answer": answer,
         "mode": mode,
@@ -635,14 +822,42 @@ async def answer_product_question(
     query: str,
     db: Session,
 ) -> dict[str, Any]:
+    start_time = time.perf_counter()
     product = db.query(Product).filter(Product.id == product_id, Product.status == "active").first()
     if not product:
         raise ValueError("产品不存在")
     clean = _clean_query(query)
     detail = build_product_detail_payload(product)
-    result = _detail_to_result(detail, clean, scoped=True)
+    chunks = [
+        {
+            "chunk_id": chunk.chunk_id,
+            "product_id": chunk.product_id,
+            "name": chunk.product_name,
+            "category": chunk.category,
+            "section": chunk.section,
+            "source_name": chunk.source_name,
+            "document": chunk.document(),
+            "distance": 0,
+        }
+        for chunk in build_product_knowledge_chunks(product, detail)[:12]
+    ]
+    result = _detail_to_result(detail, clean, scoped=True, hit_chunks=chunks)
     sources = result.get("sources", [])
     answer, mode = await _summarize_answer(clean, [result], "product", db)
+    policy = _product_query_policy(clean)
+    _record_rag_query_log(
+        db,
+        query=clean,
+        answer=answer,
+        scope="product",
+        product_id=product_id,
+        policy=policy,
+        retrieval_mode="scoped_product",
+        hit_chunks=chunks,
+        final_product_ids=[product_id],
+        excluded_product_ids=[],
+        latency_ms=int((time.perf_counter() - start_time) * 1000),
+    )
     return {
         "answer": answer,
         "mode": mode,

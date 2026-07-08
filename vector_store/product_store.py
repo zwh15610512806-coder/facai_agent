@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from vector_store import VectorStoreError, get_chroma_store
+from services.product_knowledge_chunks import build_product_knowledge_chunks
 
 logger = logging.getLogger("vector_store.products")
 
@@ -40,40 +41,77 @@ class ProductVectorStore:
             parts.append(f"核心卖点：{'；'.join(sp_texts)}")
         return "\n".join(parts)
 
-    def index_product(self, product, db: Session = None) -> str:
-        """Index a single product. Returns the ChromaDB document ID."""
-        doc_id = f"product_{product.id}"
-        doc_text = self.build_document(product)
-        metadata = {
-            "product_id": product.id,
-            "name": product.name,
-            "category": product.category or "",
-            "price": product.price or 0,
-        }
+    def build_chunks(self, product) -> list:
+        """Build structured searchable chunks for a Product ORM object."""
+        return build_product_knowledge_chunks(product)
+
+    def _build_where(
+        self,
+        category_filter: str = None,
+        intent_filter: tuple[str, ...] | list[str] | None = None,
+        product_id_filter: int | None = None,
+    ) -> dict | None:
+        conditions = []
+        if category_filter:
+            conditions.append({"category": category_filter})
+        intents = [intent for intent in (intent_filter or []) if intent]
+        if len(intents) == 1:
+            conditions.append({f"intent_{intents[0]}": True})
+        elif len(intents) > 1:
+            conditions.append({"$or": [{f"intent_{intent}": True} for intent in intents]})
+        if product_id_filter is not None:
+            conditions.append({"product_id": int(product_id_filter)})
+        if not conditions:
+            return None
+        if len(conditions) == 1:
+            return conditions[0]
+        return {"$and": conditions}
+
+    def index_product(self, product, db: Session = None) -> list[str]:
+        """Index a single product. Returns the ChromaDB chunk document IDs."""
+        chunks = self.build_chunks(product)
+        if not chunks:
+            return []
+        ids = [chunk.chunk_id for chunk in chunks]
+        docs = [chunk.document() for chunk in chunks]
+        metas = []
+        for chunk in chunks:
+            metadata = chunk.metadata()
+            metadata["price"] = product.price or 0
+            metas.append(metadata)
         try:
+            self.collection.delete(where={"product_id": int(product.id)})
             self.collection.upsert(
-                ids=[doc_id],
-                documents=[doc_text],
-                metadatas=[metadata],
+                ids=ids,
+                documents=docs,
+                metadatas=metas,
             )
-            return doc_id
+            return ids
         except Exception as e:
             logger.warning(f"Failed to index product {product.id}: {e}")
-            return None
+            return []
 
     def delete_embedding(self, product_id: int):
         try:
-            self.collection.delete(ids=[f"product_{product_id}"])
+            self.collection.delete(where={"product_id": int(product_id)})
         except Exception as e:
             logger.warning(f"Failed to delete embedding for product {product_id}: {e}")
 
-    def search(self, query: str, limit: int = 10, category_filter: str = None) -> list:
-        """Semantic search. Returns [{product_id, name, category, price, distance}, ...]."""
+    def search(
+        self,
+        query: str,
+        limit: int = 10,
+        category_filter: str = None,
+        intent_filter: tuple[str, ...] | list[str] | None = None,
+        product_id_filter: int | None = None,
+    ) -> list:
+        """Semantic chunk search. Returns chunk hits with product metadata."""
         self.store.require_available()
         try:
             kwargs = {"query_texts": [query], "n_results": limit * 2}
-            if category_filter:
-                kwargs["where"] = {"category": category_filter}
+            where = self._build_where(category_filter, intent_filter, product_id_filter)
+            if where:
+                kwargs["where"] = where
             results = self.collection.query(**kwargs)
             if not results or not results.get("ids") or not results["ids"][0]:
                 return []
@@ -81,14 +119,21 @@ class ProductVectorStore:
             ids = results["ids"][0]
             distances = results.get("distances", [[]])[0]
             metadatas = results.get("metadatas", [[]])[0]
+            documents = results.get("documents", [[]])[0]
             for i, doc_id in enumerate(ids):
                 meta = metadatas[i] if i < len(metadatas) else {}
                 dist = distances[i] if i < len(distances) else 1.0
+                document = documents[i] if i < len(documents) else ""
                 out.append({
+                    "chunk_id": doc_id,
                     "product_id": meta.get("product_id"),
                     "name": meta.get("name", ""),
                     "category": meta.get("category", ""),
                     "price": meta.get("price", 0),
+                    "section": meta.get("section", ""),
+                    "source_name": meta.get("source_name", ""),
+                    "intent_tags": meta.get("intent_tags", ""),
+                    "document": document,
                     "distance": round(dist, 4),
                 })
             out.sort(key=lambda x: x["distance"])
@@ -111,38 +156,60 @@ class ProductVectorStore:
         ids = []
         metas = []
         for p in products:
-            ids.append(f"product_{p.id}")
-            docs.append(self.build_document(p))
-            metas.append({
-                "product_id": p.id,
-                "name": p.name,
-                "category": p.category or "",
-                "price": p.price or 0,
-            })
+            for chunk in self.build_chunks(p):
+                ids.append(chunk.chunk_id)
+                docs.append(chunk.document())
+                metadata = chunk.metadata()
+                metadata["price"] = p.price or 0
+                metas.append(metadata)
 
         try:
             self.collection.upsert(ids=ids, documents=docs, metadatas=metas)
-            logger.info(f"Indexed {len(ids)} products")
+            logger.info(f"Indexed {len(ids)} product knowledge chunks")
             return len(ids)
         except Exception as e:
             logger.error(f"Batch product indexing failed: {e}")
             raise VectorStoreError(f"产品向量全量重建失败: {e}") from e
 
-    def hybrid_search(self, query: str, db: Session, limit: int = 10, category_filter: str = None) -> list:
+    def hybrid_search(
+        self,
+        query: str,
+        db: Session,
+        limit: int = 10,
+        category_filter: str = None,
+        intent_filter: tuple[str, ...] | list[str] | None = None,
+        product_id_filter: int | None = None,
+    ) -> list:
         """Vector search + keyword fallback, deduplicated."""
         self.store.require_available()
 
-        results = self.search(query, limit=limit, category_filter=category_filter)
+        results = self.search(
+            query,
+            limit=limit,
+            category_filter=category_filter,
+            intent_filter=intent_filter,
+            product_id_filter=product_id_filter,
+        )
         if results:
             return results
 
-        return self._keyword_search(query, db, limit, category_filter)
+        return self._keyword_search(query, db, limit, category_filter, intent_filter, product_id_filter)
 
-    def _keyword_search(self, query: str, db: Session, limit: int = 10, category_filter: str = None) -> list:
+    def _keyword_search(
+        self,
+        query: str,
+        db: Session,
+        limit: int = 10,
+        category_filter: str = None,
+        intent_filter: tuple[str, ...] | list[str] | None = None,
+        product_id_filter: int | None = None,
+    ) -> list:
         from models import Product
         q = db.query(Product).filter(Product.status == "active")
         if category_filter:
             q = q.filter(Product.category == category_filter)
+        if product_id_filter is not None:
+            q = q.filter(Product.id == int(product_id_filter))
         if query:
             like = f"%{query}%"
             q = q.filter(
@@ -156,5 +223,9 @@ class ProductVectorStore:
             "name": p.name,
             "category": p.category or "",
             "price": p.price or 0,
+            "section": "keyword",
+            "source_name": "",
+            "intent_tags": ",".join(intent_filter or []),
+            "document": self.build_document(p),
             "distance": 0.0,
         } for p in products]

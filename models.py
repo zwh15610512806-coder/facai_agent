@@ -208,3 +208,23 @@ class AIUsageRecord(Base):
     status = Column(String(30), nullable=False, index=True)
     error_summary = Column(Text)
     created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
+class ProductRagQueryLog(Base):
+    """Full trace for product knowledge-base RAG requests."""
+    __tablename__ = "product_rag_query_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    query = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False, default="")
+    scope = Column(String(30), nullable=False, index=True)
+    product_id = Column(Integer, index=True)
+    policy = Column(JSON, default=dict)
+    retrieval_mode = Column(String(120), nullable=False, default="unknown")
+    hit_chunks = Column(JSON, default=list)
+    final_product_ids = Column(JSON, default=list)
+    excluded_product_ids = Column(JSON, default=list)
+    degraded_reason = Column(Text)
+    latency_ms = Column(Integer, nullable=False, default=0)
+    error_summary = Column(Text)
+    created_at = Column(DateTime, server_default=func.now(), index=True)

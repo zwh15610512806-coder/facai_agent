@@ -292,12 +292,20 @@ def semantic_search_products(
         if not results:
             return []
 
-        product_ids = [r["product_id"] for r in results]
+        product_ids = []
+        seen_product_ids = set()
+        for r in results:
+            product_id = r["product_id"]
+            if product_id in seen_product_ids:
+                continue
+            seen_product_ids.add(product_id)
+            product_ids.append(product_id)
         products = db.query(Product).filter(Product.id.in_(product_ids)).all()
         product_map = {p.id: p for p in products}
 
         out = []
-        for r in results:
+        for product_id in product_ids:
+            r = {"product_id": product_id}
             p = product_map.get(r["product_id"])
             if not p:
                 continue
@@ -329,7 +337,7 @@ def reindex_products(db: Session = Depends(get_db)):
         pvs = ProductVectorStore()
         pvs.store.reset_product_collection()
         count = pvs.index_all_products(db)
-        return ApiResponse(message=f"已重建 {count} 个产品的向量索引")
+        return ApiResponse(message=f"已重建 {count} 个产品知识块向量索引")
     except VectorStoreError as e:
         raise HTTPException(
             status_code=503,
