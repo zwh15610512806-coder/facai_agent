@@ -1,6 +1,7 @@
 """脚本改写服务 — 保留参考结构，并统一输出为资料脚本表格式"""
 from services.ai_service import ai_service
 from services.rewrite_prompts import build_rewrite_system_prompt
+from services.script_price import abstract_script_price, sanitize_script_price_text
 from models import ViralScript
 from sqlalchemy.orm import Session
 import re
@@ -212,9 +213,10 @@ class ScriptRewriter:
         price = target_product.get("price", 0)
         original_price = target_product.get("original_price")
         pending_fields = set(target_product.get("pending_fields") or [])
-        price_text = "待更新" if "price" in pending_fields else f"{price}元"
+        price_text = "待更新" if "price" in pending_fields else abstract_script_price(price)
         description = target_product.get("description", "")
         selling_points = target_product.get("selling_points", [])
+        sanitized_original_script = sanitize_script_price_text(original_script)
 
         candidates = self._extract_keywords(name)
 
@@ -243,7 +245,7 @@ class ScriptRewriter:
 品类：{category}
 售价：{price_text}"""
         if original_price:
-            product_info += f"（原价{original_price}元）"
+            product_info += f"（原价{abstract_script_price(original_price)}）"
         if description:
             product_info += f"\n描述：{description}"
 
@@ -257,9 +259,9 @@ class ScriptRewriter:
             ref_block = "\n\n【同类爆款脚本参考】（学习其表达风格、画面括号和连续成稿格式）"
             for i, rs in enumerate(ref_scripts[:3], 1):
                 ref_block += f"\n\n--- 参考{i}: {rs.title} ---"
-                ref_block += f"\n{rs.script_content[:700]}"
+                ref_block += f"\n{sanitize_script_price_text(rs.script_content[:700])}"
 
-        reference_structure = self._build_reference_structure(original_script)
+        reference_structure = self._build_reference_structure(sanitized_original_script)
 
         instructions = f"""请将以下带货脚本改写为"{name}"的版本。
 
@@ -273,6 +275,7 @@ class ScriptRewriter:
 - 可以把特别短的相邻两条自然合并，但不能改变原文信息出现顺序
 - 同类爆款脚本只用于学习表达质感，不能替代用户参考文案的结构
 - 将所有产品名、卖点、价格、规格替换为新产品信息
+- 价格表达规则：价格信息只用于判断价格带，最终脚本禁止输出精确金额、小数金额、¥xx.xx、xx.xx元；请用几毛钱、十块以内、十来块、1开头、一杯奶茶钱、几十块、三位数等抽象说法
 - 吸收原脚本的语言风格、情绪节奏和转化逻辑
 - 产品卖点自然融入，不生搬硬套
 - 参考同类脚本的表达方式，让脚本更接地气
@@ -300,7 +303,7 @@ class ScriptRewriter:
                 "保留参考文案的信息顺序和表达节奏，但把画面括号全部转化为自然口播。"
             )
 
-        instructions += f"\n\n【原始脚本】\n{original_script}\n\n请输出改写后的脚本："
+        instructions += f"\n\n【原始脚本】\n{sanitized_original_script}\n\n请输出改写后的脚本："
 
         system_prompt = self.SYSTEM_PROMPT if include_shot_design else self.PLAIN_SYSTEM_PROMPT
         messages = [
@@ -416,7 +419,7 @@ class ScriptRewriter:
         original_script: str = "",
     ) -> str:
         """Fallback rewrite when AI is unavailable, still using material-script style."""
-        price_display = str(price) if str(price).endswith("元") or str(price) == "待更新" else f"{price}元"
+        price_display = "待更新" if str(price) == "待更新" else abstract_script_price(price)
         point_texts = [sp.get("content", "") for sp in selling_points if sp.get("content")]
         if not point_texts:
             point_texts = [
@@ -514,7 +517,7 @@ class ScriptRewriter:
         cleaned = re.sub(r"\n(?=（)", "", cleaned)
         cleaned = re.sub(r"\n+", " ", cleaned)
         cleaned = self._enrich_scene_labels(cleaned)
-        return self._limit_rewrite_text(cleaned.strip())
+        return self._limit_rewrite_text(sanitize_script_price_text(cleaned.strip()))
 
     def _cleanup_plain_rewrite_output(self, text: str) -> str:
         """Remove shot notes and formatting when the user only wants spoken copy."""
@@ -552,7 +555,7 @@ class ScriptRewriter:
         )
         cleaned = re.sub(r"\s+", " ", cleaned)
         cleaned = re.sub(r"\s+([，。！？；、])", r"\1", cleaned)
-        return self._limit_rewrite_text(cleaned.strip())
+        return self._limit_rewrite_text(sanitize_script_price_text(cleaned.strip()))
 
     def _limit_rewrite_text(self, text: str, limit: int = 500) -> str:
         """Keep the public rewrite result to one compact copy block."""

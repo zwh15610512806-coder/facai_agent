@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Product, ReferenceScript, SellingPoint, ViralScript
+from models import Product, ReferenceScript, ScriptTemplate, SellingPoint, ViralScript
 from routers import scripts as scripts_router
 from schemas import ScriptGenerateRequest
 from services.script_generator import ScriptGenerationError, ScriptGenerator
@@ -18,33 +18,17 @@ class FakeTemplateLibraryGenerator:
         self.library_called = False
         self.include_shot_design = None
         self.product = None
+        self.template = None
+        self.video_type = None
 
     def get_model_name(self, interface_key="script_generate"):
         return "fake-model"
 
     def find_similar_scripts(self, *args, **kwargs):
-        raise AssertionError("empty video type should not use typed similar-script search")
+        raise AssertionError("template rewrite should not use viral/reference similar-script search")
 
     def find_high_conversion_scripts(self, product, db, limit=5):
-        self.high_only_called = True
-        return [
-            {
-                "title": "High conversion source",
-                "content": "（口播画面）高成交模板脚本",
-                "video_type": "需求类",
-                "category": product["category"],
-                "tags": "",
-                "performance": None,
-                "is_high_conversion": True,
-            }
-        ]
-
-    async def generate_from_library(self, product, video_type, reference_scripts, tone="活泼", extra_requirements=None):
-        self.library_called = True
-        assert video_type == "高成交模板库"
-        assert reference_scripts
-        assert all(script["is_high_conversion"] for script in reference_scripts)
-        return "（口播画面）根据高成交模板库生成的脚本"
+        raise AssertionError("template rewrite should not use high-conversion script search")
 
     async def generate(self, *args, **kwargs):
         raise AssertionError("empty video type should not fall back to free generation")
@@ -53,18 +37,19 @@ class FakeTemplateLibraryGenerator:
         self,
         product,
         video_type,
-        reference_scripts,
+        template,
         tone="活泼",
         extra_requirements=None,
         include_shot_design=None,
     ):
         self.library_called = True
         self.product = product
+        self.template = template
+        self.video_type = video_type
         self.include_shot_design = include_shot_design
-        assert video_type == "高成交模板库"
-        assert reference_scripts
-        assert all(script["is_high_conversion"] for script in reference_scripts)
-        return "根据高成交模板库生成的脚本"
+        assert template
+        assert template["name"]
+        return f"根据脚本模板库《{template['name']}》生成的脚本"
 
 
 class FakeFailingTemplateLibraryGenerator(FakeTemplateLibraryGenerator):
@@ -72,7 +57,7 @@ class FakeFailingTemplateLibraryGenerator(FakeTemplateLibraryGenerator):
         self,
         product,
         video_type,
-        reference_scripts,
+        template,
         tone="活泼",
         extra_requirements=None,
         include_shot_design=None,
@@ -86,7 +71,7 @@ class FakeEmptyTemplateLibraryGenerator(FakeTemplateLibraryGenerator):
         self,
         product,
         video_type,
-        reference_scripts,
+        template,
         tone="活泼",
         extra_requirements=None,
         include_shot_design=None,
@@ -201,6 +186,26 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.product = product
         self.original_generator = scripts_router.generator
 
+    def add_template(self, name="机制类模板", video_type="机制类"):
+        template = ScriptTemplate(
+            name=name,
+            video_type=video_type,
+            structure={
+                "opening": "价格机制钩子",
+                "body": "门店场景痛点到卖点证明",
+                "cta": "左下角下单",
+            },
+            hook_templates=["现在袋装刀叉上新包装了"],
+            cta_templates=["需要的老板点左下角"],
+            duration_range="15-25s",
+            description=f"{video_type}成交模板",
+            example_script=f"{name}示例脚本",
+        )
+        self.db.add(template)
+        self.db.commit()
+        self.db.refresh(template)
+        return template
+
     def tearDown(self):
         scripts_router.generator = self.original_generator
         self.db.close()
@@ -230,18 +235,82 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertEqual(record.video_type, "AI智能生成")
         self.assertEqual(record.ai_model, "AI生成 · fake-model")
 
-    def test_template_generation_without_video_type_forces_template_high_conversion_library(self):
+    def test_template_generation_without_video_type_uses_any_script_template_and_returns_template_name(self):
+        template = self.add_template(name="全库兜底模板", video_type="对比类")
         fake = FakeTemplateLibraryGenerator()
         scripts_router.generator = fake
         request = ScriptGenerateRequest(product_id=self.product.id, engine="template", video_type=None)
 
         response = asyncio.run(scripts_router.generate_script(request, db=self.db))
 
-        self.assertTrue(fake.high_only_called)
         self.assertTrue(fake.library_called)
         self.assertNotIn("profile_sections", fake.product)
-        self.assertEqual(response.video_type, "高成交模板库")
-        self.assertIn("高成交模板库", self.db.query(scripts_router.GeneratedScript).first().video_type)
+        self.assertEqual(fake.template["name"], template.name)
+        self.assertEqual(response.video_type, template.video_type)
+        self.assertEqual(response.template_id, template.id)
+        self.assertEqual(response.template_name, template.name)
+        record = self.db.query(scripts_router.GeneratedScript).first()
+        self.assertEqual(record.video_type, template.video_type)
+        self.assertEqual(record.template_id, template.id)
+
+    def test_template_generation_with_video_type_prefers_same_type_script_template(self):
+        self.add_template(name="其他类型模板", video_type="情绪类")
+        same_type = self.add_template(name="机制同类型模板", video_type="机制类")
+        fake = FakeTemplateLibraryGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(product_id=self.product.id, engine="template", video_type="机制类")
+
+        response = asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertTrue(fake.library_called)
+        self.assertEqual(fake.template["name"], same_type.name)
+        self.assertEqual(response.video_type, "机制类")
+        self.assertEqual(response.template_name, same_type.name)
+
+    def test_template_generation_falls_back_to_any_template_when_type_has_no_template(self):
+        fallback = self.add_template(name="全库可用模板", video_type="场景类")
+        fake = FakeTemplateLibraryGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(product_id=self.product.id, engine="template", video_type="机制类")
+
+        response = asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertTrue(fake.library_called)
+        self.assertEqual(fake.template["name"], fallback.name)
+        self.assertEqual(response.video_type, "机制类")
+        self.assertEqual(response.template_id, fallback.id)
+
+    def test_template_generation_uses_explicit_template_id(self):
+        self.add_template(name="普通模板", video_type="需求类")
+        chosen = self.add_template(name="指定模板", video_type="成本低")
+        fake = FakeTemplateLibraryGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(
+            product_id=self.product.id,
+            engine="template",
+            video_type="机制类",
+            template_id=chosen.id,
+        )
+
+        response = asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertEqual(fake.template["name"], chosen.name)
+        self.assertEqual(response.video_type, chosen.video_type)
+        self.assertEqual(response.template_id, chosen.id)
+        self.assertEqual(response.template_name, chosen.name)
+
+    def test_template_generation_without_templates_returns_404_without_saving_record(self):
+        fake = FakeTemplateLibraryGenerator()
+        scripts_router.generator = fake
+        request = ScriptGenerateRequest(product_id=self.product.id, engine="template", video_type=None)
+
+        with self.assertRaises(HTTPException) as caught:
+            asyncio.run(scripts_router.generate_script(request, db=self.db))
+
+        self.assertEqual(caught.exception.status_code, 404)
+        self.assertIn("脚本模板库", caught.exception.detail)
+        self.assertFalse(fake.library_called)
+        self.assertIsNone(self.db.query(scripts_router.GeneratedScript).first())
 
 
     def test_generate_request_defaults_to_no_shot_design(self):
@@ -250,6 +319,7 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertFalse(request.include_shot_design)
 
     def test_generate_passes_shot_design_choice_to_template_library(self):
+        self.add_template()
         fake = FakeTemplateLibraryGenerator()
         scripts_router.generator = fake
         request = ScriptGenerateRequest(
@@ -264,6 +334,7 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertTrue(fake.include_shot_design)
 
     def test_template_library_generation_error_returns_clear_error_without_saving_record(self):
+        self.add_template()
         fake = FakeFailingTemplateLibraryGenerator()
         scripts_router.generator = fake
         request = ScriptGenerateRequest(product_id=self.product.id, engine="template", video_type=None)
@@ -277,6 +348,7 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertIsNone(self.db.query(scripts_router.GeneratedScript).first())
 
     def test_template_library_empty_result_returns_clear_error_without_saving_record(self):
+        self.add_template()
         fake = FakeEmptyTemplateLibraryGenerator()
         scripts_router.generator = fake
         request = ScriptGenerateRequest(product_id=self.product.id, engine="template", video_type=None)

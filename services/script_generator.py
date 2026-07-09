@@ -1,6 +1,7 @@
 """脚本生成引擎 — 核心业务逻辑"""
 from services.ai_service import ai_service
 from services.rewrite_prompts import build_rewrite_system_prompt
+from services.script_price import abstract_script_price, sanitize_script_price_text
 from models import ViralScript, ReferenceScript
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -98,7 +99,7 @@ class ScriptGenerator:
     ) -> str:
         if include_shot_design:
             reference_line = (
-                "- 参考模板库脚本的画面节奏和镜头功能。"
+                "- 参考脚本模板库的画面节奏和镜头功能。"
                 if use_template_reference
                 else "- 参考抖音带货跑量逻辑和真实产品场景的画面节奏。"
             )
@@ -109,7 +110,7 @@ class ScriptGenerator:
                 "- 可使用格式：（镜头/画面说明）口播文案，并保留适度段落结构。"
             )
         reference_line = (
-            "- 仍参考模板库的成交逻辑和表达节奏，但不保留模板里的镜头格式。"
+            "- 仍参考脚本模板库的成交结构和表达节奏，但不保留模板里的镜头格式。"
             if use_template_reference
             else "- 仍参考抖音带货跑量逻辑和真实产品场景，但不套用模板脚本格式。"
         )
@@ -135,7 +136,7 @@ class ScriptGenerator:
             "- 目标人群必须明确为烘焙店老板/烘焙从业者，不要写成泛消费者种草。\n"
             "- 用一个真实使用场景承接痛点或需求，让观众能立刻代入门店备货、出品、配送、打包或活动促销。\n"
             "- 至少引用2个产品资料里的具体卖点，卖点要落到成本、效率、品质、稳定性、使用步骤或成品效果，禁止空泛夸张。\n"
-            "- 价格、活动、赠品必须与输入一致；价格待更新时不得编造价格、折扣、赠品或到手价。\n"
+            "- 价格、活动、赠品必须与输入一致；最终脚本用抽象价格表达，禁止输出几毛几分钱的精确金额；价格待更新时不得编造价格、折扣、赠品或到手价。\n"
             "- CTA必须自然引导左下角/小黄车，但避免全篇硬广，要先让用户相信产品值得点开。\n"
             "- 先内部自评并修正：钩子是否能留住人，场景是否真实，卖点是否具体，价格是否一致，CTA是否明确；最终不要输出评分或解释。"
         )
@@ -160,7 +161,9 @@ class ScriptGenerator:
     ) -> str:
         text = (script or "").strip()
         if include_shot_design:
-            return self._remove_default_audience_opening(text) if remove_default_audience_opening else text
+            if remove_default_audience_opening:
+                text = self._remove_default_audience_opening(text)
+            return sanitize_script_price_text(text)
 
         text = self._strip_plain_script_preamble(text)
         text = re.sub(r"(?m)^\s*-{3,}\s*$", " ", text)
@@ -181,7 +184,7 @@ class ScriptGenerator:
         text = re.sub(r"\s+([，。！？、；：,.!?;:])", r"\1", text)
         if remove_default_audience_opening:
             text = self._remove_default_audience_opening(text)
-        return text.strip()
+        return sanitize_script_price_text(text.strip())
 
     def _remove_default_audience_opening(self, text: str) -> str:
         """Remove generic audience-call prefixes from DeepSeek-created scripts only."""
@@ -710,15 +713,7 @@ class ScriptGenerator:
 请严格按照上述策略创作，确保脚本具备抖音跑量能力。"""
 
     def _format_prompt_price(self, value: Any) -> str:
-        if value is None or value == "":
-            return ""
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            return str(value).strip()
-        if number.is_integer():
-            return str(int(number))
-        return f"{number:.2f}".rstrip("0").rstrip(".")
+        return abstract_script_price(value)
 
     def _trim_prompt_text(self, value: Any, limit: int = 180) -> str:
         text = re.sub(r"\s+", " ", str(value or "")).strip()
@@ -741,7 +736,7 @@ class ScriptGenerator:
 
     def _format_sku_prompt_line(self, sku: Dict) -> str:
         if sku.get("line"):
-            return self._trim_prompt_text(sku["line"], limit=220)
+            return self._trim_prompt_text(sanitize_script_price_text(sku["line"]), limit=220)
 
         name = sku.get("name") or " / ".join(
             part for part in [sku.get("product"), sku.get("spec")] if part
@@ -750,9 +745,9 @@ class ScriptGenerator:
         price = self._format_prompt_price(sku.get("price"))
         daily_price = self._format_prompt_price(sku.get("daily_price"))
         if price:
-            bits.append(f"售价¥{price}")
+            bits.append(f"售价{price}")
         if daily_price and daily_price != price:
-            bits.append(f"日常价¥{daily_price}")
+            bits.append(f"日常价{daily_price}")
 
         for activity in (sku.get("activity_prices") or [])[:3]:
             activity_price = (
@@ -773,7 +768,7 @@ class ScriptGenerator:
             if activity.get("coupon") and activity.get("coupon") != "0":
                 meta.append(f"券{activity['coupon']}")
             suffix = f"（{' / '.join(meta)}）" if meta else ""
-            bits.append(f"{mechanism}¥{formatted_price}{suffix}")
+            bits.append(f"{mechanism}{formatted_price}{suffix}")
 
         if not bits:
             return self._trim_prompt_text(name, limit=220)
@@ -936,12 +931,13 @@ class ScriptGenerator:
         parts.append(f"品类：{product.get('category', '')}")
         parts.append(f"品牌：{product.get('brand', '')}")
         pending_fields = set(product.get("pending_fields") or [])
-        price_text = "待更新" if "price" in pending_fields else f"{product.get('price', 0)}元"
+        price_text = "待更新" if "price" in pending_fields else abstract_script_price(product.get("price", 0))
         parts.append(f"售价：{price_text}")
         if "price" in pending_fields:
             parts.append("价格约束：价格待更新时不得编造价格、折扣、赠品或到手价，只能提示价格待更新或引导查看详情页。")
         if product.get("original_price"):
-            parts.append(f"原价：{product.get('original_price')}元")
+            parts.append(f"原价：{abstract_script_price(product.get('original_price'))}")
+        parts.append("价格表达规则：价格信息只用于判断价格带，最终脚本禁止输出精确金额、小数金额、¥xx.xx、xx.xx元；请用几毛钱、十块以内、十来块、1开头、一杯奶茶钱、几十块、三位数等抽象说法。")
         if product.get("description"):
             parts.append(f"产品描述：{product.get('description')}")
 
@@ -981,35 +977,77 @@ class ScriptGenerator:
 
         return "\n".join(parts)
 
+    def _format_template_prompt_value(self, value: Any, limit: int = 1200) -> str:
+        if value is None or value == "" or value == [] or value == {}:
+            return "（未填写）"
+        if isinstance(value, (dict, list)):
+            text = json.dumps(value, ensure_ascii=False, indent=2)
+        else:
+            text = str(value)
+        text = text.strip()
+        if len(text) <= limit:
+            return text
+        return f"{text[:limit].rstrip()}..."
+
+    def _format_template_prompt_list(self, value: Any, limit: int = 5) -> str:
+        if not value:
+            return "（未填写）"
+        if isinstance(value, str):
+            items = [value]
+        elif isinstance(value, list):
+            items = value
+        else:
+            items = [value]
+
+        lines = []
+        for item in items[:limit]:
+            text = self._trim_prompt_text(item, limit=220)
+            if text:
+                lines.append(f"- {text}")
+        return "\n".join(lines) if lines else "（未填写）"
+
+    def _format_rewrite_template_block(self, template: Dict) -> str:
+        return f"""引用模板：{template.get('name') or '未命名模板'}
+模板类型：{template.get('video_type') or '未填写'}
+建议时长：{template.get('duration_range') or '未填写'}
+模板描述：{self._format_template_prompt_value(template.get('description'), limit=400)}
+
+模板结构：
+{self._format_template_prompt_value(template.get('structure'), limit=1600)}
+
+开头模板：
+{self._format_template_prompt_list(template.get('hook_templates'))}
+
+CTA 模板：
+{self._format_template_prompt_list(template.get('cta_templates'))}
+
+示例脚本：
+{self._format_template_prompt_value(template.get('example_script'), limit=1600)}"""
+
     async def generate_from_library(
         self,
         product: Dict,
         video_type: str,
-        reference_scripts: List[Dict],
+        template: Dict,
         tone: str = "活泼",
         extra_requirements: Optional[str] = None,
         include_shot_design: bool = False,
     ) -> str:
-        """模板库改写模式：将匹配到的高成交脚本改写为目标产品版本
-
-        与 generate() 的核心区别：
-        1. 参考脚本是 PRIMARY 改写源，不是次要灵感
-        2. 使用完整脚本内容（不截断）
-        3. 使用 TEMPLATE_REWRITE_SYSTEM_PROMPT（改写专用）
-        4. Prompt 指令是"改写"而非"创作"
-        """
+        """模板库改写模式：基于脚本模板库中选中的 ScriptTemplate 改写为目标产品版本。"""
         if not self._ai_available_for_interface("script_library_rewrite"):
             raise ScriptGenerationError(
                 "模板库改写模型未配置，请到 AI配置 中检查模板库改写接口后重试。",
                 status_code=503,
             )
+        if not template:
+            raise ScriptGenerationError("模板库改写缺少引用模板，请先在脚本模板库创建模板。", status_code=404)
 
         # 构建改写专用 Prompt
         product_name = product.get("name", "")
         product_category = product.get("category", "")
         product_price = product.get("price", 0)
         product_pending_fields = set(product.get("pending_fields") or [])
-        product_price_text = "待更新" if "price" in product_pending_fields else f"{product_price}元"
+        product_price_text = "待更新" if "price" in product_pending_fields else abstract_script_price(product_price)
         selling_points = product.get("selling_points", [])
 
         # 格式化卖点
@@ -1018,48 +1056,26 @@ class ScriptGenerator:
             sp_texts.append(f"- [{sp.get('type', '')}] {sp.get('content', '')}")
         sp_block = "\n".join(sp_texts) if sp_texts else "（请根据产品信息提炼卖点）"
 
-        # 提取高成交参考脚本（最多3条，完整内容）
-        scripts_block = []
-        high_conv_scripts = [s for s in reference_scripts if s.get("is_high_conversion")]
-        normal_scripts = [s for s in reference_scripts if not s.get("is_high_conversion")]
-        selected = (high_conv_scripts + normal_scripts)[:3]
-
-        for i, rs in enumerate(selected, 1):
-            scripts_block.append(f"""
-=== 爆款脚本 #{i} ===
-标题：{rs.get('title', '')}
-类型：{rs.get('video_type', '')}
-品类：{rs.get('category', '')}
-{'⚠ 高成交脚本' if rs.get('is_high_conversion') else ''}
-
-【完整脚本内容】
-{rs.get('content', '')}
-""")
-
-        scripts_text = "\n".join(scripts_block)
+        template_block = self._format_rewrite_template_block(template)
 
         if include_shot_design:
-            rewrite_rules = f"""1. 从以上 {len(selected)} 条中选出最适合改写的一条脚本进行改写
-2. **替换**所有产品名、卖点、价格、规格为目标产品内容
-3. **保持**原脚本的结构、段落划分、时间标注、情绪节奏
-4. **保持**原脚本的语气和口语化风格（感叹号、紧迫感、姐妹称呼等）
-5. 镜头指令微调适配新产品，但保留原镜头的功能时机
-6. 所有品牌名统一为"法采"
-7. CTA 保持原结构，根据新产品价格微调
-8. 必须在开头标注你改写了第几条脚本"""
+            rewrite_rules = """1. 以本次引用模板为主参考源，借鉴它的成交结构、段落功能、情绪推进和画面节奏。
+2. 替换所有产品名、卖点、价格、规格为目标产品内容，所有品牌名统一为“法采”。
+3. 保留“开头钩子 → 场景/痛点 → 卖点证明 → 价格/机制 → CTA”的成交功能，但不要照抄模板示例脚本。
+4. 禁止复制模板示例脚本原文、模板开头原句、CTA 原句、商品名、价格或固定称呼。
+5. 每一句口播都要匹配具体镜头/画面说明，画面要服务产品证明和下单转化。
+6. 禁止输出“改写自”、模板编号、选择过程、分析解释或 Markdown。"""
         else:
-            rewrite_rules = f"""1. 从以上 {len(selected)} 条中选出最适合改写的一条脚本进行改写
-2. **替换**所有产品名、卖点、价格、规格为目标产品内容
-3. 只借鉴原脚本的成交逻辑、痛点推进、卖点顺序和口语节奏，不保留原脚本格式
-4. 严禁输出“改写自”、爆款脚本编号、时间码、【】段落标题、镜头/画面/字幕/口播/场景说明
-5. 最终只输出一段连续口播文案，不换行，不用列表，不用 Markdown
-6. 口吻参考达人自然带货口播，多用顺滑连接词，让内容像用户给的例子一样是一整段话
-7. 所有品牌名统一为"法采"
-8. CTA 按原脚本的成交意图改写，但不要保留原脚本的段落结构"""
+            rewrite_rules = """1. 以本次引用模板为主参考源，只借鉴模板的成交结构、痛点推进、卖点顺序、价格/机制位置和口语节奏。
+2. 替换所有产品名、卖点、价格、规格为目标产品内容，所有品牌名统一为“法采”。
+3. 禁止复制模板示例脚本原文、模板开头原句、CTA 原句、商品名、价格或固定称呼。
+4. 严禁输出“改写自”、模板名称、模板编号、时间码、【】段落标题、镜头/画面/字幕/口播/场景说明。
+5. 最终只输出一段连续口播文案，不换行，不用列表，不用 Markdown。
+6. 口吻参考达人自然带货口播，多用顺滑连接词，让内容像一整段真实口播。"""
 
-        user_prompt = f"""你是脚本改写专家。以下是 {len(selected)} 条爆款脚本库中的高成交脚本。
+        user_prompt = f"""你是脚本模板库改写专家。本次只引用 1 条脚本模板库模板作为结构参考，不使用爆款脚本库或参考脚本库全文。
 
-你的任务：选择其中最合适的一条，**改写**为以下目标产品的带货脚本。
+你的任务：基于本次引用模板的结构和成交逻辑，改写为以下目标产品的带货脚本。
 
 ====================================
 目标产品信息
@@ -1070,12 +1086,16 @@ class ScriptGenerator:
 品牌：法采
 视频类型：{video_type}
 语言风格：{tone}
+价格表达规则：价格信息只用于判断价格带，最终脚本禁止输出精确金额、小数金额、¥xx.xx、xx.xx元；请用几毛钱、十块以内、十来块、1开头、一杯奶茶钱、几十块、三位数等抽象说法。
 
 核心卖点话术：
 {sp_block}
 ====================================
 
-{scripts_text}
+====================================
+脚本模板库引用模板
+====================================
+{template_block}
 
 ====================================
 改写要求

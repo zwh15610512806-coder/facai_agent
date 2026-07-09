@@ -72,6 +72,20 @@ def make_product(**overrides):
     return product
 
 
+def make_template_context():
+    return {
+        "id": 1,
+        "name": "模板库改写测试模板",
+        "video_type": "需求类",
+        "structure": {"opening": "需求开场", "proof": "卖点证明", "cta": "下单引导"},
+        "hook_templates": ["门店老板这个需求别忽略"],
+        "cta_templates": ["需要就点左下角"],
+        "duration_range": "15-25s",
+        "description": "测试用脚本模板",
+        "example_script": "门店需求先讲清，再自然引导下单。",
+    }
+
+
 def make_product_with_knowledge(**overrides):
     product = make_product(
         name="糖珠",
@@ -182,14 +196,8 @@ class DeepSeekPromptTests(unittest.TestCase):
         with self.assertRaisesRegex(ScriptGenerationError, "模板库改写模型未配置"):
             asyncio.run(generator.generate_from_library(
                 product=make_product(name="糖珠", category="烘焙装饰"),
-                video_type="高成交模板库",
-                reference_scripts=[{
-                    "title": "高成交脚本",
-                    "content": "老板们看这个产品，门店很好用。",
-                    "video_type": "需求类",
-                    "category": "烘焙装饰",
-                    "is_high_conversion": True,
-                }],
+                video_type="需求类",
+                template=make_template_context(),
             ))
 
     def test_library_rewrite_fails_without_ai_fallback_when_provider_errors_or_returns_empty(self):
@@ -200,14 +208,8 @@ class DeepSeekPromptTests(unittest.TestCase):
             with self.assertRaisesRegex(ScriptGenerationError, "模板库改写"):
                 asyncio.run(generator.generate_from_library(
                     product=make_product(name="糖珠", category="烘焙装饰"),
-                    video_type="高成交模板库",
-                    reference_scripts=[{
-                        "title": "高成交脚本",
-                        "content": "老板们看这个产品，门店很好用。",
-                        "video_type": "需求类",
-                        "category": "烘焙装饰",
-                        "is_high_conversion": True,
-                    }],
+                    video_type="需求类",
+                    template=make_template_context(),
                 ))
             self.assertIs(ai.allow_fallback, False)
 
@@ -414,7 +416,12 @@ class DeepSeekPromptTests(unittest.TestCase):
         self.assertIn("适合烘焙门店做儿童款、节日款和陈列款蛋糕", user_prompt)
         self.assertIn("【主要卖点】", user_prompt)
         self.assertIn("不用重新改配方", user_prompt)
-        self.assertIn("糖珠 500g 售价¥9.18，活动到手¥8.26", user_prompt)
+        self.assertIn("糖珠 500g 售价十块以内，活动到手十块以内", user_prompt)
+        self.assertIn("价格表达规则", user_prompt)
+        self.assertIn("最终脚本禁止输出精确金额", user_prompt)
+        self.assertNotIn("售价¥9.18", user_prompt)
+        self.assertNotIn("活动到手¥8.26", user_prompt)
+        self.assertNotIn("9.18元", user_prompt)
 
     def test_shot_design_prompt_includes_product_knowledge_and_camera_requirements(self):
         ai = PromptCaptureAI("（近景展示糖珠）糖珠适合做节日款蛋糕装饰。")
@@ -432,10 +439,52 @@ class DeepSeekPromptTests(unittest.TestCase):
         user_prompt = ai.messages[-1]["content"]
 
         self.assertIn("【产品知识库资料】", user_prompt)
-        self.assertIn("糖珠 500g 售价¥9.18，活动到手¥8.26", user_prompt)
+        self.assertIn("糖珠 500g 售价十块以内，活动到手十块以内", user_prompt)
+        self.assertIn("最终脚本禁止输出精确金额", user_prompt)
+        self.assertNotIn("售价¥9.18", user_prompt)
+        self.assertNotIn("活动到手¥8.26", user_prompt)
         self.assertIn("每句话添加镜头说明", user_prompt)
         self.assertIn("（镜头/画面说明）口播文案", user_prompt)
         self.assertNotIn("参考模板库脚本", user_prompt)
+
+    def test_deepseek_output_sanitizes_precise_prices_but_keeps_specs(self):
+        ai = PromptCaptureAI("这款糖珠500g只要9.18元，活动到手¥8.26，6寸蛋糕用也很方便，12个月保质，30秒就能点缀好。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate(
+            product=make_product_with_knowledge(),
+            template=None,
+            video_type="机制类",
+            tone="直接",
+            include_shot_design=False,
+        ))
+
+        self.assertIn("500g", result)
+        self.assertIn("6寸", result)
+        self.assertIn("12个月", result)
+        self.assertIn("30秒", result)
+        self.assertIn("十块以内", result)
+        self.assertNotIn("9.18元", result)
+        self.assertNotIn("¥8.26", result)
+
+    def test_shot_design_output_sanitizes_precise_prices(self):
+        ai = PromptCaptureAI("（产品近景）袋装刀叉0.64元一套，500g包装旁边展示，6寸蛋糕配送也能用。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate(
+            product=make_product(name="袋装刀叉", category="烘焙配件", price=0.64),
+            template=None,
+            video_type="机制类",
+            tone="直接",
+            include_shot_design=True,
+        ))
+
+        self.assertIn("几毛钱一套", result)
+        self.assertIn("500g", result)
+        self.assertIn("6寸", result)
+        self.assertNotIn("0.64元", result)
 
     def test_deepseek_prompt_uses_reference_structure_without_copying_reference_script_content(self):
         ai = PromptCaptureAI("姐妹们，别等恢复原价了才后悔。")

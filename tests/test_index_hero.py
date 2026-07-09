@@ -163,7 +163,8 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
 
     def test_generate_without_video_type_respects_selected_engine(self):
         self.assertIn("AI生成未选类型会由 AI 自动推断", self.page)
-        self.assertIn("模板库改写未选类型会自动用高成交模板库", self.page)
+        self.assertIn("模板库改写未选类型会从脚本模板库选择模板", self.page)
+        self.assertNotIn("模板库改写未选类型会自动用高成交模板库", self.page)
         self.assertNotIn("不选类型时自动用高成交模板库生成", self.page)
         self.assertIn("const selectedType=state.selectedType||''", self.page)
         self.assertIn("const engine=document.getElementById('aiEngine').value", self.page)
@@ -192,7 +193,12 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
     def test_deepseek_engine_is_displayed_as_generic_ai_generation(self):
         self.assertIn('<option value="deepseek">AI生成</option>', self.page)
         self.assertIn("AI生成：结合产品资料、跑量逻辑，并在已选类型时参考同类型脚本结构创作", self.page)
+        self.assertIn("模板库改写：从脚本模板库按同类型优先选择模板，改写为当前产品脚本", self.page)
         self.assertNotIn("DeepSeek AI", self.page)
+
+    def test_generation_result_displays_referenced_template_when_available(self):
+        self.assertIn("d.template_name", self.page)
+        self.assertIn("引用模板：<b>'+escHtml(d.template_name)+'</b>", self.page)
 
     def test_redo_requests_a_distinct_ai_regeneration(self):
         self.assertIn("function buildRegenerateRequirement()", self.page)

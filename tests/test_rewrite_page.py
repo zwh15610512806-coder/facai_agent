@@ -22,6 +22,16 @@ class RewriteEmptyAI:
         return ""
 
 
+class RewriteCaptureAI:
+    def __init__(self, response):
+        self.response = response
+        self.messages = None
+
+    async def chat(self, messages, *args, **kwargs):
+        self.messages = messages
+        return self.response
+
+
 class RewritePageTests(unittest.TestCase):
     def setUp(self):
         self.page = (ROOT / "templates" / "rewrite.html").read_text(encoding="utf-8-sig")
@@ -182,6 +192,39 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("主播半身站在烘焙台前开场", output)
         self.assertIn("奶冻粉包装正面近景", output)
         self.assertIn("俯拍操作台", output)
+        self.assertIn("十来块", output)
+        self.assertNotIn("12.71元", output)
+
+    def test_rewriter_prompt_and_result_use_abstract_prices(self):
+        ai = RewriteCaptureAI("奶冻粉现在12.71元，500g规格，6寸蛋糕也能用，30秒就能讲清楚。")
+        rewriter = ScriptRewriter()
+        rewriter.ai = ai
+
+        result = asyncio.run(rewriter.rewrite(
+            original_script="原脚本说糖珠售价9.18元，500g一袋，6寸蛋糕能用。",
+            target_product={
+                "name": "奶冻粉",
+                "category": "烘焙夹心",
+                "price": 12.71,
+                "original_price": 18.8,
+                "selling_points": [{"type": "稳定性", "content": "凝固稳定，不容易出水"}],
+            },
+            include_shot_design=False,
+        ))
+
+        prompt = "\n".join(message["content"] for message in ai.messages)
+        self.assertIn("售价：十来块", prompt)
+        self.assertIn("原价十来块", prompt)
+        self.assertIn("价格表达规则", prompt)
+        self.assertIn("原脚本说糖珠售价十块以内", prompt)
+        self.assertNotIn("12.71元", prompt)
+        self.assertNotIn("18.8元", prompt)
+        self.assertNotIn("9.18元", prompt)
+        self.assertIn("十来块", result)
+        self.assertIn("500g", result)
+        self.assertIn("6寸", result)
+        self.assertIn("30秒", result)
+        self.assertNotIn("12.71元", result)
 
     def test_rewriter_raises_clear_error_when_ai_call_fails_instead_of_offline_rewrite(self):
         rewriter = ScriptRewriter()

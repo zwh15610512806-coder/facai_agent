@@ -31,6 +31,24 @@ def make_product():
     }
 
 
+def make_template_context():
+    return {
+        "id": 7,
+        "name": "机制类出单模板",
+        "video_type": "机制类",
+        "structure": {
+            "opening": "3秒内抛出活动机制和门店囤货理由",
+            "proof": "用真实使用场景承接产品证明",
+            "cta": "自然引导左下角下单",
+        },
+        "hook_templates": ["现在还在用老办法配夹心的老板看过来"],
+        "cta_templates": ["需要稳定出品的老板点左下角"],
+        "duration_range": "15-25s",
+        "description": "适合烘焙店老板的机制类成交模板",
+        "example_script": "老板们，急单夹心不想等太久，就用这个结构先讲机制再给证明。",
+    }
+
+
 class ScriptGeneratorShotDesignTests(unittest.TestCase):
     def test_plain_copy_prompt_and_post_process_remove_shot_design(self):
         ai = CapturingAI("【痛点】\n0-3s\n（镜头推进展示产品）这是一句卖点。\n慕斯粉（液）口感细腻，3秒凝固也没问题。")
@@ -78,16 +96,8 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
 
         result = asyncio.run(generator.generate_from_library(
             product=make_product(),
-            video_type="高成交模板库",
-            reference_scripts=[
-                {
-                    "title": "高成交脚本",
-                    "content": "参考脚本内容",
-                    "video_type": "需求类",
-                    "category": "烘焙夹心",
-                    "is_high_conversion": True,
-                }
-            ],
+            video_type="机制类",
+            template=make_template_context(),
             tone="活泼",
             include_shot_design=False,
         ))
@@ -100,9 +110,21 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
         self.assertIn("只输出一段连续自然口播文案", system_prompt)
         self.assertNotIn("保持结构和节奏", system_prompt)
         self.assertNotIn("用【】标记每个段落功能", system_prompt)
-        self.assertIn("只借鉴原脚本的成交逻辑", prompt)
+        self.assertIn("引用模板：机制类出单模板", prompt)
+        self.assertIn("3秒内抛出活动机制和门店囤货理由", prompt)
+        self.assertIn("现在还在用老办法配夹心的老板看过来", prompt)
+        self.assertIn("需要稳定出品的老板点左下角", prompt)
+        self.assertIn("老板们，急单夹心不想等太久", prompt)
+        self.assertIn("售价：几十块", prompt)
+        self.assertIn("价格表达规则", prompt)
+        self.assertNotIn("售价：46.94元", prompt)
+        self.assertIn("只借鉴模板的成交结构", prompt)
         self.assertIn("最终只输出一段连续口播文案", prompt)
         self.assertIn("严禁输出“改写自”", prompt)
+        self.assertIn("禁止复制模板示例脚本原文", prompt)
+        self.assertNotIn("从以上", prompt)
+        self.assertNotIn("爆款脚本 #", prompt)
+        self.assertNotIn("完整脚本内容", prompt)
         self.assertNotIn("**保持**原脚本的结构", prompt)
         self.assertNotIn("时间标注", prompt)
         self.assertNotIn("镜头指令微调", prompt)
@@ -127,15 +149,7 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
         result = asyncio.run(generator.generate_from_library(
             product=make_product(),
             video_type="需求类",
-            reference_scripts=[
-                {
-                    "title": "高成交脚本",
-                    "content": "老板们看过来，这个原料能解决出品不稳定的问题。",
-                    "video_type": "需求类",
-                    "category": "烘焙夹心",
-                    "is_high_conversion": True,
-                }
-            ],
+            template=make_template_context(),
             tone="活泼",
             include_shot_design=True,
         ))
@@ -175,16 +189,8 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
                     {"type": "包装", "content": "独立袋装，干净卫生，适合蛋糕配送", "priority": 1},
                 ],
             },
-            video_type="高成交模板库",
-            reference_scripts=[
-                {
-                    "title": "高成交脚本",
-                    "content": "参考脚本内容",
-                    "video_type": "机制类",
-                    "category": "烘焙配件",
-                    "is_high_conversion": True,
-                }
-            ],
+            video_type="机制类",
+            template=make_template_context(),
             tone="活泼",
             include_shot_design=False,
         ))
@@ -212,21 +218,14 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
         result = asyncio.run(generator.generate_from_library(
             product=make_product(),
             video_type="需求类",
-            reference_scripts=[
-                {
-                    "title": "高成交脚本",
-                    "content": "参考脚本内容",
-                    "video_type": "需求类",
-                    "category": "烘焙夹心",
-                    "is_high_conversion": True,
-                }
-            ],
+            template=make_template_context(),
             tone="活泼",
             include_shot_design=True,
         ))
 
         prompt = ai.messages[-1]["content"]
-        self.assertIn("参考模板库脚本的画面节奏", prompt)
+        self.assertIn("参考脚本模板库的画面节奏", prompt)
+        self.assertIn("引用模板：机制类出单模板", prompt)
         self.assertIn("每句话添加镜头说明", prompt)
         self.assertIn("（镜头/画面说明）口播文案", prompt)
         self.assertIn("\n", result)
