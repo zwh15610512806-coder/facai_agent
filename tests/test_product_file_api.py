@@ -122,6 +122,46 @@ class ProductFileApiTests(unittest.TestCase):
         self.assertEqual(list(Path(self.tmp.name).glob("*")), [])
         self.assertEqual(self.sync_calls, [])
 
+    def test_upload_rejects_legacy_xls_product_file(self):
+        product = self._add_product()
+
+        response = self.client.post(
+            f"/api/products/{product.id}/upload",
+            files={"file": ("product.xls", b"legacy excel", "application/vnd.ms-excel")},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(".xlsx", response.json()["detail"])
+        self.assertEqual(list(Path(self.tmp.name).glob("*")), [])
+        self.assertEqual(self.sync_calls, [])
+
+    def test_failed_same_name_upload_preserves_existing_file(self):
+        product = self._add_product()
+        existing = Path(self.tmp.name) / f"product_{product.id}_product.md"
+        existing.write_bytes(b"old file body")
+        product.info_file = str(existing)
+        self.db.commit()
+        had_limit = hasattr(products_router, "MAX_UPLOAD_SIZE")
+        original_limit = getattr(products_router, "MAX_UPLOAD_SIZE", None)
+        products_router.MAX_UPLOAD_SIZE = 4
+        try:
+            response = self.client.post(
+                f"/api/products/{product.id}/upload",
+                files={"file": ("product.md", b"12345", "text/markdown")},
+            )
+        finally:
+            if had_limit:
+                products_router.MAX_UPLOAD_SIZE = original_limit
+            else:
+                delattr(products_router, "MAX_UPLOAD_SIZE")
+
+        self.assertEqual(response.status_code, 413)
+        self.assertTrue(existing.exists())
+        self.assertEqual(existing.read_bytes(), b"old file body")
+        self.db.refresh(product)
+        self.assertEqual(product.info_file, str(existing))
+        self.assertEqual(self.sync_calls, [])
+
     def test_extract_points_syncs_product_index(self):
         product = self._add_product()
         source = Path(self.tmp.name) / "product.md"

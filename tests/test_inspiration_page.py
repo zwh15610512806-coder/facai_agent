@@ -10,7 +10,7 @@ from main import app
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NAV_STYLE_VERSION = "nav-20260708-import-nav-xss"
+NAV_STYLE_VERSION = "nav-20260708-warm-workbench"
 
 
 class InspirationPageTests(unittest.TestCase):
@@ -206,6 +206,12 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("addEventListener('input',resizeInspirationInput)", page)
         self.assertIn("resizeInspirationInput();", page)
 
+    def test_inspiration_composer_reserves_space_for_bottom_right_fabs(self):
+        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn(".inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px 152px 12px 12px", page)
+        self.assertIn(".inspiration-composer{padding:12px 12px calc(184px + env(safe-area-inset-bottom))}", page)
+
     def test_inspiration_user_message_visuals_put_attachments_above_text(self):
         page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
 
@@ -336,7 +342,7 @@ class InspirationNavigationTests(unittest.TestCase):
                 name,
             )
 
-    def test_data_import_is_brand_group_button_not_fab_or_nav_link(self):
+    def test_data_import_is_fab_on_non_import_pages_and_not_nav_link(self):
         pages = [
             "index.html",
             "rewrite.html",
@@ -357,19 +363,8 @@ class InspirationNavigationTests(unittest.TestCase):
             )
             self.assertIsNotNone(brand_group, name)
             brand_body = brand_group.group("body")
-            self.assertIn('href="/app/import"', brand_body, name)
-            self.assertIn('class="nav-import-btn', brand_body, name)
-            self.assertIn('data-lucide="upload"', brand_body, name)
-            self.assertIn(">数据导入</span></a>", brand_body, name)
-            if name == "import.html":
-                self.assertRegex(
-                    brand_body,
-                    r'href="/app/import" class="nav-import-btn on"[^>]*aria-current="page"',
-                    name,
-                )
-            else:
-                self.assertNotIn('class="nav-import-btn on"', brand_body, name)
-                self.assertNotIn('aria-current="page"', brand_body, name)
+            self.assertNotIn('href="/app/import"', brand_body, name)
+            self.assertNotIn('class="nav-import-btn', brand_body, name)
 
             nav_links = re.search(
                 r'<div class="nav-links">(?P<body>.*?)</div></div></nav>',
@@ -379,7 +374,13 @@ class InspirationNavigationTests(unittest.TestCase):
             self.assertIsNotNone(nav_links, name)
             self.assertNotIn('href="/app/import"', nav_links.group("body"), name)
             self.assertNotIn(">数据导入</a>", nav_links.group("body"), name)
-            self.assertNotIn('class="data-import-fab"', page, name)
+            if name == "import.html":
+                self.assertNotIn('class="data-import-fab"', page, name)
+            else:
+                self.assertIn('class="data-import-fab"', page, name)
+                self.assertIn('href="/app/import"', page, name)
+                self.assertIn('data-lucide="upload"', page, name)
+                self.assertIn(">数据导入</span></a>", page, name)
 
     def test_data_import_nav_button_uses_fresh_shared_css_version(self):
         pages = [

@@ -20,12 +20,12 @@ class IndexHeroTests(unittest.TestCase):
         self.assertNotIn(".hero-copy", self.page)
 
     def test_generate_page_content_starts_without_intro_banner(self):
-        self.assertIn('class="nav-import-btn"', self.page)
         self.assertIn('href="/app/import"', self.page)
-        self.assertNotIn('class="data-import-fab"', self.page)
+        self.assertNotIn('class="nav-import-btn"', self.page)
+        self.assertIn('class="data-import-fab"', self.page)
         self.assertRegex(
             self.page,
-            r'</nav>\s*<a class="ai-config-fab" href="/app/ai-config"[^>]*>.*?</a>\s*<style>\s*\.generate-main',
+            r'</nav>\s*<a class="data-import-fab" href="/app/import"[^>]*>.*?</a>\s*<a class="ai-config-fab" href="/app/ai-config"[^>]*>.*?</a>\s*<style>\s*\.generate-main',
         )
         self.assertNotRegex(
             self.page,
@@ -256,7 +256,7 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
         self.assertIn('class="scroll-top-btn"', self.page)
         self.assertIn('aria-label="回到顶部"', self.page)
         self.assertIn('data-lucide="arrow-up"', self.page)
-        self.assertIn(".scroll-top-btn{position:fixed;right:24px;bottom:96px", self.page)
+        self.assertIn(".scroll-top-btn{position:fixed;right:24px;bottom:148px", self.page)
         self.assertIn(".scroll-top-btn.show{opacity:1;pointer-events:auto;transform:translateY(0)}", self.page)
         self.assertIn("function scrollGenerateToTop(){window.scrollTo({top:0,behavior:'smooth'});}", self.page)
         self.assertIn("function toggleScrollTopButton(){const btn=document.getElementById('scrollTopBtn')", self.page)

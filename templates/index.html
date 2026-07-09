@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>生成脚本 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-import-nav-xss">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-warm-workbench">
 </head>
 <body>
 
@@ -12,7 +12,6 @@
 <div class="nav-inner">
 <div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
-<a href="/app/import" class="nav-import-btn" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 </div>
 <div class="nav-links">
 <a href="/app" class="nav-link">AI工作</a>
@@ -23,6 +22,7 @@
 <a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
+<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 <a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
 
 <style>
@@ -329,7 +329,7 @@
 .type-tag:hover .type-delete,.type-tag:focus-within .type-delete{opacity:.82;pointer-events:auto;transform:scale(1)}
 .type-delete::before{content:"";width:8px;height:2px;background:#fff;border-radius:2px}
 .type-delete:hover{opacity:1;background:rgba(180,35,24,.92)}
-.scroll-top-btn{position:fixed;right:24px;bottom:96px;width:42px;height:42px;border-radius:var(--r-pill);border:1.5px solid var(--border);background:rgba(255,255,255,.94);color:var(--facai);box-shadow:var(--s-3);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;z-index:80;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity var(--normal) var(--ease),transform var(--normal) var(--ease),border-color var(--fast) var(--ease),background var(--fast) var(--ease)}
+.scroll-top-btn{position:fixed;right:24px;bottom:148px;width:42px;height:42px;border-radius:var(--r-pill);border:1.5px solid var(--border);background:rgba(255,255,255,.94);color:var(--facai);box-shadow:var(--s-3);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;z-index:80;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity var(--normal) var(--ease),transform var(--normal) var(--ease),border-color var(--fast) var(--ease),background var(--fast) var(--ease)}
 .scroll-top-btn.show{opacity:1;pointer-events:auto;transform:translateY(0)}
 .scroll-top-btn:hover{border-color:var(--facai);background:var(--facai-ghost)}
 .scroll-top-btn svg,.scroll-top-btn i{width:16px;height:16px;stroke-width:2.2}

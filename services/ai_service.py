@@ -288,6 +288,10 @@ def build_faicai_script(product: Dict, tone: str = "活泼") -> str:
     return script
 
 
+class AIProviderError(RuntimeError):
+    """Raised when a configured provider cannot return a chat completion."""
+
+
 class AIService:
     """AI 服务 — 法采专属系统提示 + DeepSeek 调用"""
 
@@ -527,6 +531,7 @@ class AIService:
         reasoning_effort: str = "high",
         return_reasoning: bool = False,
         request_timeout: Optional[float] = None,
+        raise_on_error: bool = False,
     ):
         start_time = time.perf_counter()
         provider_key, selected_model, selected_max_tokens, api_key_override, base_url_override = self._resolve_chat_config(
@@ -538,6 +543,7 @@ class AIService:
         client = self._get_provider_client(provider_key, api_key_override, base_url_override)
         if client is None:
             fallback = self._fallback_response(messages) if allow_fallback else ""
+            error_summary = f"{get_provider_definition(provider_key).label} API Key or Base URL is not configured"
             prompt_tokens = self._estimate_prompt_tokens(messages)
             completion_tokens = self._estimate_text_tokens(fallback)
             self._record_usage_safe(
@@ -550,9 +556,11 @@ class AIService:
                 usage_source="estimated",
                 latency_ms=int((time.perf_counter() - start_time) * 1000),
                 status="unavailable",
-                error_summary=f"{get_provider_definition(provider_key).label} API Key or Base URL is not configured",
+                error_summary=error_summary,
                 db=db,
             )
+            if raise_on_error:
+                raise AIProviderError(error_summary)
             if return_reasoning:
                 return {"content": fallback, "reasoning": "", "model": self.get_model_name(selected_model)}
             return fallback
@@ -624,6 +632,8 @@ class AIService:
                 error_summary=str(e),
                 db=db,
             )
+            if raise_on_error:
+                raise AIProviderError(str(e) or e.__class__.__name__) from e
             if return_reasoning:
                 return {"content": fallback, "reasoning": "", "model": selected_model}
             return fallback

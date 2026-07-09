@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>脚本模板库 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-import-nav-xss">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-warm-workbench">
 <script src="/static/vendor/lucide.min.js"></script>
 <style>
 .badge-f{background:var(--facai-soft);color:var(--facai)}.badge-o{background:#dce6f5;color:#334a7a}.badge-t{background:#e0ddf0;color:#404078}
@@ -181,12 +181,12 @@ html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-beh
 <div class="nav-inner">
 <div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
-<a href="/app/import" class="nav-import-btn" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 </div>
 <div class="nav-links">
 <a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/templates" class="nav-link on">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
+<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 <a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
 
 <main class="page-main library-main">
@@ -254,7 +254,7 @@ html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-beh
 <div class="qianchuan-panel-head">
 <div class="qianchuan-title-block"><div class="qianchuan-title-row"><h4>千川表现</h4><div id="qianchuanBoundSource" class="qianchuan-bound-source empty"><strong>未绑定素材</strong><div class="qianchuan-bound-source-meta"><span>可从候选素材中绑定</span></div></div></div><p>绑定素材后同步脚本跑量表现</p></div>
 <div class="qianchuan-actions">
-<input id="qianchuanFileInput" type="file" accept=".xlsx,.xls" style="position:absolute;width:1px;height:1px;opacity:0" onchange="uploadQianchuanFile(this.files)">
+<input id="qianchuanFileInput" type="file" accept=".xlsx" style="position:absolute;width:1px;height:1px;opacity:0" onchange="uploadQianchuanFile(this.files)">
 <button class="btn btn-pri btn-sm" onclick="openQianchuanUpload()">新增千川数据表</button>
 </div>
 </div>
@@ -282,10 +282,10 @@ html.modal-scroll-locked,body.modal-scroll-locked{overflow:hidden;overscroll-beh
 </div></div></div>
 
 <!-- 上传弹窗 -->
-<input id="workbookImportFile" type="file" accept=".xlsx,.xls" style="position:absolute;width:1px;height:1px;opacity:0" onchange="importTemplateWorkbook(this.files)">
+<input id="workbookImportFile" type="file" accept=".xlsx" style="position:absolute;width:1px;height:1px;opacity:0" onchange="importTemplateWorkbook(this.files)">
 <div id="uploadModal" class="mo" style="display:none" onclick="if(event.target===this)closeUploadModal()"><div class="mo-box"><div class="mo-hd"><h3 style="margin:0;font-family:var(--font-serif);font-size:1.1rem" id="uploadModalTitle"></h3><button onclick="closeUploadModal()" style="background:none;border:none;font-size:22px;color:var(--text-3);cursor:pointer">&times;</button></div><div class="mo-body" id="uploadFormBody"></div></div></div>
 
-<script src="/static/js/common.js?v=20260616"></script>
+<script src="/static/js/common.js?v=20260708-launch"></script>
 <script>
 var facaiList=[],otherList=[],src='all',cat='',type='',highOnly=false,newestFirst=true;
 var currentScript=null,currentType='',products=[],modalProduct=null,qianchuanPerformance=null,modalRewriting=false;
@@ -309,10 +309,10 @@ function buildPageSizeOptions(activePageSize){var sizes=resultMode==='search'?[2
 var h='<button class="fpill on" onclick="setFilter(\'src\',\'all\')">全部</button><button class="fpill" onclick="setFilter(\'src\',\'facai\')">法采</button><button class="fpill" onclick="setFilter(\'src\',\'other\')">其他</button>';
 document.getElementById('srcTabs').innerHTML=h;
 h='<button class="fpill on" onclick="setFilter(\'cat\',\'\')">全部</button>';
-CATS.forEach(function(c){h+='<button class="fpill" onclick="setFilter(\'cat\',\''+c+'\')">'+c+'</button>';});
+CATS.forEach(function(c){h+='<button class="fpill" onclick="setFilter(\'cat\','+jsStringLiteral(c)+')">'+escHtml(c)+'</button>';});
 document.getElementById('catTabs').innerHTML=h;
 h='<button class="fpill on" onclick="setFilter(\'type\',\'\')">全部</button>';
-TYPES.forEach(function(t){h+='<button class="fpill" onclick="setFilter(\'type\',\''+t+'\')">'+t+'</button>';});
+TYPES.forEach(function(t){h+='<button class="fpill" onclick="setFilter(\'type\','+jsStringLiteral(t)+')">'+escHtml(t)+'</button>';});
 document.getElementById('typeTabs').innerHTML=h;
 })();
 
@@ -401,9 +401,9 @@ return value||'未分类';
 }
 function escHtml(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
 function escAttr(value){return escHtml(value).replace(/`/g,'&#96;');}
-function escJsArg(value){return String(value==null?'':value).replace(/\\/g,'\\\\').replace(/'/g,'\\&#39;').replace(/\r?\n/g,' ');}
+function jsStringLiteral(value){return "'"+String(value==null?'':value).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\x22').replace(/</g,'\\x3C').replace(/>/g,'\\x3E').replace(/&/g,'\\x26').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029')+"'";}
 function getScriptCakeImages(script){var data=script&&script.performance_data;var images=data&&Array.isArray(data.cake_images)?data.cake_images:[];return images.filter(function(img){return img&&img.url;});}
-function renderScriptCakeImages(script){var box=document.getElementById('scriptCakeGallery');if(!box)return;var images=getScriptCakeImages(script);if(!images.length){box.style.display='none';box.innerHTML='';return;}box.style.display='block';box.innerHTML='<h4>蛋糕参考图</h4><div class="script-cake-gallery-grid">'+images.map(function(img,index){return '<img src="'+escAttr(img.url)+'" alt="蛋糕参考图 '+(index+1)+'" loading="lazy" onclick="openCakeImage(\''+escJsArg(img.url)+'\')">';}).join('')+'</div>';}
+function renderScriptCakeImages(script){var box=document.getElementById('scriptCakeGallery');if(!box)return;var images=getScriptCakeImages(script);if(!images.length){box.style.display='none';box.innerHTML='';return;}box.style.display='block';box.innerHTML='<h4>蛋糕参考图</h4><div class="script-cake-gallery-grid">'+images.map(function(img,index){return '<img src="'+escAttr(img.url)+'" alt="蛋糕参考图 '+(index+1)+'" loading="lazy" onclick="openCakeImage('+jsStringLiteral(img.url)+')">';}).join('')+'</div>';}
 function openCakeImage(url){if(url)window.open(url,'_blank','noopener');}
 function hasPendingProductField(p,field){return Array.isArray(p&&p.pending_fields)&&p.pending_fields.indexOf(field)>=0;}
 function productCategoryLabel(p){return hasPendingProductField(p,'category')?'待更新':(p&&p.category?p.category:'待更新');}
@@ -488,7 +488,7 @@ async function batchDelete(){if(!selectedIds.size)return toast('请先选择','e
 
 function openUploadModal(mode){currentType=mode;
 document.getElementById('uploadModalTitle').textContent=mode==='facai'?'上传法采产品脚本':'上传其他爆款脚本';
-var workbookPanel='<div class="workbook-import-panel"><div class="workbook-import-panel-title">Excel 脚本表同步</div><button id="btnImportWorkbook" class="btn btn-soft btn-sm" onclick="triggerTemplateWorkbookImport()"><i data-lucide="file-spreadsheet"></i>上传 Excel 脚本表</button><div id="workbookImportStatus" class="workbook-import-status">支持 .xlsx/.xls，带蛋糕参考图会同步到脚本详情。</div></div>';
+var workbookPanel='<div class="workbook-import-panel"><div class="workbook-import-panel-title">Excel 脚本表同步</div><button id="btnImportWorkbook" class="btn btn-soft btn-sm" onclick="triggerTemplateWorkbookImport()"><i data-lucide="file-spreadsheet"></i>上传 Excel 脚本表</button><div id="workbookImportStatus" class="workbook-import-status">支持 .xlsx，带蛋糕参考图会同步到脚本详情。</div></div>';
 var body=mode==='facai'?workbookPanel+'<div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">产品名称</label><div style="position:relative"><input id="uProductSearch" class="input" style="font-size:13px" placeholder="搜索产品&hellip;" autocomplete="off" oninput="filterProductList()" onfocus="showProductList()"><input type="hidden" id="uProductName"><div id="uProductDropdown" class="card card-sm" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;z-index:20;margin-top:4px"></div></div></div><div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">标题</label><input id="uTitle" class="input" style="font-size:13px" placeholder="选填"></div><div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">脚本内容</label><textarea id="uContent" class="so-input" rows="8" placeholder="粘贴脚本（自动格式化）"></textarea></div><div style="display:flex;justify-content:flex-end;gap:8px"><button onclick="closeUploadModal()" class="btn btn-soft btn-sm">取消</button><button onclick="doUpload()" class="btn btn-pri btn-sm">上传</button></div>':'<div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">标题</label><input id="uTitle" class="input" style="font-size:13px" placeholder="选填"></div><div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">视频链接</label><input id="uVideoUrl" class="input" style="font-size:13px" placeholder="选填"></div><div style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">脚本内容</label><textarea id="uContent" class="so-input" rows="8" placeholder="粘贴脚本"></textarea></div><div style="display:flex;justify-content:flex-end;gap:8px"><button onclick="closeUploadModal()" class="btn btn-soft btn-sm">取消</button><button onclick="doUpload()" class="btn btn-pri btn-sm">上传</button></div>';
 document.getElementById('uploadFormBody').innerHTML=body;document.getElementById('uploadModal').style.display='';if(window.lucide)lucide.createIcons();}
 
@@ -503,6 +503,7 @@ function triggerTemplateWorkbookImport(){var input=document.getElementById('work
 async function importTemplateWorkbook(files){
 var list=Array.prototype.slice.call(files||[]);if(!list.length)return;
 var file=list[0];var input=document.getElementById('workbookImportFile');var btn=document.getElementById('btnImportWorkbook');var fd=new FormData();fd.append('file',file);
+if(!(file.name||'').toLowerCase().endsWith('.xlsx')){toast('Excel 仅支持 .xlsx 文件','error');if(input)input.value='';return;}
 if(btn)btn.disabled=true;
 renderTemplateWorkbookImportState({is_running:true,total:0,processed:0,created:0,updated:0,skipped:0,image_count:0,error_count:0,message:'正在上传 '+file.name+'...'});
 try{
@@ -577,7 +578,7 @@ box.innerHTML='<strong title="'+escAttr(item.material_name||'未命名素材')+'
 function renderQianchuanMaterial(item,mode){
 var action=mode==='bound'
  ? '<button class="btn btn-soft btn-sm" onclick="unbindQianchuanMaterial('+item.id+')">解绑</button>'
- : '<button class="btn btn-pri btn-sm" onclick="bindQianchuanMaterial(\''+escJsArg(item.material_id)+'\')">绑定</button>';
+ : '<button class="btn btn-pri btn-sm" onclick="bindQianchuanMaterial('+jsStringLiteral(item.material_id)+')">绑定</button>';
 var score=item.score?'<span>匹配 '+item.score+'</span>':'';
 return '<div class="qianchuan-material"><div class="qianchuan-material-main"><div><h5>'+escHtml(item.material_name||'未命名素材')+'</h5><div class="qianchuan-material-meta"><span>ID '+escHtml(item.material_id||'-')+'</span>'+(item.material_evaluation?'<span>'+escHtml(item.material_evaluation)+'</span>':'')+(item.material_duration?'<span>'+escHtml(item.material_duration)+'</span>':'')+score+'</div></div>'+action+'</div><div class="qianchuan-material-stats"><span>成交 <b>'+qianchuanMoney(item.transaction_amount)+'</b></span><span>消耗 <b>'+qianchuanMoney(item.spend)+'</b></span><span>ROI <b>'+qianchuanRatio(item.roi)+'</b></span><span>展示 <b>'+qianchuanNumber(item.impressions)+'</b></span><span>点击率 <b>'+qianchuanPercent(item.ctr)+'</b></span><span>转化 <b>'+qianchuanPercent(item.cvr)+'</b></span></div></div>';
 }
@@ -610,6 +611,7 @@ function openQianchuanUpload(){if(currentType&&currentType!=='facai')return toas
 async function uploadQianchuanFile(files){
 var list=Array.prototype.slice.call(files||[]);if(!list.length)return;
 var file=list[0];var input=document.getElementById('qianchuanFileInput');var fd=new FormData();fd.append('file',file);
+if(!(file.name||'').toLowerCase().endsWith('.xlsx')){toast('千川数据表仅支持 .xlsx 文件','error');if(input)input.value='';return;}
 document.getElementById('qianchuanStatus').textContent='正在导入 '+file.name+'...';
 try{
  var r=await fetch('/api/templates/qianchuan/import',{method:'POST',body:fd});

@@ -69,6 +69,68 @@ class SQLiteCompatibilityMigrationTests(unittest.TestCase):
         self.assertTrue(row["model"])
         self.assertGreater(row["max_tokens"], 0)
 
+    def test_legacy_qianchuan_tables_get_current_metric_columns(self):
+        import database
+
+        with self.engine.begin() as connection:
+            connection.execute(text(
+                "CREATE TABLE qianchuan_import_batches ("
+                "id INTEGER PRIMARY KEY, filename VARCHAR(500) NOT NULL, "
+                "file_sha256 VARCHAR(64) NOT NULL)"
+            ))
+            connection.execute(text(
+                "CREATE TABLE qianchuan_material_performance ("
+                "id INTEGER PRIMARY KEY, batch_id INTEGER NOT NULL, "
+                "material_id VARCHAR(100) NOT NULL, material_name VARCHAR(500) NOT NULL)"
+            ))
+            connection.execute(text(
+                "CREATE TABLE qianchuan_script_bindings ("
+                "id INTEGER PRIMARY KEY, script_id INTEGER NOT NULL, "
+                "material_id VARCHAR(100) NOT NULL, material_name VARCHAR(500) NOT NULL)"
+            ))
+
+        original_engine = database.engine
+        database.engine = self.engine
+        try:
+            database._ensure_compatible_columns()
+            database._ensure_compatible_columns()
+        finally:
+            database.engine = original_engine
+
+        self.assertGreaterEqual(
+            self._column_names("qianchuan_import_batches"),
+            {"row_count", "imported_count", "skipped_count", "amount_field", "created_at"},
+        )
+        self.assertGreaterEqual(
+            self._column_names("qianchuan_material_performance"),
+            {
+                "material_evaluation",
+                "material_duration",
+                "material_created_time",
+                "material_source",
+                "tags",
+                "amount_field",
+                "transaction_amount",
+                "order_count",
+                "user_pay_amount",
+                "roi",
+                "impressions",
+                "ctr",
+                "spend",
+                "clicks",
+                "cvr",
+                "play_3s_rate",
+                "play_10s_rate",
+                "avg_watch_seconds",
+                "completion_rate",
+                "plan_count",
+                "product_count",
+                "raw_data",
+                "created_at",
+            },
+        )
+        self.assertIn("created_at", self._column_names("qianchuan_script_bindings"))
+
 
 if __name__ == "__main__":
     unittest.main()

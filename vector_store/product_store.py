@@ -1,11 +1,26 @@
 """Product vector store — semantic search over products + selling points."""
 import logging
+import os
+import time
 from sqlalchemy.orm import Session
 
 from vector_store import VectorStoreError, get_chroma_store
 from services.product_knowledge_chunks import build_product_knowledge_chunks
 
 logger = logging.getLogger("vector_store.products")
+
+
+def _upsert_batch_size() -> int:
+    try:
+        value = int(os.getenv("VECTOR_UPSERT_BATCH_SIZE", "64"))
+    except (TypeError, ValueError):
+        value = 64
+    return max(1, min(value, 256))
+
+
+def _iter_slices(total: int, size: int):
+    for start in range(0, total, size):
+        yield start, min(start + size, total)
 
 
 class ProductVectorStore:
@@ -163,13 +178,34 @@ class ProductVectorStore:
                 metadata["price"] = p.price or 0
                 metas.append(metadata)
 
+        batch_size = _upsert_batch_size()
         try:
-            self.collection.upsert(ids=ids, documents=docs, metadatas=metas)
+            for start, end in _iter_slices(len(ids), batch_size):
+                self._upsert_with_retry(
+                    ids=ids[start:end],
+                    documents=docs[start:end],
+                    metadatas=metas[start:end],
+                    label=f"product chunks {start + 1}-{end}/{len(ids)}",
+                )
             logger.info(f"Indexed {len(ids)} product knowledge chunks")
             return len(ids)
         except Exception as e:
             logger.error(f"Batch product indexing failed: {e}")
             raise VectorStoreError(f"产品向量全量重建失败: {e}") from e
+
+    def _upsert_with_retry(self, *, ids: list[str], documents: list[str], metadatas: list[dict], label: str):
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                self.collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+                return
+            except Exception as exc:
+                last_error = exc
+                if attempt >= 3:
+                    break
+                logger.warning(f"Retrying {label} after vector upsert failure ({attempt}/3): {exc}")
+                time.sleep(attempt * 2)
+        raise last_error
 
     def hybrid_search(
         self,

@@ -1054,6 +1054,53 @@ class InspirationApiTests(unittest.TestCase):
         self.assertFalse(data["product_context_used"])
         self.assertEqual(data["agent_trace"][0]["status"], "error")
 
+    def test_chat_exposes_embedding_degraded_reason_in_agent_trace(self):
+        self._enable_test_ai()
+        original_agent = getattr(self.inspiration, "run_inspiration_agent", None)
+
+        async def fake_agent(**kwargs):
+            return self.inspiration.InspirationAgentResult(
+                product_context={
+                    "used": True,
+                    "context": "1. 产品：水性色素\n卖点：少量即可上色。",
+                    "products": [
+                        {
+                            "product_id": 7,
+                            "name": "水性色素",
+                            "category": "烘焙调色",
+                            "price": 18.59,
+                        }
+                    ],
+                    "degraded_reason": "embedding endpoint unavailable",
+                },
+                sources=[],
+                agent_trace=[
+                    {"tool": "product_rag", "label": "产品资料", "status": "success", "summary": "命中 1 个产品"},
+                ],
+            )
+
+        async def fake_chat(messages, **kwargs):
+            return {"content": "已结合产品资料回答。", "reasoning": "", "model": "fake-agent-model"}
+
+        self.inspiration.run_inspiration_agent = fake_agent
+        self.inspiration.ai_service.chat = fake_chat
+        try:
+            response = self.client.post(
+                "/api/inspiration/chat",
+                json={"message": "调色产品怎么拍", "product_context_mode": "always"},
+            )
+        finally:
+            if original_agent is None:
+                delattr(self.inspiration, "run_inspiration_agent")
+            else:
+                self.inspiration.run_inspiration_agent = original_agent
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["product_context_used"])
+        summaries = [step["summary"] for step in data["agent_trace"]]
+        self.assertTrue(any("embedding endpoint unavailable" in summary for summary in summaries))
+
     def test_chat_product_context_mode_always_forces_product_context_lookup(self):
         self._enable_test_ai()
         captured = {}

@@ -37,8 +37,8 @@ class TemplateWorkbookImportUiTests(unittest.TestCase):
         self.assertIn("script-card-image-area", page)
         self.assertIn("script-card-time", page)
         self.assertIn("cakeImages[0].url", page)
-        self.assertIn("onclick=\"openCakeImage(\\''+escJsArg(img.url)+'\\')\"", page)
-        self.assertNotIn("onclick=\"openCakeImage(\\\\''+escJsArg(img.url)+'\\\\')\"", page)
+        self.assertIn("onclick=\"openCakeImage('+jsStringLiteral(img.url)+')\"", page)
+        self.assertNotIn("function escJsArg", page)
 
 
 class TemplateWorkbookImportApiTests(unittest.TestCase):

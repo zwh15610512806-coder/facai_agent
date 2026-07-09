@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import re
+import time
 from typing import Literal
 from urllib.parse import quote
 
@@ -34,6 +35,7 @@ from services.seedance_prompt_generator import (
 )
 from services.upload_limits import read_upload_bytes
 from services.web_research import search_web
+from vector_store import get_embedding_degraded_reason
 
 
 router = APIRouter()
@@ -456,6 +458,41 @@ def _agent_trace_context(agent_trace: list[dict] | None) -> str:
     return "Agent 工具摘要：\n" + "\n".join(lines)
 
 
+def _embedding_degraded_reason(product_context: dict, *, since_monotonic: float | None = None) -> str:
+    reason = ""
+    if isinstance(product_context, dict):
+        reason = str(
+            product_context.get("degraded_reason")
+            or product_context.get("embedding_degraded_reason")
+            or ""
+        ).strip()
+    if not reason:
+        reason = get_embedding_degraded_reason(max_age_seconds=30.0, since_monotonic=since_monotonic).strip()
+    return reason[:200]
+
+
+def _trace_embedding_degradation(
+    agent_trace: list[dict],
+    product_context: dict,
+    *,
+    since_monotonic: float | None = None,
+) -> list[dict]:
+    reason = _embedding_degraded_reason(product_context, since_monotonic=since_monotonic)
+    if not reason:
+        return agent_trace
+    if any(reason in str(step.get("summary") or "") for step in agent_trace):
+        return agent_trace
+    return [
+        *agent_trace,
+        {
+            "tool": "product_rag",
+            "label": "向量检索",
+            "status": "warning",
+            "summary": f"向量检索降级：{reason}"[:240],
+        },
+    ]
+
+
 def _should_search_web(message: str, tool_mode: str, web_search_mode: str = "auto") -> bool:
     if web_search_mode == "always" and tool_mode != "seedance":
         return True
@@ -722,6 +759,7 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
     image_attachments_used = _image_attachments(data.attachments, data.tool_mode)
     attachments_used = text_attachments_used + image_attachments_used
     agent_trace: list[dict] = []
+    vector_trace_started_at = time.monotonic()
     if force_product_context:
         try:
             agent_result = await run_inspiration_agent(
@@ -757,6 +795,12 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
     else:
         product_context = {"used": False, "context": "", "products": []}
         sources = await _safe_web_search(message, data.tool_mode, data.web_search_mode)
+    if force_product_context:
+        agent_trace = _trace_embedding_degradation(
+            agent_trace,
+            product_context,
+            since_monotonic=vector_trace_started_at,
+        )
     products = product_context.get("products") or []
     product_context_used = bool(products)
     if not ai_service.is_interface_available(interface_key, db=db):

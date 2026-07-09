@@ -44,6 +44,7 @@ LOCAL_TXT_SCAN_ERROR_LIMIT = 50
 QIANCHUAN_AUTO_BIND_SCORE = 12
 QIANCHUAN_STRUCTURED_AUTO_BIND_SCORE = 24
 QIANCHUAN_STRUCTURED_AUTO_BIND_MARGIN = 4
+QIANCHUAN_AUTO_HIGH_FLAG = "qianchuan_auto_high_conversion"
 BASE_DIR = Path(__file__).resolve().parents[1]
 SCRIPT_WORKBOOK_IMPORT_MAX_SIZE = int(os.getenv(
     "SCRIPT_WORKBOOK_IMPORT_MAX_SIZE",
@@ -1594,9 +1595,23 @@ def _qianchuan_performance_payload(script: ViralScript, db: Session) -> dict:
 def _sync_qianchuan_high_conversion(script: ViralScript, db: Session) -> bool:
     payload = _qianchuan_performance_payload(script, db)
     should_mark = payload["summary"]["transaction_amount"] > 2000
+    performance_data = dict(script.performance_data or {}) if isinstance(script.performance_data, dict) else {}
+    was_auto_marked = bool(performance_data.get(QIANCHUAN_AUTO_HIGH_FLAG))
     changed = False
-    if should_mark and not script.is_high_conversion:
-        script.is_high_conversion = 1
+    if should_mark:
+        if not script.is_high_conversion:
+            script.is_high_conversion = 1
+            changed = True
+        if not was_auto_marked:
+            performance_data[QIANCHUAN_AUTO_HIGH_FLAG] = True
+            script.performance_data = performance_data
+            changed = True
+    elif was_auto_marked:
+        if script.is_high_conversion:
+            script.is_high_conversion = 0
+            changed = True
+        performance_data.pop(QIANCHUAN_AUTO_HIGH_FLAG, None)
+        script.performance_data = performance_data
         changed = True
     if changed:
         db.commit()
@@ -1697,8 +1712,8 @@ async def import_qianchuan_performance(
 ):
     """Import Qianchuan material-performance rows and refresh bound scripts."""
     filename = file.filename or "qianchuan.xlsx"
-    if not filename.lower().endswith((".xlsx", ".xls")):
-        raise HTTPException(status_code=400, detail="仅支持 .xlsx/.xls 文件")
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="仅支持 .xlsx 文件")
 
     content = await read_upload_bytes(file, max_bytes=MAX_UPLOAD_SIZE)
     file_sha256 = hashlib.sha256(content).hexdigest()
@@ -1799,8 +1814,6 @@ def get_viral_script_performance(script_id: int, db: Session = Depends(get_db)):
     script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
     if not script:
         raise HTTPException(status_code=404, detail="爆款脚本不存在")
-    _auto_bind_qianchuan_materials(script, db)
-    _sync_qianchuan_high_conversion(script, db)
     return ApiResponse(message="ok", data=_qianchuan_performance_payload(script, db))
 
 
@@ -1853,6 +1866,7 @@ def unbind_viral_script_performance(script_id: int, binding_id: int, db: Session
         raise HTTPException(status_code=404, detail="绑定不存在")
     db.delete(binding)
     db.commit()
+    _sync_qianchuan_high_conversion(script, db)
     return ApiResponse(message="已解绑素材表现", data=_qianchuan_performance_payload(script, db))
 
 
@@ -1863,8 +1877,8 @@ async def import_viral_workbook(file: UploadFile = File(...)):
     if not filename:
         raise HTTPException(status_code=400, detail="请选择 Excel 文件")
     suffix = Path(filename).suffix.lower()
-    if suffix not in {".xlsx", ".xls"}:
-        raise HTTPException(status_code=400, detail="仅支持 .xlsx/.xls Excel 文件")
+    if suffix != ".xlsx":
+        raise HTTPException(status_code=400, detail="仅支持 .xlsx Excel 文件")
 
     with _workbook_import_lock:
         if _workbook_import_state["is_running"]:
@@ -1951,6 +1965,10 @@ def toggle_high_viral(script_id: int, db: Session = Depends(get_db)):
     if not script:
         raise HTTPException(status_code=404, detail="爆款脚本不存在")
     script.is_high_conversion = 1 if script.is_high_conversion == 0 else 0
+    if isinstance(script.performance_data, dict) and script.performance_data.get(QIANCHUAN_AUTO_HIGH_FLAG):
+        data = dict(script.performance_data)
+        data.pop(QIANCHUAN_AUTO_HIGH_FLAG, None)
+        script.performance_data = data
     db.commit()
     return ApiResponse(message=f"已{'标记为' if script.is_high_conversion else '取消'}高成交", data={"is_high": bool(script.is_high_conversion)})
 

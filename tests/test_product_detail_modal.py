@@ -634,7 +634,7 @@ class ProductDetailTemplateTests(unittest.TestCase):
     def test_product_actions_use_busy_buttons_and_api_error_messages(self):
         self.assertIn("function getApiErrorMessage", self.page)
         self.assertIn("function formatApiErrorMessage", self.page)
-        self.assertIn('/static/js/common.js?v=20260618', self.page)
+        self.assertIn('/static/js/common.js?v=20260708-launch', self.page)
         self.assertIn("function withBusyButton", self.page)
         self.assertIn("withBusyButton(button", self.page)
         self.assertIn("btnExtractAllPoints", self.page)
@@ -643,7 +643,7 @@ class ProductDetailTemplateTests(unittest.TestCase):
 
     def test_three_panel_workspace_uses_independent_scrolling(self):
         self.assertIn("body{overflow:hidden}", self.page)
-        self.assertIn(".products-page{max-width:min(1680px,calc(100vw - 32px));height:calc(100dvh - 68px)", self.page)
+        self.assertIn(".products-page{max-width:min(1600px,calc(100vw - 32px));height:calc(100dvh - 68px)", self.page)
         self.assertIn(".products-chat-shell{flex:1;min-height:0;display:grid;grid-template-columns:300px 500px minmax(420px,1fr)", self.page)
         self.assertIn(".sidebar-panel{grid-column:1;order:1}", self.page)
         self.assertIn(".detail-panel{grid-column:2;order:2}", self.page)

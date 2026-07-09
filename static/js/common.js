@@ -134,6 +134,22 @@
     return html;
   }
 
+  function scrollActiveNavIntoView() {
+    var active = document.querySelector('.nav-links .nav-link.on, .nav-links .nav-link[aria-current="page"]');
+    if (!active || typeof active.scrollIntoView !== "function") return;
+    try {
+      active.scrollIntoView({block:'nearest',inline:'center'});
+    } catch (error) {
+      active.scrollIntoView();
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener('DOMContentLoaded', scrollActiveNavIntoView);
+  } else {
+    setTimeout(scrollActiveNavIntoView, 0);
+  }
+
   window.FacaiUI = {
     escHtml: escHtml,
     escAttr: escAttr,
@@ -142,6 +158,7 @@
     getApiErrorMessage: getApiErrorMessage,
     formatApiErrorMessage: formatApiErrorMessage,
     withBusyButton: withBusyButton,
-    renderPager: renderPager
+    renderPager: renderPager,
+    scrollActiveNavIntoView: scrollActiveNavIntoView
   };
 })();

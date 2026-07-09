@@ -380,7 +380,7 @@ function dataImporter() {
             const formData = new FormData();
             formData.append("file", this.file);
 
-            const isExcel = this.fileName.endsWith(".xlsx") || this.fileName.endsWith(".xls");
+            const isExcel = this.fileName.endsWith(".xlsx");
             const endpoint = isExcel ? "/api/import/excel" : "/api/import/csv";
 
             try {

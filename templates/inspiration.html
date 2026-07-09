@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>AI工作 · 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-import-nav-xss">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-warm-workbench">
 <script src="/static/vendor/lucide.min.js"></script>
-<script src="/static/js/common.js?v=20260618"></script>
+<script src="/static/js/common.js?v=20260708-launch"></script>
 <style>
 body{overflow:hidden}
 .inspiration-page{max-width:min(1440px,calc(100vw - 32px));height:calc(100dvh - 68px);margin:0 auto;padding:16px;display:flex;flex-direction:column}
@@ -102,7 +102,7 @@ body{overflow:hidden}
 .source-chip{display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface);color:var(--text-2);padding:3px 8px;font-size:12px;font-weight:800;line-height:1.4;text-decoration:none}
 .source-chip:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
 .thinking{color:var(--text-3)}
-.inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px;background:rgba(255,255,255,.96)}
+.inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px 152px 12px 12px;background:rgba(255,255,255,.96)}
 .composer-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
 .tool-button{height:32px;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface);color:var(--text-2);padding:0 10px;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:850;cursor:pointer}
 .tool-button:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
@@ -137,6 +137,7 @@ body{overflow:hidden}
   .inspiration-thread{padding:16px 12px 10px}
   .chat-bubble{max-width:92%}
   .composer-form{gap:6px}
+  .inspiration-composer{padding:12px 12px calc(184px + env(safe-area-inset-bottom))}
   .inspiration-input{min-height:82px;max-height:210px}
   .icon-button{width:40px;height:40px}
 }
@@ -147,11 +148,11 @@ body{overflow:hidden}
 <div class="nav-inner">
 <div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
-<a href="/app/import" class="nav-import-btn" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 </div>
 <div class="nav-links">
 <a href="/app" class="nav-link on">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
+<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 <a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
 <main class="inspiration-page">
 <section class="inspiration-shell" aria-label="AI工作对话工作台">

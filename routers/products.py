@@ -15,6 +15,7 @@ from typing import List, Optional
 import mimetypes
 import os
 import re
+import uuid
 from pathlib import Path
 from urllib.parse import urlencode
 import import_materials
@@ -613,10 +614,21 @@ async def upload_product_file(
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
+    if (file.filename or "").lower().endswith(".xls"):
+        raise HTTPException(status_code=400, detail="Excel 仅支持 .xlsx 文件")
 
     # 保存文件
     file_path = _safe_product_upload_path(product_id, file.filename)
-    await _write_upload_file(file, file_path, max_bytes=MAX_UPLOAD_SIZE)
+    temp_path = f"{file_path}.{uuid.uuid4().hex}.uploading"
+    try:
+        await _write_upload_file(file, temp_path, max_bytes=MAX_UPLOAD_SIZE)
+        os.replace(temp_path, file_path)
+    except Exception:
+        try:
+            os.unlink(temp_path)
+        except FileNotFoundError:
+            pass
+        raise
 
     # 更新数据库
     product.info_file = file_path

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>数据导入 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-import-nav-xss">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-warm-workbench">
 <script src="/static/vendor/lucide.min.js"></script>
 <style>
 .import-main{max-width:1680px}
@@ -28,7 +28,6 @@
 <div class="nav-inner">
 <div class="nav-brand-group">
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
-<a href="/app/import" class="nav-import-btn on" aria-label="当前页面：数据导入" aria-current="page" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
 </div>
 <div class="nav-links">
 <a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
@@ -44,11 +43,11 @@
 <!-- CSV/Excel -->
 <div class="card" id="productImportPanel">
 <h2 style="margin-bottom:16px">批量导入产品 (CSV/Excel/Markdown)</h2>
-<div id="productDrop" class="drop" style="margin-bottom:14px">
+<div id="productDrop" class="drop" role="button" tabindex="0" aria-controls="productFile" aria-label="选择产品导入文件" style="margin-bottom:14px">
 <i data-lucide="file-up" style="width:40px;height:40px;margin-bottom:10px;color:var(--text-3)"></i>
 <p style="font-weight:600;color:var(--text-2);font-family:var(--font-ui)">拖拽文件或点击选择</p>
 <p style="font-size:13px;color:var(--text-3);margin-top:6px">支持 .csv / .xlsx / .md / .markdown，Markdown 可多选并自动新增或更新产品</p>
-<input type="file" id="productFile" style="position:absolute;width:1px;height:1px;opacity:0" accept=".csv,.xlsx,.xls,.md,.markdown" multiple>
+<input type="file" id="productFile" style="position:absolute;width:1px;height:1px;opacity:0" accept=".csv,.xlsx,.md,.markdown" multiple>
 </div>
 <div class="product-import-actions">
 <button type="button" id="btnScanLocalProducts" class="btn btn-soft" onclick="scanLocalProducts()"><i data-lucide="folder-search"></i>扫描本地产品资料</button>
@@ -60,7 +59,7 @@
 <!-- 脚本导入 -->
 <div class="card" id="txtBatchPanel">
 <h2 style="margin-bottom:16px">脚本导入</h2>
-<div id="txtScriptDrop" class="drop" style="margin-bottom:14px">
+<div id="txtScriptDrop" class="drop" role="button" tabindex="0" aria-controls="txtScriptFiles" aria-label="选择 txt 脚本文件" style="margin-bottom:14px">
 <i data-lucide="files" style="width:38px;height:38px;margin-bottom:10px;color:var(--text-3)"></i>
 <p style="font-weight:600;color:var(--text-2);font-family:var(--font-ui)">批量上传 txt 脚本</p>
 <p style="font-size:13px;color:var(--text-3);margin-top:6px">可多选 .txt 文件，文件名会作为脚本标题</p>
@@ -91,7 +90,7 @@
 </div>
 </main>
 
-<script src="/static/js/common.js?v=20260616"></script>
+<script src="/static/js/common.js?v=20260708-launch"></script>
 <script>
 function toast(msg,type){var e=document.createElement('div');e.className='toast toast-'+(type==='success'?'ok':'err');e.textContent=(type==='success'?'OK ':'!! ')+msg;document.body.appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(function(){e.remove()},300)},2000);}
 var escHtml=FacaiUI.escHtml;
@@ -118,7 +117,9 @@ function renderProductImportResult(d,type){
  document.getElementById('productResult').innerHTML=html;
 }
 
+function activateDropZoneFileInput(e,inputId){if(e.key==='Enter'||e.key===' '){e.preventDefault();document.getElementById(inputId).click();}}
 var dz=document.getElementById('productDrop');dz.addEventListener('click',function(){document.getElementById('productFile').click();});
+dz.addEventListener('keydown',function(e){activateDropZoneFileInput(e, 'productFile');});
 dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.borderColor='var(--facai)';dz.style.background='var(--facai-ghost)';});
 dz.addEventListener('dragleave',function(){dz.style.borderColor='var(--border)';dz.style.background='';});
 dz.addEventListener('drop',function(e){e.preventDefault();dz.style.borderColor='var(--border)';dz.style.background='';if(e.dataTransfer.files.length>0)uploadProductFiles(e.dataTransfer.files);});
@@ -126,6 +127,7 @@ document.getElementById('productFile').addEventListener('change',function(e){if(
 
 var txtDz=document.getElementById('txtScriptDrop');
 txtDz.addEventListener('click',function(){document.getElementById('txtScriptFiles').click();});
+txtDz.addEventListener('keydown',function(e){activateDropZoneFileInput(e, 'txtScriptFiles');});
 txtDz.addEventListener('dragover',function(e){e.preventDefault();txtDz.style.borderColor='var(--facai)';txtDz.style.background='var(--facai-ghost)';});
 txtDz.addEventListener('dragleave',function(){txtDz.style.borderColor='var(--border)';txtDz.style.background='';});
 txtDz.addEventListener('drop',function(e){e.preventDefault();txtDz.style.borderColor='var(--border)';txtDz.style.background='';if(e.dataTransfer.files.length>0)uploadTxtScriptFiles(e.dataTransfer.files);});
@@ -133,7 +135,7 @@ document.getElementById('txtScriptFiles').addEventListener('change',function(e){
 
 function isMarkdownProductFile(file){var name=(file&&file.name||'').toLowerCase();return name.endsWith('.md')||name.endsWith('.markdown');}
 async function uploadProductFiles(files){var list=Array.prototype.slice.call(files||[]);if(!list.length)return;var markdown=list.filter(isMarkdownProductFile);if(markdown.length){if(markdown.length!==list.length)return toast('Markdown 请单独批量上传','error');return uploadMarkdownProductFiles(markdown);}if(list.length>1)return toast('CSV/Excel 一次只能上传 1 个文件','error');return uploadProductFile(list[0]);}
-async function uploadProductFile(file){if(isMarkdownProductFile(file))return uploadMarkdownProductFiles([file]);var p=document.getElementById('productProgress');p.style.display='';p.textContent='导入中&hellip;';var fd=new FormData();fd.append('file',file);var name=file.name.toLowerCase();var url=(name.endsWith('.xlsx')||name.endsWith('.xls'))?'/api/import/excel':'/api/import/csv';try{var r=await fetch(url,{method:'POST',body:fd});var d=await r.json();if(r.ok){toast('导入成功','success');renderProductImportResult(d,'table');}else{var msg=d.detail||d.message||'导入失败';toast(msg,'error');renderProductImportResult({total:0,success:0,skipped:0,errors:[msg]},'table');}}catch(e){toast('失败','error');renderProductImportResult({total:0,success:0,skipped:0,errors:[e.message||'网络错误']},'table');}p.style.display='none';}
+async function uploadProductFile(file){if(isMarkdownProductFile(file))return uploadMarkdownProductFiles([file]);var p=document.getElementById('productProgress');p.style.display='';p.textContent='导入中&hellip;';var fd=new FormData();fd.append('file',file);var name=file.name.toLowerCase();if(name.endsWith('.xls')){toast('Excel 仅支持 .xlsx 文件','error');renderProductImportResult({total:0,success:0,skipped:0,errors:['Excel 仅支持 .xlsx 文件']},'table');p.style.display='none';return;}var url=name.endsWith('.xlsx')?'/api/import/excel':'/api/import/csv';try{var r=await fetch(url,{method:'POST',body:fd});var d=await r.json();if(r.ok){toast('导入成功','success');renderProductImportResult(d,'table');}else{var msg=d.detail||d.message||'导入失败';toast(msg,'error');renderProductImportResult({total:0,success:0,skipped:0,errors:[msg]},'table');}}catch(e){toast('失败','error');renderProductImportResult({total:0,success:0,skipped:0,errors:[e.message||'网络错误']},'table');}p.style.display='none';}
 async function uploadMarkdownProductFiles(files){var p=document.getElementById('productProgress');p.style.display='';p.textContent='同步 Markdown 产品中&hellip;';var fd=new FormData();files.forEach(function(file){fd.append('files',file);});try{var r=await fetch('/api/import/markdown',{method:'POST',body:fd});var d=await r.json();if(r.ok){toast('同步完成','success');renderProductImportResult(d,'markdown');document.getElementById('productFile').value='';}else{var msg=d.detail||d.message||'同步失败';toast(msg,'error');renderProductImportResult({total:files.length,created:0,updated:0,skipped:0,errors:[msg]},'markdown');}}catch(e){toast('失败','error');renderProductImportResult({total:files.length,created:0,updated:0,skipped:0,errors:[e.message||'网络错误']},'markdown');}p.style.display='none';}
 
 function renderLocalProductScanState(d,type){d=d||{};var running=!!d.is_running;var summary='总计 '+(d.total||0)+'，已处理 '+(d.processed||0)+'，新增 '+(d.created||0)+'，更新 '+(d.updated||0)+'，附件 '+(d.attached||0)+'，跳过 '+(d.skipped||0)+'，不支持 '+(d.unsupported||0)+'，错误 '+(d.error_count||0);var html='<div class="result-card'+(type==='error'||(d.error_count||0)>0?' error':'')+'"><strong>'+escHtml(summary)+'</strong>';if(d.message)html+='<div style="margin-top:6px;color:inherit">'+escHtml(d.message)+'</div>';html+=renderResultList('errors','错误明细',d.errors||[]);html+='</div>';document.getElementById('productResult').innerHTML=html;var btn=document.getElementById('btnScanLocalProducts');if(btn){btn.disabled=running;btn.innerHTML=(running?'<i data-lucide="loader"></i>扫描中':'<i data-lucide="folder-search"></i>扫描本地产品资料');if(window.lucide)lucide.createIcons();}var p=document.getElementById('productProgress');p.style.display=running?'':'none';p.textContent=running?'扫描中，正在同步产品资料...':'';}

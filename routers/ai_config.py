@@ -15,6 +15,7 @@ from services.ai_config import (
     update_interface_setting,
     usage_totals,
 )
+from vector_store import embedding_health_check
 
 
 router = APIRouter()
@@ -29,6 +30,16 @@ class AIInterfaceUpdate(BaseModel):
     clear_api_key: bool = False
 
 
+class VectorHealthResponse(BaseModel):
+    provider: str = ""
+    base_url: str = ""
+    model: str = ""
+    configured: bool = False
+    healthy: bool = False
+    dimension: int | None = None
+    error: str = ""
+
+
 @router.get("/providers")
 def list_ai_providers():
     return {
@@ -39,6 +50,11 @@ def list_ai_providers():
 @router.get("/interfaces")
 def list_ai_interfaces(db: Session = Depends(get_db)):
     return {"interfaces": list_interface_dicts(db)}
+
+
+@router.get("/vector-health", response_model=VectorHealthResponse)
+def get_vector_health():
+    return embedding_health_check()
 
 
 @router.put("/interfaces/{interface_key}")

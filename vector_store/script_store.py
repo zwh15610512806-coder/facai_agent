@@ -1,10 +1,25 @@
 """Script vector store — semantic search over viral_scripts + reference_scripts."""
 import logging
+import os
+import time
 from sqlalchemy.orm import Session
 
 from vector_store import VectorStoreError, get_chroma_store
 
 logger = logging.getLogger("vector_store.scripts")
+
+
+def _upsert_batch_size() -> int:
+    try:
+        value = int(os.getenv("VECTOR_UPSERT_BATCH_SIZE", "64"))
+    except (TypeError, ValueError):
+        value = 64
+    return max(1, min(value, 256))
+
+
+def _iter_slices(total: int, size: int):
+    for start in range(0, total, size):
+        yield start, min(start + size, total)
 
 
 class ScriptVectorStore:
@@ -163,7 +178,7 @@ class ScriptVectorStore:
                     "is_high_conversion": bool(s.is_high_conversion), "title": s.title or "",
                 })
             try:
-                self.collection.upsert(ids=ids, documents=docs, metadatas=metas)
+                self._upsert_batches(ids, docs, metas, label="viral scripts")
                 total += len(ids)
                 logger.info(f"Indexed {len(ids)} viral scripts")
             except Exception as e:
@@ -185,7 +200,7 @@ class ScriptVectorStore:
                 except Exception:
                     pass
             try:
-                self.collection.upsert(ids=ids, documents=docs, metadatas=metas)
+                self._upsert_batches(ids, docs, metas, label="reference scripts")
                 total += len(ids)
                 logger.info(f"Indexed {len(ids)} reference scripts")
             except Exception as e:
@@ -193,6 +208,30 @@ class ScriptVectorStore:
                 raise VectorStoreError(f"参考脚本向量全量重建失败: {e}") from e
 
         return total
+
+    def _upsert_batches(self, ids: list[str], documents: list[str], metadatas: list[dict], *, label: str):
+        batch_size = _upsert_batch_size()
+        for start, end in _iter_slices(len(ids), batch_size):
+            self._upsert_with_retry(
+                ids=ids[start:end],
+                documents=documents[start:end],
+                metadatas=metadatas[start:end],
+                label=f"{label} {start + 1}-{end}/{len(ids)}",
+            )
+
+    def _upsert_with_retry(self, *, ids: list[str], documents: list[str], metadatas: list[dict], label: str):
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                self.collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+                return
+            except Exception as exc:
+                last_error = exc
+                if attempt >= 3:
+                    break
+                logger.warning(f"Retrying {label} after vector upsert failure ({attempt}/3): {exc}")
+                time.sleep(attempt * 2)
+        raise last_error
 
 
 def _keyword_find_similar(product_context: dict, video_type: str, db: Session, limit: int = 5) -> list:

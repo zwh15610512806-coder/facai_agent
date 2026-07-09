@@ -4,6 +4,7 @@ import re
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -30,6 +31,10 @@ PROVIDER_ENV_KEYS = [
     "ZAI_API_KEY",
     "QWEN_API_KEY",
     "DASHSCOPE_API_KEY",
+    "EMBEDDING_PROVIDER",
+    "EMBEDDING_MODEL_NAME",
+    "EMBEDDING_API_KEY",
+    "EMBEDDING_BASE_URL",
 ]
 
 INSPIRATION_TOOLS_INTERFACE_KEY = "inspiration_tools"
@@ -609,6 +614,57 @@ class AiConfigApiTests(unittest.TestCase):
         self.assertAlmostEqual(totals["estimated_cost_cny"], 1.8, places=4)
         self.assertEqual(totals["estimated_cost_display"], "¥1.80")
 
+    def test_vector_health_checks_embedding_endpoint_without_leaking_key(self):
+        captured = {}
+
+        class FakeEmbeddingFunction:
+            def __init__(self, *, api_key, base_url, model):
+                captured["api_key"] = api_key
+                captured["base_url"] = base_url
+                captured["model"] = model
+
+            def __call__(self, input):
+                captured["input"] = input
+                return [[0.1, 0.2, 0.3]]
+
+        with patch.dict(os.environ, {
+            "EMBEDDING_PROVIDER": "volcengine_ark",
+            "EMBEDDING_MODEL_NAME": "ep-20260703164659-v5sh5",
+            "EMBEDDING_API_KEY": "secret-embedding-key",
+            "EMBEDDING_BASE_URL": "https://ark.cn-beijing.volces.com/api/v3",
+        }, clear=False), patch("vector_store.VolcengineArkEmbeddingFunction", FakeEmbeddingFunction):
+            response = self.client.get("/api/ai-config/vector-health")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["provider"], "volcengine_ark")
+        self.assertEqual(data["base_url"], "https://ark.cn-beijing.volces.com/api/v3")
+        self.assertEqual(data["model"], "ep-20260703164659-v5sh5")
+        self.assertTrue(data["configured"])
+        self.assertTrue(data["healthy"])
+        self.assertEqual(data["dimension"], 3)
+        self.assertEqual(data["error"], "")
+        self.assertEqual(captured["input"], ["vector health check"])
+        self.assertNotIn("secret-embedding-key", response.text)
+
+    def test_vector_health_reports_configuration_error_without_secret_value(self):
+        with patch.dict(os.environ, {
+            "ARK_API_KEY": "",
+            "DOUBAO_API_KEY": "",
+            "EMBEDDING_PROVIDER": "volcengine_ark",
+            "EMBEDDING_MODEL_NAME": "ep-20260703164659-v5sh5",
+            "EMBEDDING_API_KEY": "",
+            "EMBEDDING_BASE_URL": "https://ark.cn-beijing.volces.com/api/v3",
+        }, clear=False):
+            response = self.client.get("/api/ai-config/vector-health")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["configured"])
+        self.assertFalse(data["healthy"])
+        self.assertIsNone(data["dimension"])
+        self.assertIn("EMBEDDING_API_KEY", data["error"])
+
 
 class FakeUsage:
     prompt_tokens = 7
@@ -648,6 +704,22 @@ class FakeCompletions:
 class FakeClient:
     def __init__(self, response):
         self.completions = FakeCompletions(response)
+        self.chat = type("Chat", (), {"completions": self.completions})()
+
+
+class FailingCompletions:
+    def __init__(self, exc):
+        self.exc = exc
+        self.payload = None
+
+    def create(self, **payload):
+        self.payload = payload
+        raise self.exc
+
+
+class FailingClient:
+    def __init__(self, exc):
+        self.completions = FailingCompletions(exc)
         self.chat = type("Chat", (), {"completions": self.completions})()
 
 
@@ -1115,6 +1187,56 @@ class AiServiceRoutingTests(unittest.TestCase):
         ))
 
         self.assertEqual(result, "")
+        record = self.db.query(AIUsageRecord).one()
+        self.assertEqual(record.status, "unavailable")
+        self.assertEqual(record.provider, "minimax")
+        self.assertNotIn("test-qwen-key", record.error_summary or "")
+
+    def test_chat_raise_on_error_raises_provider_failures_after_usage_record(self):
+        from models import AIUsageRecord
+        from services.ai_service import AIProviderError, AIService
+
+        service = AIService()
+        service._clients["qwen"] = FailingClient(RuntimeError("provider timeout"))
+
+        with self.assertRaisesRegex(AIProviderError, "provider timeout"):
+            asyncio.run(service.chat(
+                [{"role": "user", "content": "hello"}],
+                interface_key="inspiration_chat",
+                allow_fallback=False,
+                raise_on_error=True,
+                db=self.db,
+            ))
+
+        record = self.db.query(AIUsageRecord).one()
+        self.assertEqual(record.status, "error")
+        self.assertEqual(record.provider, "qwen")
+        self.assertIn("provider timeout", record.error_summary)
+
+    def test_chat_raise_on_error_raises_unconfigured_provider_without_key_leak(self):
+        from models import AIInterfaceSetting, AIUsageRecord
+        from services.ai_service import AIProviderError, AIService
+
+        os.environ.pop("MINIMAX_API_KEY", None)
+        self.db.query(AIInterfaceSetting).delete()
+        self.db.add(AIInterfaceSetting(
+            interface_key="inspiration_chat",
+            provider="minimax",
+            model="MiniMax-M3",
+            max_tokens=1000,
+        ))
+        self.db.commit()
+
+        service = AIService()
+        with self.assertRaisesRegex(AIProviderError, "MiniMax"):
+            asyncio.run(service.chat(
+                [{"role": "user", "content": "hello"}],
+                interface_key="inspiration_chat",
+                allow_fallback=False,
+                raise_on_error=True,
+                db=self.db,
+            ))
+
         record = self.db.query(AIUsageRecord).one()
         self.assertEqual(record.status, "unavailable")
         self.assertEqual(record.provider, "minimax")

@@ -57,25 +57,31 @@ class SharedMobileResponsiveCssTests(unittest.TestCase):
         self.assertIn("bottom: 32px", body)
         self.assertIn("right: 32px", body)
 
-    def test_ai_config_is_only_bottom_right_fab_and_import_stays_in_nav(self):
-        fab = re.search(r"\.ai-config-fab\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S)
+    def test_shared_fabs_stack_at_bottom_right_without_nav_import_button(self):
+        shared_fab = re.search(r"\.ai-config-fab,\s*\.data-import-fab\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S)
+        ai_fab = re.search(r"\.ai-config-fab\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S)
+        import_fab = re.search(r"^\.data-import-fab\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S | re.M)
         mobile = re.search(r"@media \(max-width: 768px\)\s*\{(?P<body>.*?)\n\}", self.css, flags=re.S)
 
-        self.assertIsNotNone(fab)
+        self.assertIsNotNone(shared_fab)
+        self.assertIsNotNone(ai_fab)
+        self.assertIsNotNone(import_fab)
         self.assertIsNotNone(mobile)
-        fab_body = fab.group("body")
+        shared_body = shared_fab.group("body")
+        ai_body = ai_fab.group("body")
+        import_body = import_fab.group("body")
         mobile_body = mobile.group("body")
-        self.assertIn("position: fixed", fab_body)
-        self.assertIn("right: 28px", fab_body)
-        self.assertIn("z-index: 90", fab_body)
-        self.assertIn("bottom: 28px", fab_body)
-        self.assertIn(".nav-import-btn", self.css)
-        self.assertIn(".nav-import-btn.on", self.css)
-        self.assertIn(".ai-config-fab", mobile_body)
+        self.assertIn("position: fixed", shared_body)
+        self.assertIn("right: 28px", shared_body)
+        self.assertIn("z-index: 90", shared_body)
+        self.assertIn("background: rgba(255,255,255,.96)", shared_body)
+        self.assertIn("bottom: 28px", ai_body)
+        self.assertIn("bottom: 88px", import_body)
+        self.assertNotIn(".nav-import-btn", self.css)
+        self.assertIn(".ai-config-fab,.data-import-fab", mobile_body)
         self.assertIn("bottom: max(72px", mobile_body)
+        self.assertIn("bottom: max(126px", mobile_body)
         self.assertIn("env(safe-area-inset-bottom)", mobile_body)
-        self.assertIn(".nav-import-btn", mobile_body)
-        self.assertNotIn(".data-import-fab", self.css)
 
 
 class GeneratePageMobileLayoutTests(unittest.TestCase):
@@ -167,6 +173,9 @@ class ProductsPageMobileWorkspaceTests(unittest.TestCase):
         self.assertIn('onclick="setMobileProductView(\'list\')"', self.page)
         self.assertIn('onclick="setMobileProductView(\'detail\')"', self.page)
         self.assertIn('onclick="setMobileProductView(\'chat\')"', self.page)
+
+    def test_products_page_reserves_desktop_right_rail_for_fabs(self):
+        self.assertIn(".products-page{max-width:min(1600px,calc(100vw - 32px));height:calc(100dvh - 68px)", self.page)
 
     def test_products_page_mobile_breakpoint_shows_only_active_panel(self):
         mobile = re.search(r"@media \(max-width: 768px\)\s*\{(?P<body>.*?)\n\}", self.page, flags=re.S)

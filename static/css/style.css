@@ -82,7 +82,7 @@ body {
 
 /* -- Typography -- */
 h1, h2, h3, h4 { font-family: var(--font-display); color: var(--text); }
-h1 { font-size: 2.2rem; font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; }
+h1 { font-size: 2.2rem; font-weight: 800; letter-spacing: 0; line-height: 1.1; }
 h2 { font-size: 1.45rem; font-weight: 700; line-height: 1.2; }
 h3 { font-size: 1.1rem; font-weight: 700; }
 .ff-display { font-family: var(--font-display); }
@@ -132,21 +132,6 @@ h3 { font-size: 1.1rem; font-weight: 700; }
 .nav-brand-mark img {
   height: 100%; width: auto; object-fit: contain;
 }
-.nav-import-btn {
-  flex: 0 0 auto;
-  min-height: 32px; padding: 0 10px;
-  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-  border: 1px solid var(--facai-subtle); border-radius: var(--r-pill);
-  background: var(--facai-ghost); color: var(--facai);
-  font-family: var(--font-ui); font-size: 12px; font-weight: 850;
-  text-decoration: none; white-space: nowrap;
-  transition: background var(--fast) var(--ease), color var(--fast) var(--ease), border-color var(--fast) var(--ease);
-}
-.nav-import-btn:hover,
-.nav-import-btn.on {
-  background: var(--facai); color: #ffffff; border-color: var(--facai);
-}
-.nav-import-btn svg,.nav-import-btn i { width: 14px; height: 14px; stroke-width: 2.3; }
 .nav-links {
   display: flex; align-items: center; gap: 4px;
   grid-column: 2; justify-self: center; min-width: 0; max-width: 100%;
@@ -160,8 +145,8 @@ h3 { font-size: 1.1rem; font-weight: 700; }
 .nav-link:hover { background: var(--facai-ghost); color: var(--facai); }
 .nav-link.on { background: var(--facai); color: #ffffff; font-weight: 700; }
 .nav-link.on:hover { background: var(--facai-hover); color: #ffffff; }
-.ai-config-fab {
-  position: fixed; right: 28px; bottom: 28px; z-index: 90;
+.ai-config-fab,.data-import-fab {
+  position: fixed; right: 28px; z-index: 90;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 46px; padding: 0 16px;
   border: 1px solid rgba(126, 146, 54, .24);
@@ -173,12 +158,14 @@ h3 { font-size: 1.1rem; font-weight: 700; }
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   transition: transform var(--fast) var(--ease), background var(--fast) var(--ease), color var(--fast) var(--ease), border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
-.ai-config-fab:hover {
+.ai-config-fab { bottom: 28px; }
+.data-import-fab { bottom: 88px; }
+.ai-config-fab:hover,.data-import-fab:hover {
   transform: translateY(-2px);
   background: var(--facai); color: #ffffff; border-color: var(--facai);
   box-shadow: var(--s-4);
 }
-.ai-config-fab svg,.ai-config-fab i { width: 17px; height: 17px; stroke-width: 2.3; }
+.ai-config-fab svg,.ai-config-fab i,.data-import-fab svg,.data-import-fab i { width: 17px; height: 17px; stroke-width: 2.3; }
 
 @media (min-width: 769px) and (max-width: 1439px) {
   .nav-inner {
@@ -334,7 +321,7 @@ h3 { font-size: 1.1rem; font-weight: 700; }
 .product-card .pprice {
   font-family: var(--font-ui); font-size: 22px;
   font-weight: 700; color: var(--facai); margin-top: 10px;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 .product-card .pmeta {
   font-size: 13px; color: var(--text-3); margin-top: 6px;
@@ -619,6 +606,7 @@ textarea.input { resize: vertical; min-height: 110px; }
   transition: border-color var(--normal), background var(--normal);
 }
 .drop:hover, .drop.drag { border-color: var(--facai); background: var(--facai-ghost); }
+.drop:focus-visible { outline: 3px solid var(--facai-subtle); outline-offset: 3px; border-color: var(--facai); background: var(--facai-ghost); }
 
 /* =================================================================
    EMPTY STATE
@@ -695,7 +683,6 @@ textarea.input { resize: vertical; min-height: 110px; }
   .nav-brand { width: auto; flex: 1 1 auto; min-width: 0; max-width: none; gap: 8px; font-size: 17px; }
   .nav-brand span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav-brand-mark { height: 32px; }
-  .nav-import-btn { min-height: 32px; padding: 0 9px; font-size: 12px; }
   .nav-links { width: 100%; gap: 6px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scroll-padding-inline: 14px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .nav-links::-webkit-scrollbar { display: none; }
   .nav-link { flex: 0 0 auto; min-height: 42px; padding: 8px 14px; font-size: 14px; border-radius: var(--r-sm); display: inline-flex; align-items: center; justify-content: center; }
@@ -730,9 +717,10 @@ textarea.input { resize: vertical; min-height: 110px; }
   .float-bar > span { flex: 1 1 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .float-bar .btn { flex: 1 1 118px; min-width: 0; }
   .scroll-top-btn { right: 14px; bottom: max(18px, calc(18px + env(safe-area-inset-bottom))); }
-  .ai-config-fab { right: 14px; min-height: 42px; padding: 0 13px; font-size: 13px; }
+  .ai-config-fab,.data-import-fab { right: 14px; min-height: 42px; padding: 0 13px; font-size: 13px; }
   .ai-config-fab { bottom: max(72px, calc(72px + env(safe-area-inset-bottom))); }
-  .ai-config-fab svg,.ai-config-fab i { width: 16px; height: 16px; }
+  .data-import-fab { bottom: max(126px, calc(126px + env(safe-area-inset-bottom))); }
+  .ai-config-fab svg,.ai-config-fab i,.data-import-fab svg,.data-import-fab i { width: 16px; height: 16px; }
 }
 
 /* =================================================================

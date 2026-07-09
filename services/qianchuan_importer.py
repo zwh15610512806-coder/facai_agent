@@ -53,32 +53,52 @@ def parse_qianchuan_workbook(content: bytes, filename: str = "") -> QianchuanPar
     if not zipfile.is_zipfile(BytesIO(content)):
         raise ValueError("暂只支持千川导出的 .xlsx 文件")
 
-    workbook_rows = _read_xlsx_rows(content)
-    if not workbook_rows:
+    workbook_sheets = _read_xlsx_sheets(content)
+    if not workbook_sheets:
         raise ValueError("未读取到表格内容")
 
-    header = [str(value or "").strip() for value in workbook_rows[0]]
-    amount_field = "净成交金额" if "净成交金额" in header else "用户实际支付金额"
-    if "素材名称" not in header or "素材ID" not in header:
-        raise ValueError("未找到素材名称或素材ID列")
-    if amount_field not in header:
-        raise ValueError("未找到成交金额列")
-
     rows: list[QianchuanParsedRow] = []
-    for values in workbook_rows[1:]:
-        raw = _row_dict(header, values)
-        material_name = raw.get("素材名称", "").strip()
-        material_id = raw.get("素材ID", "").strip()
-        if not material_name or material_name == "AIGC动态创意视频素材集合":
+    workbook_amount_field = ""
+    saw_valid_header = False
+    for sheet_name, sheet_rows in workbook_sheets:
+        if not sheet_rows:
             continue
-        if not material_id or material_id == "-":
+        header = [str(value or "").strip() for value in sheet_rows[0]]
+        amount_field = "净成交金额" if "净成交金额" in header else "用户实际支付金额"
+        if "素材名称" not in header or "素材ID" not in header:
             continue
-        rows.append(_build_row(raw, amount_field))
+        if amount_field not in header:
+            continue
+        saw_valid_header = True
+        workbook_amount_field = workbook_amount_field or amount_field
+        for values in sheet_rows[1:]:
+            raw = _row_dict(header, values)
+            material_name = raw.get("素材名称", "").strip()
+            material_id = raw.get("素材ID", "").strip()
+            if material_name == "素材名称" and material_id == "素材ID":
+                continue
+            if not material_name or material_name == "AIGC动态创意视频素材集合":
+                continue
+            if not material_id or material_id == "-":
+                continue
+            raw["_sheet"] = sheet_name
+            rows.append(_build_row(raw, amount_field))
 
-    return QianchuanParsedWorkbook(row_count=len(rows), amount_field=amount_field, rows=rows)
+    if not saw_valid_header:
+        raise ValueError("未找到素材名称、素材ID或成交金额列")
+
+    return QianchuanParsedWorkbook(row_count=len(rows), amount_field=workbook_amount_field, rows=rows)
 
 
 def _read_xlsx_rows(content: bytes) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for _sheet_name, sheet_rows in _read_xlsx_sheets(content):
+        rows.extend(sheet_rows)
+    return rows
+
+
+def _read_xlsx_sheets(content: bytes) -> list[tuple[str, list[list[str]]]]:
+    sheets: list[tuple[str, list[list[str]]]] = []
     rows: list[list[str]] = []
     with zipfile.ZipFile(BytesIO(content)) as workbook:
         shared_strings = _read_shared_strings(workbook)
@@ -87,6 +107,7 @@ def _read_xlsx_rows(content: bytes) -> list[list[str]]:
             if name.startswith("xl/worksheets/") and name.endswith(".xml")
         )
         for sheet_name in sheet_names:
+            rows = []
             root = ET.fromstring(workbook.read(sheet_name))
             for row in root.findall(f".//{_NS}sheetData/{_NS}row"):
                 values: list[str] = []
@@ -97,7 +118,9 @@ def _read_xlsx_rows(content: bytes) -> list[list[str]]:
                     values[index] = _cell_text(cell, shared_strings)
                 if any(str(value).strip() for value in values):
                     rows.append(values)
-    return rows
+            if rows:
+                sheets.append((sheet_name, rows))
+    return sheets
 
 
 def _read_shared_strings(workbook: zipfile.ZipFile) -> list[str]:

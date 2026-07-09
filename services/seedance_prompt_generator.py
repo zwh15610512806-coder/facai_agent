@@ -57,6 +57,7 @@ class SeedancePromptGenerator:
                 temperature=0.7,
                 interface_key=SEEDANCE_INTERFACE_KEY,
                 allow_fallback=False,
+                raise_on_error=True,
                 db=db,
             )
         except Exception as exc:

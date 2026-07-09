@@ -331,8 +331,9 @@ class TemplatesPageTests(unittest.TestCase):
 
     def test_global_modal_layer_sits_above_floating_action_buttons(self):
         style = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8-sig")
-        self.assertIn(".ai-config-fab {\n  position: fixed; right: 28px; bottom: 28px; z-index: 90;", style)
-        self.assertNotIn("data-import-fab", style)
+        self.assertIn(".ai-config-fab,.data-import-fab {\n  position: fixed; right: 28px; z-index: 90;", style)
+        self.assertIn(".ai-config-fab { bottom: 28px; }", style)
+        self.assertIn(".data-import-fab { bottom: 88px; }", style)
         self.assertIn("z-index: 900; display: flex; align-items: center;", style)
         self.assertIn("z-index: 1000; box-shadow: var(--s-3);", style)
 

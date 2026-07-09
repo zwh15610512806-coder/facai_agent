@@ -20,6 +20,10 @@ from services.qianchuan_importer import parse_qianchuan_workbook
 
 
 def _inline_xlsx(headers, rows):
+    return _inline_xlsx_sheets([(headers, rows)])
+
+
+def _inline_xlsx_sheets(sheets):
     def cell_name(col_index, row_index):
         letters = ""
         col = col_index + 1
@@ -37,18 +41,19 @@ def _inline_xlsx(headers, rows):
             )
         return f'<row r="{row_index}">{"".join(cells)}</row>'
 
-    sheet_rows = [row_xml(1, headers)]
-    sheet_rows.extend(row_xml(index, row) for index, row in enumerate(rows, start=2))
-    sheet_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        '<dimension ref="A1"/>'
-        f'<sheetData>{"".join(sheet_rows)}</sheetData>'
-        "</worksheet>"
-    )
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, "w") as zf:
-        zf.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+        for sheet_index, (headers, rows) in enumerate(sheets, start=1):
+            sheet_rows = [row_xml(1, headers)]
+            sheet_rows.extend(row_xml(index, row) for index, row in enumerate(rows, start=2))
+            sheet_xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                '<dimension ref="A1"/>'
+                f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+                "</worksheet>"
+            )
+            zf.writestr(f"xl/worksheets/sheet{sheet_index}.xml", sheet_xml)
     return buffer.getvalue()
 
 
@@ -104,6 +109,19 @@ class QianchuanWorkbookParserTests(unittest.TestCase):
         self.assertEqual(row.impressions, 12345)
         self.assertEqual(row.ctr, 0.0205)
         self.assertEqual(row.play_10s_rate, 0.182)
+
+    def test_parser_treats_each_sheet_header_independently(self):
+        headers = ["素材名称", "素材ID", "净成交金额", "净成交订单数"]
+        workbook = _inline_xlsx_sheets([
+            (headers, [["机制-26.3.17-刀叉-法采-A.mp4", "A001", "2,100", "11"]]),
+            (headers, [["需求-26.3.18-果酱-法采-B.mp4", "B001", "3,200", "16"]]),
+        ])
+
+        parsed = parse_qianchuan_workbook(workbook, "qianchuan.xlsx")
+
+        self.assertEqual(parsed.row_count, 2)
+        self.assertEqual([row.material_id for row in parsed.rows], ["A001", "B001"])
+        self.assertNotIn("素材ID", [row.material_id for row in parsed.rows])
 
 
 class QianchuanPerformanceApiTests(unittest.TestCase):
@@ -265,6 +283,36 @@ class QianchuanPerformanceApiTests(unittest.TestCase):
         deleted = self.client.delete(f"/api/templates/viral/{script.id}/performance/bind/{binding_id}")
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(deleted.json()["data"]["summary"]["material_count"], 0)
+        self.db.refresh(script)
+        self.assertEqual(script.is_high_conversion, 0)
+
+    def test_get_performance_does_not_create_auto_bindings(self):
+        script = ViralScript(
+            category="烘焙调味",
+            video_type="需求类",
+            title="茶酱 / 脚本 / 26.5.8需求 / 文案",
+            script_content="茶酱用于调味茶饮和面包夹心，强调出餐稳定。",
+            is_high_conversion=0,
+        )
+        self.db.add(script)
+        self.db.commit()
+        self._add_qianchuan_material(
+            "tea-jam-get-001",
+            "需求-26.5.8-调味果酱-法采-姜妈5.mp4",
+            transaction_amount=2300,
+            order_count=16,
+        )
+
+        before = self.db.query(QianchuanScriptBinding).count()
+        response = self.client.get(f"/api/templates/viral/{script.id}/performance")
+        after = self.db.query(QianchuanScriptBinding).count()
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(before, 0)
+        self.assertEqual(after, 0)
+        self.assertEqual(data["summary"]["material_count"], 0)
+        self.assertIn("tea-jam-get-001", [item["material_id"] for item in data["candidates"]])
 
     def test_auto_binds_high_score_materials_and_keeps_low_score_candidates(self):
         script = ViralScript(

@@ -61,7 +61,7 @@ ARK_API_KEY=你的火山方舟 API Key
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ARK_MODEL=ep-20260703160153-h5cx5
 EMBEDDING_PROVIDER=volcengine_ark
-EMBEDDING_MODEL_NAME=ark-4e8d208b-a896-43b4-9b77-eda0ceac0370-0a2ef
+EMBEDDING_MODEL_NAME=ep-20260703164659-v5sh5
 # 可选：需要单独隔离向量凭据时再配置；默认复用 ARK_API_KEY/ARK_BASE_URL 或 DOUBAO_API_KEY/DOUBAO_BASE_URL
 # EMBEDDING_API_KEY=你的火山方舟 Embedding API Key
 # EMBEDDING_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
@@ -83,6 +83,17 @@ curl -X POST http://localhost:8001/api/templates/reindex
 ```env
 FACAI_AUTH_ENABLED=0
 ```
+
+## 公司内网上线检查
+
+上线前建议逐项确认：
+
+- 只在可信公司网段开放服务地址，不要把 `8001` 直接暴露到公网。
+- Windows 防火墙入站规则只放行公司办公网段；如果跨网段访问，优先走 VPN 或统一网关。
+- 当前版本不恢复应用登录或接口鉴权，内网隔离就是主要访问边界。
+- 共享盘/本地资料扫描会索引当前服务账号可读的文件，确认共享目录权限不会暴露不应被检索的资料。
+- 上线前备份 `.env`、`data/script_agent.db`、`data/chroma_db/`、`data/product_files/`、`data/uploads/` 和关键 `资料/` 目录。
+- Excel 导入只支持 `.xlsx`；旧 `.xls` 请先转换为 `.xlsx` 再上传。
 
 AI 配置里的自定义 Base URL 默认只允许已知供应商域名。确实需要新增供应商网关时，再显式加入允许列表：
 

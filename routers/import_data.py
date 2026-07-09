@@ -35,7 +35,7 @@ LOCAL_PRODUCT_SOURCE_DIR = os.getenv(
 )
 LOCAL_PRODUCT_SCAN_SESSION_FACTORY = SessionLocal
 LOCAL_PRODUCT_SCAN_ERROR_LIMIT = 50
-LOCAL_PRODUCT_STRUCTURED_EXTENSIONS = {".md", ".markdown", ".csv", ".xlsx", ".xls"}
+LOCAL_PRODUCT_STRUCTURED_EXTENSIONS = {".md", ".markdown", ".csv", ".xlsx"}
 LOCAL_PRODUCT_ATTACHMENT_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt", ".png", ".jpg", ".jpeg"}
 
 _local_product_scan_lock = threading.RLock()
@@ -120,8 +120,8 @@ async def import_excel(
     db: Session = Depends(get_db),
 ):
     """导入Excel文件(.xlsx)"""
-    if not file.filename.endswith((".xlsx", ".xls")):
-        raise HTTPException(status_code=400, detail="仅支持Excel文件(.xlsx/.xls)")
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="仅支持Excel文件(.xlsx)")
 
     try:
         import pandas as pd
@@ -331,14 +331,15 @@ def _import_excel_content(content: bytes, db: Session) -> tuple[ImportResult, li
 
             first_row = group.iloc[0]
             try:
+                category = _safe_text(first_row.get("category"))
                 product = Product(
                     name=name,
-                    category=str(first_row.get("category", "")).strip(),
+                    category=category,
                     price=_safe_float(first_row.get("price", 0)),
                     original_price=_safe_float(first_row.get("original_price")),
                     commission_rate=_safe_float(first_row.get("commission_rate"), 0),
-                    brand=str(first_row.get("brand", "")).strip() if pd.notna(first_row.get("brand")) else None,
-                    description=str(first_row.get("description", "")).strip() if pd.notna(first_row.get("description")) else None,
+                    brand=_safe_text(first_row.get("brand")) or None,
+                    description=_safe_text(first_row.get("description")) or None,
                 )
 
                 if not product.category or not product.price:
@@ -875,7 +876,7 @@ async def _scan_local_products(*, source_dir: Path, db: Session) -> None:
             elif ext == ".csv":
                 result, product_ids = _import_csv_content(path.read_bytes(), db)
                 _apply_tabular_scan_result(relative_path, result, product_ids)
-            elif ext in {".xlsx", ".xls"}:
+            elif ext == ".xlsx":
                 result, product_ids = _import_excel_content(path.read_bytes(), db)
                 _apply_tabular_scan_result(relative_path, result, product_ids)
             elif ext in LOCAL_PRODUCT_ATTACHMENT_EXTENSIONS:
@@ -998,3 +999,11 @@ def _safe_int(value, default=0):
         return int(float(value))
     except (ValueError, TypeError):
         return default
+
+
+def _safe_text(value) -> str:
+    import pandas as pd
+    if value is None or pd.isna(value):
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"nan", "none", "nat"} else text

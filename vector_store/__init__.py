@@ -1,6 +1,8 @@
 """ChromaDB vector store — singleton client + collection management."""
 import os
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 import chromadb
 import httpx
@@ -20,6 +22,8 @@ from config import (
 )
 
 logger = logging.getLogger("vector_store")
+_last_embedding_degraded_reason = ""
+_last_embedding_degraded_at = 0.0
 
 
 class NoopChromaTelemetry(ProductTelemetryClient):
@@ -51,6 +55,110 @@ class EmbeddingCallError(VectorStoreError):
     """Raised when the Ark embedding API call or response is invalid."""
 
 
+def _record_embedding_degraded_reason(reason: str) -> None:
+    global _last_embedding_degraded_reason, _last_embedding_degraded_at
+    text = str(reason or "").strip()
+    if not text:
+        return
+    _last_embedding_degraded_reason = text
+    _last_embedding_degraded_at = time.monotonic()
+
+
+def get_embedding_degraded_reason(*, max_age_seconds: float = 30.0, since_monotonic: float | None = None) -> str:
+    """Return the most recent embedding failure reason if it is still fresh."""
+    if not _last_embedding_degraded_reason:
+        return ""
+    if since_monotonic is not None and _last_embedding_degraded_at < since_monotonic:
+        return ""
+    if time.monotonic() - _last_embedding_degraded_at > max(0.0, float(max_age_seconds)):
+        return ""
+    return _last_embedding_degraded_reason
+
+
+def _env_or_config(name: str, fallback: str | None = "") -> str:
+    if name in os.environ:
+        return os.environ.get(name, "")
+    return fallback or ""
+
+
+def _embedding_runtime_config() -> dict[str, str]:
+    import config as config_module
+
+    provider = _env_or_config("EMBEDDING_PROVIDER", config_module.EMBEDDING_PROVIDER).strip()
+    model = _env_or_config("EMBEDDING_MODEL_NAME", config_module.EMBEDDING_MODEL_NAME).strip()
+    api_key_env_names = ("EMBEDDING_API_KEY", "ARK_API_KEY", "DOUBAO_API_KEY")
+    if any(name in os.environ for name in api_key_env_names):
+        api_key = next((os.getenv(name, "").strip() for name in api_key_env_names if os.getenv(name, "").strip()), "")
+    else:
+        api_key = (config_module.EMBEDDING_API_KEY or "").strip()
+    base_url_env_names = ("EMBEDDING_BASE_URL", "ARK_BASE_URL", "DOUBAO_BASE_URL")
+    if any(name in os.environ for name in base_url_env_names):
+        base_url = next((os.getenv(name, "").strip() for name in base_url_env_names if os.getenv(name, "").strip()), "")
+    else:
+        base_url = (config_module.EMBEDDING_BASE_URL or "").strip()
+    return {
+        "provider": provider,
+        "model": model,
+        "api_key": api_key,
+        "base_url": base_url,
+    }
+
+
+def _sanitize_embedding_error(message: str, api_key: str) -> str:
+    text = str(message or "").strip()
+    secret = (api_key or "").strip()
+    if secret:
+        text = text.replace(secret, "[redacted]")
+    return text
+
+
+def _embedding_max_concurrency() -> int:
+    try:
+        value = int(os.getenv("EMBEDDING_CONCURRENCY", "6"))
+    except (TypeError, ValueError):
+        value = 6
+    return max(1, min(value, 16))
+
+
+def embedding_health_check(probe_text: str = "vector health check") -> dict[str, Any]:
+    """Perform a lightweight text embedding probe and return sanitized health details."""
+    config = _embedding_runtime_config()
+    provider = config["provider"]
+    model = config["model"]
+    base_url = config["base_url"]
+    api_key = config["api_key"]
+    configured = bool(provider and model and base_url and api_key)
+    result: dict[str, Any] = {
+        "provider": provider,
+        "base_url": base_url,
+        "model": model,
+        "configured": configured,
+        "healthy": False,
+        "dimension": None,
+        "error": "",
+    }
+    try:
+        if (provider or "").strip().lower() != "volcengine_ark":
+            raise EmbeddingConfigurationError(
+                f"不支持的 EMBEDDING_PROVIDER: {provider}；当前仅支持 volcengine_ark"
+            )
+        embedding_fn = VolcengineArkEmbeddingFunction(api_key=api_key, base_url=base_url, model=model)
+        vectors = embedding_fn([probe_text])
+        vector = vectors[0] if vectors else []
+        result["dimension"] = len(vector)
+        result["healthy"] = bool(vector)
+        if not vector:
+            raise EmbeddingCallError("火山方舟 embedding 健康检查未返回向量")
+    except Exception as exc:
+        error = _sanitize_embedding_error(str(exc), api_key)
+        result["error"] = error
+        result["configured"] = configured
+        result["healthy"] = False
+        result["dimension"] = None
+        _record_embedding_degraded_reason(error)
+    return result
+
+
 class VolcengineArkEmbeddingFunction:
     """Chroma embedding function backed by Volcengine Ark multimodal embeddings."""
 
@@ -60,6 +168,7 @@ class VolcengineArkEmbeddingFunction:
         base_url: str,
         model: str,
         http_client_factory=httpx.Client,
+        max_concurrency: int | None = None,
     ):
         if not (api_key or "").strip():
             raise EmbeddingConfigurationError(
@@ -75,6 +184,7 @@ class VolcengineArkEmbeddingFunction:
         self.base_url = base_url.strip()
         self.api_key = api_key.strip()
         self._http_client_factory = http_client_factory
+        self._max_concurrency = max(1, int(max_concurrency or _embedding_max_concurrency()))
 
     @staticmethod
     def name() -> str:
@@ -84,15 +194,21 @@ class VolcengineArkEmbeddingFunction:
         texts = [str(item) for item in input]
         if not texts:
             return []
-        embeddings = []
         try:
-            with self._http_client_factory(timeout=60) as client:
-                for text in texts:
-                    embeddings.append(self._embed_text(client, text))
-        except EmbeddingCallError:
+            if len(texts) == 1 or self._max_concurrency <= 1:
+                with self._http_client_factory(timeout=60) as client:
+                    embeddings = [self._embed_text(client, text) for text in texts]
+            else:
+                workers = min(self._max_concurrency, len(texts))
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    embeddings = list(executor.map(self._embed_text_with_new_client, texts))
+        except EmbeddingCallError as exc:
+            _record_embedding_degraded_reason(str(exc))
             raise
         except Exception as exc:
-            raise EmbeddingCallError(f"火山方舟 embedding 调用失败: {exc}") from exc
+            error = EmbeddingCallError(f"火山方舟 embedding 调用失败: {exc}")
+            _record_embedding_degraded_reason(str(error))
+            raise error from exc
 
         if len(embeddings) != len(texts):
             raise EmbeddingCallError(
@@ -102,6 +218,10 @@ class VolcengineArkEmbeddingFunction:
         if len(dimensions) > 1:
             raise EmbeddingCallError("火山方舟 embedding 响应维度不一致")
         return embeddings
+
+    def _embed_text_with_new_client(self, text: str) -> list[float]:
+        with self._http_client_factory(timeout=60) as client:
+            return self._embed_text(client, text)
 
     def _embed_text(self, client, text: str) -> list[float]:
         url = self.base_url.rstrip("/") + "/embeddings/multimodal"
@@ -170,6 +290,7 @@ class ChromaStore:
             except Exception as e:
                 self._init_error = str(e)
                 self._available = False
+                _record_embedding_degraded_reason(self._init_error)
                 logger.warning(f"ChromaDB embedding init failed: {e}")
         return self._available
 

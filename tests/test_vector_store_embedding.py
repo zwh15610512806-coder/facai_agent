@@ -1,11 +1,12 @@
 import importlib
 import os
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 
-ARK_EMBEDDING_MODEL = "ark-4e8d208b-a896-43b4-9b77-eda0ceac0370-0a2ef"
+ARK_EMBEDDING_MODEL = "ep-20260703164659-v5sh5"
 
 
 class VectorStoreEmbeddingConfigTests(unittest.TestCase):
@@ -107,6 +108,50 @@ class VolcengineArkEmbeddingFunctionTests(unittest.TestCase):
         })
         self.assertEqual(embeddings, [[1.0, 2.0], [3.0, 4.5]])
 
+    def test_multiple_embedding_calls_preserve_input_order_when_parallel(self):
+        from vector_store import VolcengineArkEmbeddingFunction
+
+        captured = {"texts": []}
+
+        class FakeResponse:
+            status_code = 200
+
+            def __init__(self, embedding):
+                self._embedding = embedding
+                self.text = "ok"
+
+            def json(self):
+                return {"data": {"embedding": self._embedding}}
+
+        class FakeHttpClient:
+            def __init__(self, timeout):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def post(self, url, headers, json):
+                text = json["input"][0]["text"]
+                captured["texts"].append(text)
+                if text == "慢请求":
+                    time.sleep(0.05)
+                    return FakeResponse([1, 1])
+                return FakeResponse([2, 2])
+
+        fn = VolcengineArkEmbeddingFunction(
+            api_key="key",
+            base_url="https://ark.example/v3",
+            model=ARK_EMBEDDING_MODEL,
+            http_client_factory=FakeHttpClient,
+            max_concurrency=2,
+        )
+
+        self.assertEqual(fn(["慢请求", "快请求"]), [[1.0, 1.0], [2.0, 2.0]])
+        self.assertEqual(set(captured["texts"]), {"慢请求", "快请求"})
+
     def test_missing_api_key_base_url_or_model_raises_clear_configuration_error(self):
         from vector_store import EmbeddingConfigurationError, VolcengineArkEmbeddingFunction
 
@@ -142,6 +187,38 @@ class VolcengineArkEmbeddingFunctionTests(unittest.TestCase):
 
         with self.assertRaisesRegex(EmbeddingCallError, "火山方舟 embedding 调用失败"):
             fn(["产品资料"])
+
+    def test_embedding_call_failure_records_recent_degraded_reason(self):
+        from vector_store import (
+            EmbeddingCallError,
+            VolcengineArkEmbeddingFunction,
+            get_embedding_degraded_reason,
+        )
+
+        class FakeHttpClient:
+            def __init__(self, timeout):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def post(self, url, headers, json):
+                raise RuntimeError("endpoint forbidden for health trace")
+
+        fn = VolcengineArkEmbeddingFunction(
+            api_key="key",
+            base_url="https://ark.example/v3",
+            model=ARK_EMBEDDING_MODEL,
+            http_client_factory=FakeHttpClient,
+        )
+
+        with self.assertRaises(EmbeddingCallError):
+            fn(["产品资料"])
+
+        self.assertIn("endpoint forbidden for health trace", get_embedding_degraded_reason(max_age_seconds=60))
 
 
 class ExplicitVectorOperationTests(unittest.TestCase):

@@ -87,7 +87,7 @@ class SearchPageTests(unittest.TestCase):
 
     def test_search_page_matches_workbench_typography_and_spacing(self):
         self.assertIn("body{overflow:hidden}", self.page)
-        self.assertIn(".search-page{max-width:min(1680px,calc(100vw - 32px));height:calc(100dvh - 68px)", self.page)
+        self.assertIn(".search-page{max-width:min(1600px,calc(100vw - 32px));height:calc(100dvh - 68px)", self.page)
         self.assertIn(".search-workbench{flex:1;min-height:0;display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px}", self.page)
         self.assertIn(".search-panel{min-width:0;min-height:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--s-2);display:flex;flex-direction:column;overflow:hidden}", self.page)
         self.assertIn(".search-panel-title{font-family:var(--font-ui);font-size:15px;font-weight:800", self.page)

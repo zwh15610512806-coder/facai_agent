@@ -42,11 +42,13 @@ class FakeAI:
         self.messages = None
         self.interface_key = None
         self.allow_fallback = None
+        self.raise_on_error = None
 
     async def chat(self, messages, temperature=0.7, interface_key="default", db=None, **kwargs):
         self.messages = messages
         self.interface_key = interface_key
         self.allow_fallback = kwargs.get("allow_fallback")
+        self.raise_on_error = kwargs.get("raise_on_error")
         if isinstance(self.response, Exception):
             raise self.response
         return self.response
@@ -373,6 +375,7 @@ class SeedancePromptServiceTests(unittest.TestCase):
         self.assertEqual(result["source"], "ai")
         self.assertEqual(ai.interface_key, "seedance_prompt")
         self.assertIs(ai.allow_fallback, False)
+        self.assertIs(ai.raise_on_error, True)
         self.assertIn("Seedance 2.0 Prompt", ai.messages[0]["content"])
         self.assertIn("Scene Prompt Recipe", ai.messages[0]["content"])
         self.assertIn("no captions", ai.messages[0]["content"])
