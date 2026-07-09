@@ -25,6 +25,7 @@ from services.product_detail import (
     _manual_source_name,
     build_product_detail_payload,
 )
+from services.product_price_extractor import apply_product_price_metadata, extract_product_price_metadata
 from services.product_rag import answer_global_product_question, answer_product_question
 from services.upload_limits import write_upload_file
 
@@ -632,6 +633,7 @@ async def upload_product_file(
 
     # 更新数据库
     product.info_file = file_path
+    price_updates = apply_product_price_metadata(product, extract_product_price_metadata(file_path))
     db.commit()
 
     # 自动从资料中提取卖点
@@ -654,13 +656,24 @@ async def upload_product_file(
         _sync_product_index(product_id, db)
         return ApiResponse(
             message=f"文件已上传，并从资料中提取了 {len(points)} 条卖点",
-            data={"file_path": file_path, "file_name": file.filename, "points_extracted": len(points)},
+            data={
+                "file_path": file_path,
+                "file_name": file.filename,
+                "points_extracted": len(points),
+                "price_updated": "price" in price_updates,
+                "updated_fields": price_updates,
+            },
         )
 
     _sync_product_index(product_id, db)
     return ApiResponse(
         message=f"文件已上传",
-        data={"file_path": file_path, "file_name": file.filename}
+        data={
+            "file_path": file_path,
+            "file_name": file.filename,
+            "price_updated": "price" in price_updates,
+            "updated_fields": price_updates,
+        }
     )
 
 

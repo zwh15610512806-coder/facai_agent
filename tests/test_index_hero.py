@@ -97,7 +97,7 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
         self.assertIn("<main class=\"page-main generate-main\">", self.page)
         self.assertIn(".generate-main{max-width:1540px}", self.page)
         self.assertIn("grid-template-columns:minmax(480px,1fr) minmax(620px,720px)", self.page)
-        self.assertIn(".generate-result-hd{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)", self.page)
+        self.assertIn(".generate-result-hd{display:flex;align-items:center;justify-content:space-between", self.page)
         self.assertIn(".editable-output{cursor:text}", self.page)
         self.assertIn(".generate-result-layout", self.page)
         self.assertIn(".seedance-panel", self.page)
@@ -114,7 +114,7 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
         self.assertIsNotNone(header)
         header_body = header.group("body")
         self.assertIn('id="btnBack"', header_body)
-        self.assertIn('id="btnGenerateSeedance"', header_body)
+        self.assertNotIn('id="btnGenerateSeedance"', header_body)
         self.assertNotIn('id="btnCopy"', header_body)
         self.assertNotIn('id="btnSave"', header_body)
         self.assertNotIn('id="btnRedo"', header_body)
@@ -128,7 +128,7 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
         frame_body = frame.group("body")
         self.assertRegex(
             frame_body,
-            r'(?s)id="scriptOutput" class="so editable-output".*?id="resultActions" class="result-actions".*?id="btnMatchShots".*?id="btnCopy".*?id="btnSave".*?id="btnRedo"',
+            r'(?s)id="scriptOutput" class="so editable-output".*?id="resultActions" class="result-actions".*?id="btnGenerateSeedance".*?id="btnCopy".*?id="btnSave".*?id="btnRedo"',
         )
 
         self.assertIn('id="scriptOutput" class="so editable-output" contenteditable="true"', self.page)
@@ -142,15 +142,12 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
         self.assertIn("document.getElementById('resultActions').style.display='none'", self.page)
         self.assertIn("document.getElementById('resultActions').style.display='flex'", self.page)
 
-    def test_result_actions_can_match_shots_to_existing_copy(self):
-        self.assertIn('id="btnMatchShots"', self.page)
-        self.assertIn("为文案匹配画面", self.page)
-        self.assertIn("async function matchShotsForScript()", self.page)
-        self.assertIn("fetch('/api/scripts/match-shots'", self.page)
-        self.assertIn("script_content:script", self.page)
-        self.assertIn("script_id:currentScriptId", self.page)
-        self.assertIn("currentScript=d.script_content;document.getElementById('scriptOutput').textContent=currentScript", self.page)
-        self.assertIn("document.getElementById('btnMatchShots').addEventListener('click',matchShotsForScript)", self.page)
+    def test_result_actions_do_not_offer_match_shots_button(self):
+        self.assertNotIn('id="btnMatchShots"', self.page)
+        self.assertNotIn("为文案匹配画面", self.page)
+        self.assertNotIn("async function matchShotsForScript()", self.page)
+        self.assertNotIn("fetch('/api/scripts/match-shots'", self.page)
+        self.assertNotIn("document.getElementById('btnMatchShots').addEventListener", self.page)
 
     def test_result_action_bar_masks_scrolled_script_content(self):
         match = re.search(r"\.result-actions\{(?P<body>.*?)\}", self.page, flags=re.S)

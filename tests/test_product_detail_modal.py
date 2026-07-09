@@ -403,6 +403,31 @@ class ProductDetailDataTests(unittest.TestCase):
         self.assertTrue(by_id["usage_scenarios"]["items"])
         self.assertTrue(by_id["main_selling_points"]["items"])
 
+    def test_detail_payload_marks_product_price_as_editable_product_field(self):
+        from services.product_detail import build_product_detail_payload
+
+        product = SimpleNamespace(
+            id=5,
+            name="浅柔色素",
+            category="烘焙调色",
+            price=38.6,
+            original_price=None,
+            commission_rate=0,
+            brand="法采",
+            description="",
+            info_file=None,
+            pending_fields=[],
+            status="active",
+            selling_points=[],
+        )
+
+        detail = build_product_detail_payload(product, ROOT / "__missing_material_root__")
+        by_id = {section["id"]: section for section in detail["profile_sections"]}
+        price_item = next(item for item in by_id["product_price"]["items"] if item["label"] == "产品售价")
+
+        self.assertEqual(price_item["field"], "price")
+        self.assertTrue(price_item["editable"])
+
     def test_sparse_named_products_get_profile_fallbacks_without_metadata_as_selling_point(self):
         from services.product_detail import build_product_detail_payload
 
@@ -624,6 +649,13 @@ class ProductDetailTemplateTests(unittest.TestCase):
         self.assertIn("JSON.stringify(payload)", self.page)
         self.assertIn("onclick=\"saveProfileSection", self.page)
 
+    def test_product_detail_price_section_is_editable_and_saves_product_fields(self):
+        self.assertNotIn("if(section.id==='product_price'||!editableItems.length)return ''", self.page)
+        self.assertNotIn("if(sectionId==='product_price')return false", self.page)
+        self.assertNotIn("if(!section||section.id==='product_price')return;", self.page)
+        self.assertIn("saveProductFieldUpdates(productFieldUpdates)", self.page)
+        self.assertIn("'/api/products/'+selectedProductId", self.page)
+
     def test_product_detail_profile_sections_do_not_render_delete_buttons(self):
         self.assertNotIn("function deleteSellingPoint(pointId,button)", self.page)
         self.assertNotIn('class="detail-point-delete"', self.page)
@@ -664,7 +696,7 @@ class ProductDetailTemplateTests(unittest.TestCase):
         self.assertIn("product_usage:'产品用途'", self.page)
         self.assertIn("usage_scenarios:'使用场景'", self.page)
         self.assertIn("main_selling_points:'主要卖点'", self.page)
-        self.assertIn("body+=renderProfileItems(items,section.id);", self.page)
+        self.assertIn("body+=editingProfileSections[section.id]?renderProfileSectionEditor(section,editableItems):renderProfileItems(items,section.id);", self.page)
         self.assertIn("function isEditableProfileItem(item,sectionId)", self.page)
         self.assertIn("function editableProfileItems(items,sectionId)", self.page)
         self.assertIn("function renderProfileSectionActions(section,editableItems)", self.page)

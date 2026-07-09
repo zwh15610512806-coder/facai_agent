@@ -598,15 +598,11 @@ function profileSectionTitle(id){
 function renderProfileSection(section){
  const items=section.items||[];
  const skuPrices=section.sku_prices||[];
- const count=section.id==='product_price'?skuPrices.length:items.length;
+ const count=section.id==='product_price'?(items.length+skuPrices.length):items.length;
  const editableItems=editableProfileItems(items,section.id);
  let body='';
- if(section.id==='product_price'){
-  body+=renderProfileItems(items,section.id);
-  body+=renderProductSkuRows(skuPrices);
- }else{
-  body+=editingProfileSections[section.id]?renderProfileSectionEditor(section,editableItems):renderProfileItems(items,section.id);
- }
+ body+=editingProfileSections[section.id]?renderProfileSectionEditor(section,editableItems):renderProfileItems(items,section.id);
+ if(section.id==='product_price')body+=renderProductSkuRows(skuPrices);
  if(!body)body='<div class="detail-empty">暂无资料</div>';
  return '<section class="profile-section" data-section-id="'+esc(section.id||'')+'">'
   +'<div class="profile-section-hd"><div class="profile-section-title-row"><h3 class="profile-section-title">'+esc(section.title||'产品资料')+'</h3><span class="profile-section-count">'+esc(count||0)+' 条</span></div>'+renderProfileSectionActions(section,editableItems)+'</div>'
@@ -614,7 +610,7 @@ function renderProfileSection(section){
 }
 
 function renderProfileSectionActions(section,editableItems){
- if(section.id==='product_price'||!editableItems.length)return '';
+ if(!editableItems.length)return '';
  return '<div class="profile-section-actions">'
   +'<button type="button" class="profile-section-edit" onclick="editProfileSection(\''+esc(section.id||'')+'\')">编辑</button>'
   +'<button type="button" class="profile-section-save" onclick="saveProfileSection(\''+esc(section.id||'')+'\',this)">保存</button>'
@@ -636,7 +632,6 @@ function editableProfileItems(items,sectionId){
 }
 
 function isEditableProfileItem(item,sectionId){
- if(sectionId==='product_price')return false;
  if(item&&item.values&&item.values.length)return false;
  if(!item||!item.content)return false;
  return !!(item.id||item.point_id||item.priority||item.generated||item.editable);
@@ -670,7 +665,7 @@ async function refreshSelectedProduct(){
 
 async function saveProfileSection(sectionId,button){
  const section=(selectedProductDetail&&selectedProductDetail.profile_sections||[]).find(function(item){return item.id===sectionId;});
- if(!section||section.id==='product_price')return;
+ if(!section)return;
  if(!editingProfileSections[sectionId]){
   editProfileSection(sectionId);
   return;
@@ -683,9 +678,14 @@ async function saveProfileSection(sectionId,button){
  if(!entries.length){toast('没有可保存的内容','error');return;}
  try{
   await withBusyButton(button,'保存中...',async function(){
+   const productFieldUpdates={};
    for(let i=0;i<entries.length;i++){
     const base=editableItems[i]||{};
     const entry=entries[i];
+    if(base.field){
+     productFieldUpdates[base.field]=parseProductFieldValue(base.field,entry.content);
+     continue;
+    }
     const pointId=base.id||base.point_id||'';
     const payload={point_type:entry.label||base.label||base.point_type||profileSectionTitle(sectionId),content:entry.content,priority:Number(base.priority)||sectionFallbackPriority(sectionId,i)};
     let r;
@@ -697,6 +697,7 @@ async function saveProfileSection(sectionId,button){
     }
     if(!r.ok){throw new Error(await getApiErrorMessage(r,'保存失败'));}
    }
+   await saveProductFieldUpdates(productFieldUpdates);
    editingProfileSections[sectionId]=false;
    toast('资料已保存','success');
    await refreshSelectedProduct();
@@ -717,8 +718,23 @@ function parseProfileSectionEditor(text,items){
  }).filter(Boolean);
 }
 
+function parseProductFieldValue(field,value){
+ const text=String(value||'').replace(/[¥￥元,\s]/g,'').trim();
+ const match=text.match(/-?\d+(?:\.\d+)?/);
+ if(!match)throw new Error(field==='original_price'?'原价必须是数字':'产品售价必须是数字');
+ const number=Number(match[0]);
+ if(!Number.isFinite(number)||number<0)throw new Error(field==='original_price'?'原价必须是有效数字':'产品售价必须是有效数字');
+ return Math.round(number*100)/100;
+}
+
+async function saveProductFieldUpdates(productFieldUpdates){
+ if(!productFieldUpdates||!Object.keys(productFieldUpdates).length)return;
+ const r=await fetch('/api/products/'+selectedProductId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(productFieldUpdates)});
+ if(!r.ok)throw new Error(await getApiErrorMessage(r,'保存价格失败'));
+}
+
 function sectionFallbackPriority(sectionId,index){
- const bases={product_info:8900,product_usage:9000,usage_scenarios:9100,main_selling_points:9200};
+ const bases={product_info:8900,product_price:8950,product_usage:9000,usage_scenarios:9100,main_selling_points:9200};
  return (bases[sectionId]||9900)+index+1;
 }
 

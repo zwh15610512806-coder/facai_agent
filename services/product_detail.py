@@ -556,9 +556,13 @@ def build_profile_sections(detail: dict[str, Any]) -> list[dict[str, Any]]:
     price_skus = [_profile_sku_price(sku) for sku in detail.get("sku_prices") or []]
     price_items = []
     if detail.get("price") is not None:
-        price_items.append(_profile_item("产品售价", f"¥{_profile_price(detail.get('price'))}"))
+        item = _profile_item("产品售价", f"¥{_profile_price(detail.get('price'))}")
+        if item:
+            price_items.append({**item, "field": "price", "editable": True})
     if detail.get("original_price") is not None:
-        price_items.append(_profile_item("原价", f"¥{_profile_price(detail.get('original_price'))}"))
+        item = _profile_item("原价", f"¥{_profile_price(detail.get('original_price'))}")
+        if item:
+            price_items.append({**item, "field": "original_price", "editable": True})
     price_items.extend(point_buckets["product_price"])
 
     sections_by_id = {

@@ -27,8 +27,8 @@
 
 <style>
 .generate-main{max-width:1540px}
-.generate-result-hd{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;margin-bottom:16px}
-.generate-result-back{justify-self:end}
+.generate-result-hd{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.generate-result-back{margin-left:auto}
 .generate-result-layout{display:grid;grid-template-columns:minmax(480px,1fr) minmax(620px,720px);gap:16px;align-items:start}
 .generate-script-col{min-width:0;display:flex;flex-direction:column}
 .script-output-frame{position:relative;min-width:0;border-radius:var(--r);overflow:hidden}
@@ -441,7 +441,6 @@
 <span class="step step-done"><i data-lucide="check" style="width:15px;height:15px"></i></span>
 <span style="font-size:13px" id="resultMeta"></span>
 </div>
-<button id="btnGenerateSeedance" class="btn btn-pri btn-sm" type="button">生成提示词</button>
 <div class="generate-result-back" style="display:flex;justify-content:flex-end">
 <button id="btnBack" class="btn btn-ghost btn-sm">返回</button>
 </div></div>
@@ -451,7 +450,7 @@
 <div class="script-output-frame">
 <div id="scriptOutput" class="so editable-output" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="false"></div>
 <div id="resultActions" class="result-actions">
-<button id="btnMatchShots" class="btn btn-soft btn-sm">为文案匹配画面</button>
+<button id="btnGenerateSeedance" class="btn btn-pri btn-sm" type="button">生成提示词</button>
 <button id="btnCopy" class="btn btn-soft btn-sm">复制</button>
 <button id="btnSave" class="btn btn-soft btn-sm">存到模板库</button>
 <button id="btnRedo" class="btn btn-soft btn-sm">重新生成</button>
@@ -478,7 +477,7 @@
 <button id="btnCopySeedanceAll" class="btn btn-soft btn-sm" type="button">复制全部</button>
 </div>
 <div id="seedancePromptList" class="seedance-list">
-<div class="seedance-empty">生成脚本后，可先编辑左侧文案，再点击上方「生成提示词」生成 Seedance 2.0 画面提示词。</div>
+<div class="seedance-empty">生成脚本后，可先编辑左侧文案，再点击「生成提示词」生成 Seedance 2.0 画面提示词。</div>
 </div>
 </aside>
 </div>
@@ -564,7 +563,7 @@ function buildRegenerateRequirement(){
  const summary=previous&&!previous.startsWith('生成失败')?previous.slice(0,180):'';
  return '重新生成要求：这是一次重新生成，不要复用上一版脚本的开头、句式和推进顺序。上一版脚本开头摘要：'+summary+'。必须更换开头角度、第一句话句式、卖点顺序和 CTA；保留同一个产品、真实价格和产品资料，不要照搬上一版表达。';
 }
-function resetSeedancePrompts(msg){currentSeedancePrompts=[];document.getElementById('seedancePromptList').innerHTML='<div class="seedance-empty">'+escHtml(msg||'生成脚本后，可先编辑左侧文案，再点击上方「生成提示词」生成 Seedance 2.0 画面提示词。')+'</div>';}
+function resetSeedancePrompts(msg){currentSeedancePrompts=[];document.getElementById('seedancePromptList').innerHTML='<div class="seedance-empty">'+escHtml(msg||'生成脚本后，可先编辑左侧文案，再点击「生成提示词」生成 Seedance 2.0 画面提示词。')+'</div>';}
 function normalizeCustomVideoType(type){return String(type||'').replace(/[<>"'`\\]/g,'').trim().replace(/\s+/g,'').slice(0,20);}
 function loadCustomVideoTypes(){
  try{const raw=localStorage.getItem(CUSTOM_VIDEO_TYPES_KEY);const list=JSON.parse(raw||'[]');if(!Array.isArray(list))return [];
@@ -738,7 +737,7 @@ async function doGenerate(extra){
  document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='';
  document.getElementById('scriptOutput').style.display='none';document.getElementById('generatingHint').style.display='';document.getElementById('btnOptimize').disabled=true;
  document.getElementById('resultActions').style.display='none';
- resetSeedancePrompts('生成脚本后，可先编辑左侧文案，再点击上方「生成提示词」生成 Seedance 2.0 画面提示词。');
+ resetSeedancePrompts('生成脚本后，可先编辑左侧文案，再点击「生成提示词」生成 Seedance 2.0 画面提示词。');
  document.getElementById('btnGenerateSeedance').disabled=true;
  try{
   const selectedType=state.selectedType||'';
@@ -756,28 +755,9 @@ async function doGenerate(extra){
   var metaExtra='';if(preFill||extra)metaExtra=' <span class="text-accent" style="font-weight:600">（'+(preFill?'含需求':'')+(preFill&&extra?'+':'')+(extra?'已优化':'')+'）</span>';
   var templateInfo=d.template_name?' &middot; 引用模板：<b>'+escHtml(d.template_name)+'</b>':'';
   document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(d.product_name)+'</b> &middot; 类型：<b class="text-accent">'+escHtml(d.video_type)+'</b>'+templateInfo+metaExtra;
-  resetSeedancePrompts('可先直接编辑左侧生成脚本，确认后点击上方「生成提示词」。');
+  resetSeedancePrompts('可先直接编辑左侧生成脚本，确认后点击「生成提示词」。');
  }catch(e){currentScript='';currentScriptId=null;resetSeedancePrompts('生成失败后暂无提示词，请重新生成脚本。');document.getElementById('scriptOutput').textContent='生成失败：'+e.message}
  finally{state.generating=false;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnOptimize').disabled=false;document.getElementById('btnGenerateSeedance').disabled=false;}
-}
-
-async function matchShotsForScript(){
- const script=getEditedScript();
- if(!script||script.startsWith('生成失败'))return toast('请先生成或编辑有效文案','error');
- if(!state.selectedProduct)return toast('请先选择产品','error');
- const btn=document.getElementById('btnMatchShots');
- const oldText=btn.textContent;
- btn.disabled=true;btn.textContent='匹配中...';
- try{
-  const body={product_id:state.selectedProduct.id,script_content:script,script_id:currentScriptId};
-  const r=await fetch('/api/scripts/match-shots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok)throw new Error((await r.json()).detail||'匹配失败');
-  const d=await r.json();
-  currentScript=d.script_content;document.getElementById('scriptOutput').textContent=currentScript;
-  resetSeedancePrompts('已为文案匹配拍摄镜头，可继续编辑后点击上方「生成提示词」。');
-  toast('已为每句话匹配拍摄镜头','success');
- }catch(e){toast(e.message||'匹配失败','error');}
- finally{btn.disabled=false;btn.textContent=oldText;}
 }
 
 document.getElementById('btnAddCustomType').addEventListener('click',addCustomVideoType);
@@ -786,8 +766,7 @@ document.getElementById('btnGenerate').addEventListener('click',function(){doGen
 document.getElementById('optimizeInput').addEventListener('input',function(){document.getElementById('btnOptimize').disabled=!this.value.trim();});
 document.getElementById('btnOptimize').addEventListener('click',async function(){const s=document.getElementById('optimizeInput').value.trim();if(!s)return;await doGenerate('用户优化建议：'+s+'。请保持产品和视频类型不变，按要求重新生成。');document.getElementById('optimizeInput').value='';document.getElementById('btnOptimize').disabled=true;});
 document.getElementById('btnBack').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=false;currentScript='';currentScriptId=null;resetSeedancePrompts();});
-document.getElementById('scriptOutput').addEventListener('input',function(){currentScript=getEditedScript();resetSeedancePrompts('脚本已修改，请点击上方「生成提示词」，按当前版本重新生成 Seedance 2.0 提示词。');});
-document.getElementById('btnMatchShots').addEventListener('click',matchShotsForScript);
+document.getElementById('scriptOutput').addEventListener('input',function(){currentScript=getEditedScript();resetSeedancePrompts('脚本已修改，请点击「生成提示词」，按当前版本重新生成 Seedance 2.0 提示词。');});
 document.getElementById('btnCopy').addEventListener('click',function(){const t=getEditedScript();if(!t)return toast('暂无可复制内容','error');copyText(t).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('btnSave').addEventListener('click',async function(){if(!currentScriptId)return toast('请先生成脚本','error');try{const r=await fetch('/api/scripts/history/'+currentScriptId+'/save-to-library',{method:'POST'});if(r.ok)toast('已保存到模板库','success');else toast('保存失败','error');}catch(e){toast('保存失败','error');}});
 document.getElementById('btnRedo').addEventListener('click',function(){const regenRequirement=buildRegenerateRequirement();currentScriptId=null;state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';resetSeedancePrompts();doGenerate(regenRequirement);});

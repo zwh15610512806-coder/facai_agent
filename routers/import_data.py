@@ -11,6 +11,7 @@ from services.product_markdown_importer import (
     normalize_product_name,
     parse_product_markdown,
 )
+from services.product_price_extractor import apply_product_price_metadata
 import asyncio
 import csv
 import io
@@ -324,30 +325,42 @@ def _import_excel_content(content: bytes, db: Session) -> tuple[ImportResult, li
             if not name:
                 continue
 
-            existing = db.query(Product).filter(Product.name == name).first()
-            if existing:
-                result.skipped += 1
-                continue
-
             first_row = group.iloc[0]
             try:
                 category = _safe_text(first_row.get("category"))
-                product = Product(
-                    name=name,
-                    category=category,
-                    price=_safe_float(first_row.get("price", 0)),
-                    original_price=_safe_float(first_row.get("original_price")),
-                    commission_rate=_safe_float(first_row.get("commission_rate"), 0),
-                    brand=_safe_text(first_row.get("brand")) or None,
-                    description=_safe_text(first_row.get("description")) or None,
-                )
+                price = _safe_float(first_row.get("price"))
+                original_price = _safe_float(first_row.get("original_price"))
+                commission_rate = _safe_float(first_row.get("commission_rate")) if "commission_rate" in group.columns else None
+                brand = _safe_text(first_row.get("brand")) or None
+                description = _safe_text(first_row.get("description")) or None
+                product = db.query(Product).filter(Product.name == name).first()
 
-                if not product.category or not product.price:
+                if product is None and (not category or not price):
                     result.errors.append(f"产品 '{name}'：品类或价格缺失，已跳过")
                     continue
 
-                db.add(product)
-                db.flush()
+                if product is None:
+                    product = Product(
+                        name=name,
+                        category=category,
+                        price=price or 0,
+                        original_price=original_price,
+                        commission_rate=commission_rate or 0,
+                        brand=brand,
+                        description=description,
+                    )
+                    db.add(product)
+                    db.flush()
+                else:
+                    _update_existing_product_from_excel_row(
+                        product,
+                        category=category,
+                        price=price,
+                        original_price=original_price,
+                        commission_rate=commission_rate,
+                        brand=brand,
+                        description=description,
+                    )
 
                 for _, row in group.iterrows():
                     sp_type = str(row.get("selling_point_type", "")).strip() if pd.notna(row.get("selling_point_type")) else ""
@@ -500,6 +513,43 @@ def _apply_markdown_update(product: Product, parsed) -> list[str]:
 
     product.pending_fields = sorted(pending_fields)
     return updated_fields
+
+
+def _update_existing_product_from_excel_row(
+    product: Product,
+    *,
+    category: str,
+    price: float | None,
+    original_price: float | None,
+    commission_rate: float | None,
+    brand: str | None,
+    description: str | None,
+) -> list[str]:
+    updated_fields: list[str] = []
+    pending_fields = set(_normalize_pending_fields(product.pending_fields))
+
+    if category and product.category != category:
+        product.category = category
+        updated_fields.append("category")
+        pending_fields.discard("category")
+    if price is not None and price > 0:
+        updated_fields.extend(apply_product_price_metadata(product, {"price": price}))
+        pending_fields = set(_normalize_pending_fields(product.pending_fields))
+    if original_price is not None and original_price > 0:
+        updated_fields.extend(apply_product_price_metadata(product, {"original_price": original_price}))
+        pending_fields = set(_normalize_pending_fields(product.pending_fields))
+    if commission_rate is not None and product.commission_rate != commission_rate:
+        product.commission_rate = commission_rate
+        updated_fields.append("commission_rate")
+    if brand and product.brand != brand:
+        product.brand = brand
+        updated_fields.append("brand")
+    if description and product.description != description:
+        product.description = description
+        updated_fields.append("description")
+
+    product.pending_fields = sorted(pending_fields)
+    return list(dict.fromkeys(updated_fields))
 
 
 def _normalize_pending_fields(value) -> list[str]:

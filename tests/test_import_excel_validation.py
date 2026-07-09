@@ -83,6 +83,43 @@ class ImportExcelValidationTests(unittest.TestCase):
         self.assertIn("品类或价格缺失", body["errors"][0])
         self.assertEqual(self.db.query(Product).count(), 0)
 
+    def test_excel_import_updates_existing_product_price(self):
+        product = Product(
+            name="浅柔色素",
+            category="烘焙调色",
+            price=0,
+            pending_fields=["price"],
+            status="active",
+        )
+        self.db.add(product)
+        self.db.commit()
+        content = _xlsx_bytes([{
+            "name": "浅柔色素",
+            "category": "烘焙调色",
+            "price": 38.6,
+            "original_price": 45,
+        }])
+
+        response = self.client.post(
+            "/api/import/excel",
+            files={
+                "file": (
+                    "products.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["success"], 1)
+        self.assertEqual(body["skipped"], 0)
+        self.db.refresh(product)
+        self.assertEqual(product.price, 38.6)
+        self.assertEqual(product.original_price, 45)
+        self.assertNotIn("price", product.pending_fields or [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -16,6 +17,14 @@ from services import selling_point_extractor
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _xlsx_bytes(rows):
+    import pandas as pd
+
+    buffer = BytesIO()
+    pd.DataFrame(rows).to_excel(buffer, index=False, header=False)
+    return buffer.getvalue()
 
 
 def _local_materials_available():
@@ -134,6 +143,36 @@ class ProductFileApiTests(unittest.TestCase):
         self.assertIn(".xlsx", response.json()["detail"])
         self.assertEqual(list(Path(self.tmp.name).glob("*")), [])
         self.assertEqual(self.sync_calls, [])
+
+    def test_upload_xlsx_updates_product_price_from_price_row(self):
+        product = self._add_product("浅柔色素")
+        product.price = 0
+        product.pending_fields = ["price"]
+        self.db.commit()
+        content = _xlsx_bytes([
+            ["产品内容一页纸", "", "", ""],
+            ["基础信息", "图片", "产品关键词", "法采浅柔色素"],
+            ["", "", "规格", "120ml"],
+            ["", "", "价格", 38.6, 25.09],
+            ["", "", "活动", "一件8.5折，单件到手28.5"],
+        ])
+
+        response = self.client.post(
+            f"/api/products/{product.id}/upload",
+            files={
+                "file": (
+                    "浅柔色素产品内容营销一页纸.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.db.refresh(product)
+        self.assertEqual(product.price, 38.6)
+        self.assertNotIn("price", product.pending_fields or [])
+        self.assertEqual(self.sync_calls, [product.id])
 
     def test_failed_same_name_upload_preserves_existing_file(self):
         product = self._add_product()
