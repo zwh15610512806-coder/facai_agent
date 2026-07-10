@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>AI配置 - 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=nav-20260708-warm-workbench">
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260710-hardening">
 <script src="/static/vendor/lucide.min.js"></script>
-<script src="/static/js/common.js?v=20260708-launch"></script>
+<script src="/static/js/common.js?v=20260710-hardening"></script>
 <style>
 body{background:var(--bg)}
 .ai-config-main{max-width:1440px;padding-top:24px}
@@ -42,6 +42,9 @@ body{background:var(--bg)}
 .metric{border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--surface-darker);padding:12px}
 .metric-label{font-size:11px;font-weight:900;color:var(--text-3)}
 .metric-value{font-family:var(--font-ui);font-size:22px;font-weight:900;color:var(--text);line-height:1.2;margin-top:2px}
+.panel-head-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.panel-head-row .panel-title{margin:0}
+.vector-error{margin-top:10px;border:1px solid var(--border-soft);border-radius:var(--r-sm);padding:10px;background:var(--surface-darker);font-size:12px;line-height:1.6;color:var(--text-2);overflow-wrap:anywhere}
 .recent-table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm)}
 .usage-table{width:100%;border-collapse:collapse;font-size:12px;min-width:720px;background:var(--surface)}
 .usage-table th,.usage-table td{padding:9px 10px;border-bottom:1px solid var(--border-soft);text-align:left;vertical-align:top}
@@ -133,6 +136,19 @@ body{background:var(--bg)}
         <div id="providerStatusList" class="provider-stack"></div>
       </aside>
       <section class="panel" style="grid-column:1/-1">
+        <div class="panel-head-row">
+          <h2 class="panel-title">向量同步队列</h2>
+          <button id="retryVectorSyncBtn" class="btn btn-soft btn-sm" type="button" onclick="retryVectorSync()"><i data-lucide="refresh-cw"></i>一键重试</button>
+        </div>
+        <div id="vectorSyncMetrics" class="metric-grid">
+          <div class="metric"><div class="metric-label">待同步</div><div id="vectorPending" class="metric-value">0</div></div>
+          <div class="metric"><div class="metric-label">同步中</div><div id="vectorRunning" class="metric-value">0</div></div>
+          <div class="metric"><div class="metric-label">需人工重试</div><div id="vectorFailed" class="metric-value">0</div></div>
+          <div class="metric"><div class="metric-label">已成功</div><div id="vectorSucceeded" class="metric-value">0</div></div>
+        </div>
+        <div id="vectorSyncRecentError" class="vector-error">最近错误：暂无</div>
+      </section>
+      <section class="panel" style="grid-column:1/-1">
         <h2 class="panel-title">Token 统计</h2>
         <div class="metric-grid">
           <div class="metric"><div class="metric-label">今日 Token</div><div id="todayTokens" class="metric-value">0</div></div>
@@ -190,7 +206,7 @@ async function loadAll(){
   renderProviderStatus();
   renderInterfaceList();
   renderCurrentInterface();
-  await loadUsage();
+  await Promise.all([loadUsage(),loadVectorSync()]);
  }catch(error){
   toast(error.message||'AI配置加载失败','error');
  }
@@ -371,6 +387,37 @@ async function loadUsage(){
   renderUsageTable(data.records||[]);
  }catch(error){
   document.getElementById('usageRecordBody').innerHTML='<tr><td colspan="8">'+escHtml(error.message||'加载失败')+'</td></tr>';
+ }
+}
+
+async function loadVectorSync(){
+ try{
+  const data=await fetchJson('/api/ai-config/vector-sync');
+  document.getElementById('vectorPending').textContent=fmtNumber(data.pending);
+  document.getElementById('vectorRunning').textContent=fmtNumber(data.running);
+  document.getElementById('vectorFailed').textContent=fmtNumber(data.failed);
+  document.getElementById('vectorSucceeded').textContent=fmtNumber(data.succeeded);
+  const error=data.recent_error;
+  document.getElementById('vectorSyncRecentError').textContent=error
+   ?'最近错误：'+error.entity_type+' #'+error.entity_id+'（第 '+error.attempt_count+' 次） '+error.message
+   :'最近错误：暂无';
+ }catch(error){
+  document.getElementById('vectorSyncRecentError').textContent='同步状态加载失败：'+(error.message||'未知错误');
+ }
+}
+
+async function retryVectorSync(){
+ const button=document.getElementById('retryVectorSyncBtn');
+ button.disabled=true;
+ try{
+  const data=await fetchJson('/api/ai-config/vector-sync/retry',{method:'POST'});
+  toast('已重新排队 '+fmtNumber(data.queued)+' 项向量同步任务','success');
+  await loadVectorSync();
+ }catch(error){
+  toast(error.message||'重试失败','error');
+ }finally{
+  button.disabled=false;
+  renderIcons();
  }
 }
 

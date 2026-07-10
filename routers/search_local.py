@@ -21,6 +21,11 @@ SEARCH_ROOTS = [
 ]
 
 INDEX_PATH = Path(os.getenv("SEARCH_INDEX_PATH", "./data/search_index.json"))
+INDEX_DB_PATH = Path(os.getenv("SEARCH_INDEX_DB_PATH", "./data/search_index.db"))
+SEARCH_INDEX_BACKEND = os.getenv("SEARCH_INDEX_BACKEND", "sqlite").strip().lower() or "sqlite"
+_DEFAULT_INDEX_PATH = INDEX_PATH
+_DEFAULT_INDEX_DB_PATH = INDEX_DB_PATH
+_BACKEND_WAS_EXPLICIT = "SEARCH_INDEX_BACKEND" in os.environ
 
 FILE_TYPE_MAP = {
     "document": [".doc", ".docx", ".pdf", ".txt", ".xls", ".xlsx", ".ppt", ".pptx", ".csv", ".md", ".json", ".xml"],
@@ -41,7 +46,25 @@ _state: dict[str, Any] = {
     "last_indexed": None,
     "total_files": 0,
     "message": "",
+    "migration_status": "not_started",
+    "last_error": "",
 }
+
+
+def _active_backend() -> str:
+    if SEARCH_INDEX_BACKEND == "json":
+        return "json"
+    if _BACKEND_WAS_EXPLICIT or INDEX_DB_PATH != _DEFAULT_INDEX_DB_PATH or INDEX_PATH == _DEFAULT_INDEX_PATH:
+        return "sqlite"
+    # Existing tests and one-release callers that override only SEARCH_INDEX_PATH
+    # retain the legacy JSON backend.
+    return "json"
+
+
+def _sqlite_index():
+    from services.search_index import SQLiteSearchIndex
+
+    return SQLiteSearchIndex(INDEX_DB_PATH)
 
 
 def _json(data: dict[str, Any], status_code: int = 200) -> JSONResponse:
@@ -137,7 +160,30 @@ def _load_index() -> None:
         if _loaded:
             return
         _loaded = True
+        if _active_backend() == "sqlite":
+            try:
+                index = _sqlite_index()
+                if not INDEX_DB_PATH.exists() and INDEX_PATH.exists():
+                    _state["migration_status"] = "importing_json"
+                    index.import_json(INDEX_PATH, allowed_path=_is_allowed_file_path)
+                    _state["migration_status"] = "imported_json"
+                elif INDEX_DB_PATH.exists():
+                    _state["migration_status"] = "ready"
+                else:
+                    _state["migration_status"] = "waiting_for_index"
+                status = index.status()
+                _files = []
+                _files_by_id = {}
+                _state["last_indexed"] = status["last_indexed"]
+                _state["total_files"] = status["total_files"]
+                _state["last_error"] = ""
+            except Exception as exc:
+                _state["migration_status"] = "failed"
+                _state["last_error"] = str(exc)[:1000]
+                _state["message"] = f"读取 SQLite 索引失败：{exc}"
+            return
         if not INDEX_PATH.exists():
+            _state["migration_status"] = "json_missing"
             return
         try:
             import json
@@ -155,8 +201,10 @@ def _load_index() -> None:
             _files_by_id = {int(item["id"]): item for item in files if "id" in item}
             _state["last_indexed"] = payload.get("last_indexed")
             _state["total_files"] = len(files)
+            _state["migration_status"] = "json_ready"
         except Exception as exc:
             _state["message"] = f"读取索引缓存失败：{exc}"
+            _state["last_error"] = str(exc)[:1000]
 
 
 def _scan_roots() -> tuple[list[dict[str, Any]], list[str]]:
@@ -193,6 +241,23 @@ def _scan_roots() -> tuple[list[dict[str, Any]], list[str]]:
     return files, errors
 
 
+def _iter_scan_entries(errors: list[str]):
+    next_id = 1
+    for root in SEARCH_ROOTS:
+        if not os.path.exists(root):
+            errors.append(f"路径不可访问：{root}")
+            continue
+        for current_root, dir_names, file_names in os.walk(root):
+            dir_names.sort()
+            file_names.sort()
+            for name, is_dir in [*( (name, True) for name in dir_names), *( (name, False) for name in file_names)]:
+                path = os.path.join(current_root, name)
+                entry = _entry(next_id, path, root, is_dir=is_dir)
+                if entry:
+                    yield entry
+                    next_id += 1
+
+
 def _publish_partial_index(files: list[dict[str, Any]], force: bool = False) -> None:
     if not force and len(files) % 200 != 0:
         return
@@ -204,13 +269,50 @@ def _publish_partial_index(files: list[dict[str, Any]], force: bool = False) -> 
         _state["message"] = f"索引中，已发现 {len(files)} 个文件"
 
 
-def _run_index() -> None:
+def _run_index(job_id: int | None = None) -> None:
     global _files, _files_by_id
     with _lock:
         _state["is_indexing"] = True
         _state["message"] = "索引中"
 
     try:
+        if _active_backend() == "sqlite":
+            errors: list[str] = []
+            last_indexed = _now_iso()
+
+            def publish_progress(count: int) -> None:
+                with _lock:
+                    _state["total_files"] = count
+                    _state["message"] = f"索引中，已发现 {count} 个文件"
+                if job_id:
+                    from services.job_runs import update_job
+                    update_job(job_id, current=count, message=f"已发现 {count} 个文件")
+
+            count = _sqlite_index().replace_from_entries(
+                _iter_scan_entries(errors),
+                last_indexed,
+                sort_and_reassign=True,
+                progress=publish_progress,
+            )
+            # Keep a one-release JSON fallback without rebuilding a 61 MB list in memory.
+            _sqlite_index().export_json(INDEX_PATH)
+            with _lock:
+                _files = []
+                _files_by_id = {}
+                _state["last_indexed"] = last_indexed
+                _state["total_files"] = count
+                _state["message"] = "；".join(errors) if errors else "索引完成"
+                _state["migration_status"] = "ready"
+                _state["last_error"] = ""
+            if job_id:
+                from services.job_runs import finish_job
+                finish_job(
+                    job_id,
+                    status="succeeded",
+                    message="检索索引重建完成",
+                    details={"total_files": count, "errors": errors},
+                )
+            return
         files, errors = _scan_roots()
         _publish_partial_index(files, force=True)
         last_indexed = _now_iso()
@@ -224,6 +326,15 @@ def _run_index() -> None:
     except Exception as exc:
         with _lock:
             _state["message"] = f"索引失败：{exc}"
+            _state["last_error"] = str(exc)[:1000]
+        if job_id:
+            from services.job_runs import finish_job
+            finish_job(
+                job_id,
+                status="failed",
+                message="检索索引重建失败",
+                error_summary=str(exc),
+            )
     finally:
         with _lock:
             _state["is_indexing"] = False
@@ -340,6 +451,15 @@ def _search_items(
     folder: str = "",
 ) -> list[dict[str, Any]]:
     _load_index()
+    if _active_backend() == "sqlite":
+        return _sqlite_index().search(
+            q=q,
+            file_type=file_type,
+            ext=ext,
+            date_from=date_from,
+            date_to=date_to,
+            folder=folder,
+        )
     q = q.strip().lower()
     ext = _normalise_ext(ext)
 
@@ -391,18 +511,64 @@ def _page(items: list[dict[str, Any]], page: int, per_page: int) -> dict[str, An
     }
 
 
+def _search_page(
+    *,
+    q: str = "",
+    file_type: str = "",
+    ext: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    folder: str = "",
+    page: int = 1,
+    per_page: int = 20,
+) -> dict[str, Any]:
+    _load_index()
+    if _active_backend() == "sqlite":
+        payload = _sqlite_index().search_page(
+            q=q,
+            file_type=file_type,
+            ext=ext,
+            date_from=date_from,
+            date_to=date_to,
+            folder=folder,
+            page=page,
+            per_page=per_page,
+        )
+        payload["files"] = [_public_item(item) for item in payload["files"]]
+        return {"success": True, **payload}
+    return _page(
+        _search_items(
+            q=q,
+            file_type=file_type,
+            ext=ext,
+            date_from=date_from,
+            date_to=date_to,
+            folder=folder,
+        ),
+        page,
+        per_page,
+    )
+
+
 @router.get("/index/status")
 async def index_status():
     _load_index()
     with _lock:
-        return _json({
+        payload = {
             "success": True,
             "is_indexing": _state["is_indexing"],
             "last_indexed": _state["last_indexed"],
             "total_files": _state["total_files"],
             "message": _state["message"],
             "roots": SEARCH_ROOTS,
-        })
+            "backend": _active_backend(),
+            "migration_status": _state.get("migration_status", "not_started"),
+            "last_error": _state.get("last_error", ""),
+        }
+    if _active_backend() == "sqlite":
+        from services.job_runs import latest_job
+        payload["job_run"] = latest_job("search_rebuild")
+    return _json(payload)
 
 
 @router.post("/index/start")
@@ -414,7 +580,11 @@ async def start_index():
         _state["is_indexing"] = True
         _state["message"] = "索引启动中"
 
-    thread = threading.Thread(target=_run_index, name="facai-search-index", daemon=True)
+    job_id = None
+    if _active_backend() == "sqlite":
+        from services.job_runs import start_job
+        job_id = start_job("search_rebuild", message="检索索引启动中", details={"roots": SEARCH_ROOTS})
+    thread = threading.Thread(target=_run_index, args=(job_id,), name="facai-search-index", daemon=True)
     thread.start()
     return _json({"success": True, "message": "索引已在后台启动"})
 
@@ -430,8 +600,16 @@ async def search_files(
     page: int = Query(1),
     per_page: int = Query(20),
 ):
-    items = _search_items(q=q, file_type=type, ext=ext, date_from=date_from, date_to=date_to, folder=folder)
-    return _json(_page(items, page, per_page))
+    return _json(_search_page(
+        q=q,
+        file_type=type,
+        ext=ext,
+        date_from=date_from,
+        date_to=date_to,
+        folder=folder,
+        page=page,
+        per_page=per_page,
+    ))
 
 
 @router.post("/ai-search")
@@ -447,23 +625,25 @@ async def ai_search(request: Request):
         return _json({"success": False, "message": "请输入搜索内容", "files": [], "total": 0, "total_pages": 1})
 
     parsed = _parse_ai_query(query)
-    items = _search_items(
+    payload = _search_page(
         q=parsed["q"],
         file_type=parsed["file_type"],
         ext=parsed["extension"],
         date_from=parsed["date_from"],
         date_to=parsed["date_to"],
+        page=page,
+        per_page=per_page,
     )
-    if not items and parsed["q"] != query:
-        items = _search_items(
+    if not payload["files"] and parsed["q"] != query:
+        payload = _search_page(
             q=query,
             file_type=parsed["file_type"],
             ext=parsed["extension"],
             date_from=parsed["date_from"],
             date_to=parsed["date_to"],
+            page=page,
+            per_page=per_page,
         )
-
-    payload = _page(items, page, per_page)
     payload["ai_understanding"] = {
         "summary": f"按“{parsed['q']}”搜索" if parsed["q"] else f"搜索：{query}",
         "keywords": [parsed["q"]] if parsed["q"] else [],
@@ -481,17 +661,20 @@ async def search_summary(request: Request):
         body = await request.json()
     except Exception:
         body = {}
-    items = _search_items(
+    payload = _search_page(
         q=str(body.get("query") or ""),
         file_type=str(body.get("file_type") or ""),
         ext=str(body.get("extension") or ""),
         date_from=str(body.get("date_from") or ""),
         date_to=str(body.get("date_to") or ""),
+        page=1,
+        per_page=10,
     )
-    top = items[:10]
+    top = payload["files"]
+    total = payload["total"]
     lines = [
         "## 搜索结果汇总",
-        f"- 共找到 {len(items)} 个匹配项。",
+        f"- 共找到 {total} 个匹配项。",
     ]
     if top:
         lines.append("- 前 10 个结果：")
@@ -503,6 +686,11 @@ async def search_summary(request: Request):
 
 def _get_indexed_file(file_id: int) -> dict[str, Any] | None:
     _load_index()
+    if _active_backend() == "sqlite":
+        item = _sqlite_index().get(file_id)
+        if not item or not _is_allowed_file_path(item.get("file_path", "")):
+            return None
+        return item
     with _lock:
         item = _files_by_id.get(file_id)
     if not item or not _is_allowed_file_path(item.get("file_path", "")):

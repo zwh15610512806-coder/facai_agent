@@ -16,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from database import Base
 from models import ViralScript
+from tests.frontend_source import read_page_source
 from routers import templates as templates_router
 
 
@@ -24,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class TemplateWorkbookImportUiTests(unittest.TestCase):
     def test_template_page_exposes_workbook_import_and_image_gallery(self):
-        page = (ROOT / "templates" / "templates.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("templates.html")
 
         self.assertIn('id="workbookImportFile"', page)
         self.assertIn("importTemplateWorkbook", page)

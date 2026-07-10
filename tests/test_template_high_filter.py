@@ -9,6 +9,7 @@ from models import ReferenceScript, ViralScript
 from routers.reference_scripts import list_reference_scripts
 from routers.templates import list_viral_scripts
 from schemas import ViralScriptOut, ViralScriptPageOut
+from tests.frontend_source import read_page_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class TemplateHighFilterPageTests(unittest.TestCase):
     def setUp(self):
-        self.page = (ROOT / "templates" / "templates.html").read_text(encoding="utf-8-sig")
+        self.page = read_page_source("templates.html")
 
     def test_high_conversion_filter_is_a_standalone_checkbox(self):
         self.assertIn('class="high-filter"', self.page)
@@ -28,8 +29,8 @@ class TemplateHighFilterPageTests(unittest.TestCase):
     def test_high_conversion_filter_is_sent_to_list_and_search_requests(self):
         self.assertIn("function buildListUrl(base)", self.page)
         self.assertIn("high_only=1", self.page)
-        self.assertIn("fetch(buildListUrl('/api/templates/viral/list'))", self.page)
-        self.assertIn("fetch(buildReferenceUrl())", self.page)
+        self.assertIn("request(buildListUrl('/api/templates/viral/list'))", self.page)
+        self.assertIn("request(buildReferenceUrl())", self.page)
         self.assertIn("if(highOnly)params+='&high_only=1';", self.page)
 
 

@@ -228,3 +228,40 @@ class ProductRagQueryLog(Base):
     latency_ms = Column(Integer, nullable=False, default=0)
     error_summary = Column(Text)
     created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
+class VectorSyncJob(Base):
+    """Durable outbox for keeping SQLite business data and Chroma in sync."""
+
+    __tablename__ = "vector_sync_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity_type = Column(String(40), nullable=False, index=True)
+    entity_id = Column(Integer, nullable=False, index=True)
+    operation = Column(String(20), nullable=False)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    last_error = Column(Text)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    completed_at = Column(DateTime)
+
+
+class JobRun(Base):
+    """Persistent progress and outcome for long-running local jobs."""
+
+    __tablename__ = "job_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_type = Column(String(60), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    progress_current = Column(Integer, nullable=False, default=0)
+    progress_total = Column(Integer, nullable=False, default=0)
+    message = Column(Text)
+    details = Column(JSON, default=dict)
+    error_summary = Column(Text)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    started_at = Column(DateTime)
+    finished_at = Column(DateTime)
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

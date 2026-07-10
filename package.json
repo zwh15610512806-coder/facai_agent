@@ -1,5 +1,11 @@
 {
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
   "dependencies": {
     "pptxgenjs": "^4.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
   }
 }

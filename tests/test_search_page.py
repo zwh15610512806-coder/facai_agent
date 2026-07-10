@@ -2,13 +2,15 @@ import re
 import unittest
 from pathlib import Path
 
+from tests.frontend_source import read_page_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class SearchPageTests(unittest.TestCase):
     def setUp(self):
-        self.page = (ROOT / "templates" / "search.html").read_text(encoding="utf-8-sig")
+        self.page = read_page_source("search.html")
 
     def test_search_page_uses_library_style_workspace(self):
         self.assertIn('class="page-main search-page"', self.page)

@@ -181,6 +181,30 @@ class TxtBatchScriptUploadTests(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
         self.assertEqual(self.db.query(ViralScript).count(), 0)
 
+    def test_batch_upload_rejects_too_many_files(self):
+        original_limit = templates_router.MAX_TXT_BATCH_FILES
+        templates_router.MAX_TXT_BATCH_FILES = 2
+        try:
+            response = self.client.post(
+                "/api/templates/viral/upload-txt-batch",
+                files=[
+                    (
+                        "files",
+                        (
+                            f"script-{index}.txt",
+                            "This script has enough text to pass the minimum content length check.",
+                            "text/plain",
+                        ),
+                    )
+                    for index in range(3)
+                ],
+            )
+        finally:
+            templates_router.MAX_TXT_BATCH_FILES = original_limit
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(self.db.query(ViralScript).count(), 0)
+
     def test_local_txt_scan_recursively_imports_txt_files_with_relative_titles_and_metadata(self):
         nested = self.local_source / "夹心珠" / "脚本" / "4.10体验"
         nested.mkdir(parents=True)

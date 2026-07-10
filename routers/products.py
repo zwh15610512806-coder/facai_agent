@@ -8,7 +8,7 @@ from config import MAX_UPLOAD_SIZE
 from database import get_db
 from models import Product, SellingPoint
 from schemas import (
-    ProductCreate, ProductUpdate, ProductOut,
+    ProductCreate, ProductUpdate, ProductOut, ProductWriteOut,
     ProductListItem, SellingPointOut, SellingPointUpdate, ApiResponse
 )
 from typing import List, Optional
@@ -442,7 +442,7 @@ def get_product_detail(product_id: int, db: Session = Depends(get_db)):
     return build_product_detail_payload(product)
 
 
-@router.post("/", response_model=ProductOut)
+@router.post("/", response_model=ProductWriteOut)
 def create_product(data: ProductCreate, db: Session = Depends(get_db)):
     """创建产品"""
     sps_data = data.selling_points
@@ -456,13 +456,16 @@ def create_product(data: ProductCreate, db: Session = Depends(get_db)):
         selling_point = SellingPoint(product_id=product.id, **sp.model_dump())
         db.add(selling_point)
 
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product.id, "upsert")
     db.commit()
     db.refresh(product)
-    _sync_product_index(product.id, db)
+    sync_status = _sync_product_index(product.id, db)
+    product.index_sync_status = sync_status if sync_status in {"synced", "pending"} else "synced"
     return product
 
 
-@router.put("/{product_id}", response_model=ProductOut)
+@router.put("/{product_id}", response_model=ProductWriteOut)
 def update_product(product_id: int, data: ProductUpdate, db: Session = Depends(get_db)):
     """更新产品"""
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -473,9 +476,12 @@ def update_product(product_id: int, data: ProductUpdate, db: Session = Depends(g
     for key, value in update_data.items():
         setattr(product, key, value)
 
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product.id, "upsert")
     db.commit()
     db.refresh(product)
-    _sync_product_index(product.id, db)
+    sync_status = _sync_product_index(product.id, db)
+    product.index_sync_status = sync_status if sync_status in {"synced", "pending"} else "synced"
     return product
 
 
@@ -486,10 +492,12 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
 
-    _delete_product_index(product_id)
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product_id, "delete")
     db.delete(product)
     db.commit()
-    return ApiResponse(message="产品已删除")
+    index_sync_status = _delete_product_index(product_id)
+    return ApiResponse(message="产品已删除", data={"index_sync_status": index_sync_status})
 
 
 # ========== 卖点管理 ==========
@@ -523,6 +531,8 @@ def add_selling_point(
     )
     _clear_hidden_marker(product_id, priority, db)
     db.add(sp)
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product_id, "upsert")
     db.commit()
     db.refresh(sp)
     _sync_product_index(product_id, db)
@@ -543,6 +553,8 @@ def hide_selling_point(
         raise HTTPException(status_code=400, detail="缺少卖点位置")
 
     _hide_selling_point_priority(product_id, data.priority, db)
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product_id, "upsert")
     db.commit()
     _sync_product_index(product_id, db)
     return ApiResponse(message="卖点已删除")
@@ -577,6 +589,8 @@ def update_selling_point(
         sp.priority = int(update_data["priority"])
 
     _clear_hidden_marker(product_id, sp.priority, db)
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product_id, "upsert")
     db.commit()
     db.refresh(sp)
     _sync_product_index(product_id, db)
@@ -599,6 +613,8 @@ def delete_selling_point(product_id: int, sp_id: int, db: Session = Depends(get_
     db.flush()
     if should_hide_material:
         _hide_selling_point_priority(product_id, priority, db)
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product_id, "upsert")
     db.commit()
     _sync_product_index(product_id, db)
     return ApiResponse(message="卖点已删除")
@@ -634,6 +650,8 @@ async def upload_product_file(
     # 更新数据库
     product.info_file = file_path
     price_updates = apply_product_price_metadata(product, extract_product_price_metadata(file_path))
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product_id, "upsert")
     db.commit()
 
     # 自动从资料中提取卖点
@@ -652,6 +670,7 @@ async def upload_product_file(
                 priority=pt.get("priority", i + 1),
             )
             db.add(sp)
+        enqueue_vector_sync(db, "product", product_id, "upsert")
         db.commit()
         _sync_product_index(product_id, db)
         return ApiResponse(
@@ -705,6 +724,8 @@ def delete_product_file(product_id: int, db: Session = Depends(get_db)):
         safe_path.unlink()
 
     product.info_file = None
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product_id, "upsert")
     db.commit()
     _sync_product_index(product_id, db)
     return ApiResponse(message="文件已删除")
@@ -746,6 +767,8 @@ async def extract_points_from_file(product_id: int, db: Session = Depends(get_db
         )
         db.add(sp)
 
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "product", product_id, "upsert")
     db.commit()
     _sync_product_index(product_id, db)
     return ApiResponse(
@@ -787,6 +810,8 @@ async def extract_all_points(db: Session = Depends(get_db)):
                         priority=pt.get("priority", i + 1),
                     )
                     db.add(sp)
+                from services.vector_sync import enqueue_vector_sync
+                enqueue_vector_sync(db, "product", product.id, "upsert")
                 db.commit()
                 _sync_product_index(product.id, db)
                 results.append({"id": product.id, "name": product.name, "status": f"已提取{len(points)}条"})
@@ -805,17 +830,11 @@ from vector_store import get_chroma_store
 
 
 def _sync_product_index(product_id: int, db: Session):
-    """同步产品到 ChromaDB"""
-    try:
-        from vector_store.product_store import ProductVectorStore
-        store = get_chroma_store()
-        if not store.is_available:
-            return
-        product = db.query(Product).filter(Product.id == product_id).first()
-        if product and product.status == "active":
-            ProductVectorStore().index_product(product, db)
-    except Exception:
-        pass
+    """处理持久化同步任务；失败时保留 pending，不再静默丢失。"""
+    from services.vector_sync import ensure_and_process_vector_sync
+
+    status = ensure_and_process_vector_sync(db, "product", product_id, "upsert")
+    return "synced" if status == "succeeded" else "pending"
 
 
 def _normalize_pending_fields(value) -> list[str]:
@@ -831,9 +850,13 @@ def _normalize_pending_fields(value) -> list[str]:
 
 
 def _delete_product_index(product_id: int):
-    """从 ChromaDB 删除产品索引"""
+    """处理产品删除索引任务；失败时由队列继续重试。"""
+    from database import SessionLocal
+    from services.vector_sync import ensure_and_process_vector_sync
+
+    db = SessionLocal()
     try:
-        from vector_store.product_store import ProductVectorStore
-        ProductVectorStore().delete_embedding(product_id)
-    except Exception:
-        pass
+        status = ensure_and_process_vector_sync(db, "product", product_id, "delete")
+        return "synced" if status == "succeeded" else "pending"
+    finally:
+        db.close()

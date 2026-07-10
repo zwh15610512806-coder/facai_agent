@@ -2,13 +2,15 @@ import re
 import unittest
 from pathlib import Path
 
+from tests.frontend_source import read_page_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class TemplatesPageTests(unittest.TestCase):
     def setUp(self):
-        self.page = (ROOT / "templates" / "templates.html").read_text(encoding="utf-8-sig")
+        self.page = read_page_source("templates.html")
 
     def test_library_page_uses_wide_workspace_layout(self):
         self.assertIn('<main class="page-main library-main">', self.page)
@@ -27,7 +29,7 @@ class TemplatesPageTests(unittest.TestCase):
         self.assertIn("function renderPagination", self.page)
         self.assertIn("function changePage", self.page)
         self.assertIn("function renderCurrentPage", self.page)
-        self.assertIn("fetch(buildListUrl('/api/templates/viral/list'))", self.page)
+        self.assertIn("request(buildListUrl('/api/templates/viral/list'))", self.page)
         self.assertIn("page='+currentPage", self.page)
         self.assertIn("per_page='+pageSize", self.page)
 
@@ -75,7 +77,7 @@ class TemplatesPageTests(unittest.TestCase):
 
     def test_semantic_search_falls_back_to_keyword_list_when_embedding_fails(self):
         self.assertIn("async function fallbackKeywordSearch(q)", self.page)
-        self.assertIn("fetch(buildKeywordSearchUrl(q))", self.page)
+        self.assertIn("request(buildKeywordSearchUrl(q))", self.page)
         self.assertIn("renderKeywordSearchResults(data.items||data||[])", self.page)
         self.assertIn("await fallbackKeywordSearch(q)", self.page)
         self.assertNotIn("搜索失败</div>';updateResultMeta(0,0,0);renderPagination();", self.page)

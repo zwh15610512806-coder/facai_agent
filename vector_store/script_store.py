@@ -74,7 +74,7 @@ class ScriptVectorStore:
             return doc_id
         except Exception as e:
             logger.warning(f"Failed to index viral script {script.id}: {e}")
-            return None
+            raise VectorStoreError(f"爆款脚本 {script.id} 向量写入失败: {e}") from e
 
     def index_reference_script(self, script) -> str:
         doc_id = f"ref_{script.id}"
@@ -92,13 +92,14 @@ class ScriptVectorStore:
             return doc_id
         except Exception as e:
             logger.warning(f"Failed to index reference script {script.id}: {e}")
-            return None
+            raise VectorStoreError(f"参考脚本 {script.id} 向量写入失败: {e}") from e
 
     def delete_embedding(self, doc_id: str):
         try:
             self.collection.delete(ids=[doc_id])
         except Exception as e:
             logger.warning(f"Failed to delete script embedding {doc_id}: {e}")
+            raise VectorStoreError(f"脚本向量 {doc_id} 删除失败: {e}") from e
 
     def search(self, query: str, limit: int = 10, video_type: str = None,
                high_conversion_only: bool = False) -> list:

@@ -36,6 +36,7 @@ LOCAL_PRODUCT_SOURCE_DIR = os.getenv(
 )
 LOCAL_PRODUCT_SCAN_SESSION_FACTORY = SessionLocal
 LOCAL_PRODUCT_SCAN_ERROR_LIMIT = 50
+MAX_MARKDOWN_UPLOAD_FILES = int(os.getenv("MAX_MARKDOWN_UPLOAD_FILES", "20"))
 LOCAL_PRODUCT_STRUCTURED_EXTENSIONS = {".md", ".markdown", ".csv", ".xlsx"}
 LOCAL_PRODUCT_ATTACHMENT_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt", ".png", ".jpg", ".jpeg"}
 
@@ -57,6 +58,7 @@ _local_product_scan_state = {
     "started_at": None,
     "finished_at": None,
     "message": "待扫描",
+    "job_id": None,
 }
 
 
@@ -154,6 +156,11 @@ async def import_markdown_products(
     if not files:
         result["errors"].append("未选择 Markdown 文件")
         return result
+    if len(files) > MAX_MARKDOWN_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"单次最多上传 {MAX_MARKDOWN_UPLOAD_FILES} 个 Markdown 文件",
+        )
 
     for upload in files:
         filename = upload.filename or "product.md"
@@ -576,14 +583,10 @@ def _save_markdown_product_file(product_id: int, filename: str, content: bytes) 
 
 
 def _sync_product_index(product_id: int, db: Session):
-    try:
-        from vector_store.product_store import ProductVectorStore
+    from services.vector_sync import ensure_and_process_vector_sync
 
-        product = db.query(Product).filter(Product.id == product_id).first()
-        if product and product.status == "active":
-            ProductVectorStore().index_product(product, db)
-    except Exception:
-        pass
+    status = ensure_and_process_vector_sync(db, "product", product_id, "upsert")
+    return "synced" if status == "succeeded" else "pending"
 
 
 def _reset_local_product_scan_state() -> None:
@@ -605,6 +608,7 @@ def _reset_local_product_scan_state() -> None:
             "started_at": None,
             "finished_at": None,
             "message": "待扫描",
+            "job_id": None,
         })
 
 
@@ -613,12 +617,23 @@ def _local_product_scan_snapshot() -> dict:
         snapshot = dict(_local_product_scan_state)
         snapshot["errors"] = list(_local_product_scan_state["errors"])
         snapshot["ids"] = list(_local_product_scan_state["ids"])
-        return snapshot
+    from services.job_runs import latest_job
+    snapshot["job_run"] = latest_job("local_product_scan")
+    return snapshot
 
 
 def _update_local_product_scan_state(**changes) -> None:
     with _local_product_scan_lock:
         _local_product_scan_state.update(changes)
+        snapshot = dict(_local_product_scan_state)
+    if snapshot.get("job_id"):
+        from services.job_runs import update_job
+        update_job(
+            snapshot["job_id"],
+            current=snapshot.get("processed", 0),
+            total=snapshot.get("total", 0),
+            message=snapshot.get("message", ""),
+        )
 
 
 def _append_local_product_scan_error(message: str) -> None:
@@ -642,6 +657,15 @@ def _mark_local_product_file_processed(message: str = "", **increments) -> None:
                 _local_product_scan_state[key] += int(value or 0)
         if message:
             _local_product_scan_state["message"] = message
+        snapshot = dict(_local_product_scan_state)
+    if snapshot.get("job_id"):
+        from services.job_runs import update_job
+        update_job(
+            snapshot["job_id"],
+            current=snapshot.get("processed", 0),
+            total=snapshot.get("total", 0),
+            message=snapshot.get("message", ""),
+        )
 
 
 def _relative_local_product_path(path: Path, source_dir: Path) -> str:
@@ -943,8 +967,10 @@ async def _scan_local_products(*, source_dir: Path, db: Session) -> None:
             _mark_local_product_file_processed(f"跳过：{relative_path}", skipped=1)
 
 
-def _run_local_product_scan(source_dir: str) -> None:
+def _run_local_product_scan(source_dir: str, job_id: int | None = None) -> None:
     db = LOCAL_PRODUCT_SCAN_SESSION_FACTORY()
+    terminal_status = "succeeded"
+    terminal_error = ""
     try:
         asyncio.run(_scan_local_products(source_dir=Path(source_dir), db=db))
         snapshot = _local_product_scan_snapshot()
@@ -958,6 +984,8 @@ def _run_local_product_scan(source_dir: str) -> None:
             )
         _update_local_product_scan_state(message=message)
     except Exception as exc:
+        terminal_status = "failed"
+        terminal_error = str(exc)
         _append_local_product_scan_error(str(exc))
         _update_local_product_scan_state(message=f"扫描失败：{exc}")
     finally:
@@ -966,6 +994,16 @@ def _run_local_product_scan(source_dir: str) -> None:
             is_running=False,
             finished_at=datetime.now().replace(microsecond=0).isoformat(),
         )
+        if job_id:
+            from services.job_runs import finish_job
+            snapshot = _local_product_scan_snapshot()
+            finish_job(
+                job_id,
+                status=terminal_status,
+                message=snapshot.get("message", ""),
+                details={key: snapshot.get(key) for key in ("total", "processed", "created", "updated", "attached", "skipped", "unsupported", "error_count")},
+                error_summary=terminal_error,
+            )
 
 
 @router.post("/scan-local-products")
@@ -978,6 +1016,8 @@ def start_local_product_scan():
     with _local_product_scan_lock:
         if _local_product_scan_state["is_running"]:
             return ApiResponse(message="本地产品资料扫描正在运行", data=_local_product_scan_snapshot())
+        from services.job_runs import start_job
+        job_id = start_job("local_product_scan", message="本地产品资料扫描启动中", details={"source_dir": source_dir})
         _local_product_scan_state.update({
             "is_running": True,
             "source_dir": source_dir,
@@ -995,11 +1035,12 @@ def start_local_product_scan():
             "started_at": datetime.now().replace(microsecond=0).isoformat(),
             "finished_at": None,
             "message": "扫描启动中",
+            "job_id": job_id,
         })
 
     thread = threading.Thread(
         target=_run_local_product_scan,
-        args=(source_dir,),
+        args=(source_dir, job_id),
         name="facai-local-product-scan",
         daemon=True,
     )

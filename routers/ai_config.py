@@ -15,6 +15,7 @@ from services.ai_config import (
     update_interface_setting,
     usage_totals,
 )
+from services.vector_sync import retry_vector_sync_jobs, vector_sync_status
 from vector_store import embedding_health_check
 
 
@@ -55,6 +56,17 @@ def list_ai_interfaces(db: Session = Depends(get_db)):
 @router.get("/vector-health", response_model=VectorHealthResponse)
 def get_vector_health():
     return embedding_health_check()
+
+
+@router.get("/vector-sync")
+def get_vector_sync_status(db: Session = Depends(get_db)):
+    return vector_sync_status(db)
+
+
+@router.post("/vector-sync/retry")
+def retry_vector_sync(db: Session = Depends(get_db)):
+    queued = retry_vector_sync_jobs(db)
+    return {"queued": queued, "status": vector_sync_status(db)}
 
 
 @router.put("/interfaces/{interface_key}")

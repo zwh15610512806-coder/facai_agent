@@ -104,13 +104,14 @@ class ProductVectorStore:
             return ids
         except Exception as e:
             logger.warning(f"Failed to index product {product.id}: {e}")
-            return []
+            raise VectorStoreError(f"产品 {product.id} 向量写入失败: {e}") from e
 
     def delete_embedding(self, product_id: int):
         try:
             self.collection.delete(where={"product_id": int(product_id)})
         except Exception as e:
             logger.warning(f"Failed to delete embedding for product {product_id}: {e}")
+            raise VectorStoreError(f"产品 {product_id} 向量删除失败: {e}") from e
 
     def search(
         self,

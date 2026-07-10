@@ -2,6 +2,8 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
 .env
 .env.*
@@ -10,6 +12,8 @@ __pycache__/
 *.err.log
 .codex-cloudflared.exe
 node_modules/
+test-results/
+playwright-report/
 temp_impeccable/
 temp_impeccable.zip
 .vscode/

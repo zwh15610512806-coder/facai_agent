@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from tests.frontend_source import read_page_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,7 +21,7 @@ class ImportWorkspaceLayoutTests(unittest.TestCase):
 
 class TemplatePaginationUiTests(unittest.TestCase):
     def test_template_library_has_client_side_pagination_controls(self):
-        page = (ROOT / "templates" / "templates.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("templates.html")
 
         self.assertIn('id="paginationBar"', page)
         self.assertIn('id="pageInfo"', page)

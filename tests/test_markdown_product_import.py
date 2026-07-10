@@ -141,6 +141,23 @@ class MarkdownProductImportApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
         self.assertEqual(self.db.query(Product).count(), 0)
 
+    def test_markdown_upload_rejects_too_many_files(self):
+        original_limit = import_router.MAX_MARKDOWN_UPLOAD_FILES
+        import_router.MAX_MARKDOWN_UPLOAD_FILES = 2
+        try:
+            response = self.client.post(
+                "/api/import/markdown",
+                files=[
+                    ("files", (f"product-{index}.md", f"# Product {index}", "text/markdown"))
+                    for index in range(3)
+                ],
+            )
+        finally:
+            import_router.MAX_MARKDOWN_UPLOAD_FILES = original_limit
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(self.db.query(Product).count(), 0)
+
     def test_same_name_markdown_updates_existing_without_clearing_blank_fields(self):
         product = Product(
             name="Existing Product",

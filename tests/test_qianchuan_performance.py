@@ -552,6 +552,196 @@ class QianchuanPerformanceApiTests(unittest.TestCase):
         )
         self.assertEqual(self.db.query(QianchuanScriptBinding).count(), 0)
 
+    def test_workbook_rematch_parses_script_code_as_next_day_date(self):
+        self.assertEqual(
+            templates_router._workbook_script_code_target_date("7-1-1"),
+            "26.7.2",
+        )
+        self.assertEqual(
+            templates_router._workbook_script_code_target_date("7-1-1已拍"),
+            "26.7.2",
+        )
+        self.assertEqual(
+            templates_router._workbook_script_code_target_date("1-12-1 已拍"),
+            "26.1.13",
+        )
+        self.assertEqual(
+            templates_router._workbook_script_code_target_date("1-31-1"),
+            "26.2.1",
+        )
+
+    def test_workbook_rematch_dry_run_uses_next_day_date_and_does_not_write(self):
+        script = ViralScript(
+            category="烘焙配件",
+            video_type="认知类",
+            title="刀叉（盒装） / 7-1-1 / 认知",
+            script_content="盒装刀叉脚本内容足够长，用于验证次日千川素材匹配。",
+            performance_data={
+                "source": "Excel脚本表导入",
+                "workbook_sha256": "wb-dry",
+                "sheet_name": "刀叉（盒装）",
+                "row_number": 2,
+                "script_code": "7-1-1",
+                "original_type": "认知",
+            },
+        )
+        self.db.add(script)
+        self.db.commit()
+        self._add_qianchuan_material("same-day", "认知-26.7.1-刀叉-法采-星遥1.mp4", 900, 4)
+        self._add_qianchuan_material("next-day", "认知-26.7.2-刀叉-法采-星遥1.mp4", 2600, 18)
+
+        response = self.client.post(
+            "/api/templates/qianchuan/bindings/rematch-workbook",
+            json={"mode": "dry_run"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["mode"], "dry_run")
+        self.assertEqual(data["total_scripts"], 1)
+        self.assertEqual(data["auto_bindings"], 1)
+        self.assertEqual(data["matches"][0]["material_id"], "next-day")
+        self.assertEqual(data["matches"][0]["target_date"], "26.7.2")
+        self.assertEqual(data["cleared_bindings"], 0)
+        self.assertEqual(self.db.query(QianchuanScriptBinding).count(), 0)
+
+    def test_workbook_rematch_apply_rebuilds_only_excel_script_bindings(self):
+        excel_script = ViralScript(
+            category="烘焙装饰",
+            video_type="机制类",
+            title="翻糖 / 7-1-1 / 机制",
+            script_content="翻糖脚本内容足够长，用于验证 Excel 重绑行为。",
+            is_high_conversion=1,
+            performance_data={
+                "source": "Excel脚本表导入",
+                "workbook_sha256": "wb-apply",
+                "sheet_name": "翻糖",
+                "row_number": 2,
+                "script_code": "7-1-1",
+                "original_type": "机制",
+                templates_router.QIANCHUAN_AUTO_HIGH_FLAG: True,
+            },
+        )
+        other_script = ViralScript(
+            category="烘焙调味",
+            video_type="需求类",
+            title="非 Excel 脚本",
+            script_content="非 Excel 脚本已有绑定，不应被 Excel 重绑删除。",
+        )
+        self.db.add_all([excel_script, other_script])
+        self.db.commit()
+        self._add_qianchuan_material("old-excel", "机制-26.7.1-翻糖膏-星遥1.mp4", 3200, 20)
+        self._add_qianchuan_material("new-excel", "机制-26.7.2-翻糖膏-星遥1.mp4", 1800, 12)
+        self._add_qianchuan_material("other-bound", "需求-26.7.2-茶酱-星遥1.mp4", 3000, 16)
+        self.db.add_all([
+            QianchuanScriptBinding(
+                script_id=excel_script.id,
+                material_id="old-excel",
+                material_name="机制-26.7.1-翻糖膏-星遥1.mp4",
+            ),
+            QianchuanScriptBinding(
+                script_id=other_script.id,
+                material_id="other-bound",
+                material_name="需求-26.7.2-茶酱-星遥1.mp4",
+            ),
+        ])
+        self.db.commit()
+
+        first = self.client.post(
+            "/api/templates/qianchuan/bindings/rematch-workbook",
+            json={"mode": "apply"},
+        )
+        second = self.client.post(
+            "/api/templates/qianchuan/bindings/rematch-workbook",
+            json={"mode": "apply"},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["data"]["cleared_bindings"], 1)
+        self.assertEqual(first.json()["data"]["created_bindings"], 1)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["data"]["created_bindings"], 1)
+        bindings = self.db.query(QianchuanScriptBinding).order_by(
+            QianchuanScriptBinding.script_id,
+            QianchuanScriptBinding.material_id,
+        ).all()
+        self.assertEqual(
+            [(item.script_id, item.material_id) for item in bindings],
+            [(excel_script.id, "new-excel"), (other_script.id, "other-bound")],
+        )
+        self.db.refresh(excel_script)
+        self.assertEqual(excel_script.is_high_conversion, 0)
+        self.assertNotIn(
+            templates_router.QIANCHUAN_AUTO_HIGH_FLAG,
+            excel_script.performance_data,
+        )
+
+    def test_workbook_rematch_keeps_multiple_candidates_for_review(self):
+        script = ViralScript(
+            category="烘焙装饰",
+            video_type="需求类",
+            title="翻糖 / 7-1-1 / 需求",
+            script_content="翻糖需求脚本内容足够长，用于验证多候选进入待确认。",
+            performance_data={
+                "source": "Excel脚本表导入",
+                "workbook_sha256": "wb-review",
+                "sheet_name": "翻糖",
+                "row_number": 2,
+                "script_code": "7-1-1",
+                "original_type": "需求",
+            },
+        )
+        self.db.add(script)
+        self.db.commit()
+        self._add_qianchuan_material("fondant-a", "需求-26.7.2-翻糖膏-星遥1.mp4", 1200, 8)
+        self._add_qianchuan_material("fondant-b", "需求类-26.7.2-翻糖膏-裳羽1.mp4", 1100, 7)
+
+        response = self.client.post(
+            "/api/templates/qianchuan/bindings/rematch-workbook",
+            json={"mode": "apply"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["created_bindings"], 0)
+        self.assertEqual(data["review_count"], 1)
+        self.assertEqual(data["review_items"][0]["script_id"], script.id)
+        self.assertEqual(
+            {item["material_id"] for item in data["review_items"][0]["candidates"]},
+            {"fondant-a", "fondant-b"},
+        )
+        self.assertEqual(self.db.query(QianchuanScriptBinding).count(), 0)
+
+    def test_workbook_rematch_rejects_category_only_materials(self):
+        script = ViralScript(
+            category="烘焙配件",
+            video_type="需求类",
+            title="烘焙配件 / 7-1-1 / 需求",
+            script_content="只包含大类的 Excel 脚本不应凭烘焙配件这种泛词自动绑定。",
+            performance_data={
+                "source": "Excel脚本表导入",
+                "workbook_sha256": "wb-generic",
+                "sheet_name": "烘焙配件",
+                "row_number": 2,
+                "script_code": "7-1-1",
+                "original_type": "需求",
+            },
+        )
+        self.db.add(script)
+        self.db.commit()
+        self._add_qianchuan_material("generic", "需求-26.7.2-烘焙配件-法采.mp4", 2200, 14)
+
+        response = self.client.post(
+            "/api/templates/qianchuan/bindings/rematch-workbook",
+            json={"mode": "dry_run"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["auto_bindings"], 0)
+        self.assertEqual(data["no_candidate_count"], 1)
+        self.assertEqual(self.db.query(QianchuanScriptBinding).count(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

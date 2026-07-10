@@ -7,10 +7,11 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from main import app
+from tests.frontend_source import read_page_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NAV_STYLE_VERSION = "nav-20260708-warm-workbench"
+NAV_STYLE_VERSION = "nav-20260710-hardening"
 
 
 class InspirationPageTests(unittest.TestCase):
@@ -35,7 +36,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("btnGenerate", response.text)
 
     def test_inspiration_template_has_chat_experience(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn('class="inspiration-shell"', page)
         self.assertIn('id="inspirationThread"', page)
@@ -50,7 +51,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("/static/js/common.js", page)
 
     def test_inspiration_template_has_prompt_chips_and_responsive_css(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("inspiration-empty-prompts", page)
         for label in ["新品开头", "低成本选题", "直播话术", "促单文案"]:
@@ -61,7 +62,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn(".inspiration-page{height:auto", page)
 
     def test_inspiration_sidebar_is_conversation_history(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("历史对话", page)
         self.assertIn('id="conversationHistoryList"', page)
@@ -71,7 +72,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertNotIn("常用提示", page)
 
     def test_inspiration_template_persists_conversation_history(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("INSPIRATION_HISTORY_KEY", page)
         self.assertIn("function loadConversations()", page)
@@ -83,7 +84,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("localStorage.setItem(INSPIRATION_HISTORY_KEY", page)
 
     def test_inspiration_history_has_pin_archive_delete_actions(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("pinned:Boolean(raw.pinned)", page)
         self.assertIn("archived:Boolean(raw.archived)", page)
@@ -108,7 +109,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("confirm('删除这条对话？此操作不可恢复。')", page)
 
     def test_inspiration_history_uses_compact_chatgpt_style_rows(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn(".conversation-row", page)
         self.assertIn(".conversation-actions", page)
@@ -122,7 +123,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("aria-label=\"更多对话操作\"", page)
 
     def test_inspiration_send_and_clear_sync_current_conversation(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("ensureActiveConversation()", page)
         self.assertIn("addConversationMessage('user',message,{attachments:selectedAttachments})", page)
@@ -131,7 +132,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("clearCurrentConversation()", page)
 
     def test_inspiration_template_renders_reference_products(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("function renderReferenceProducts(products)", page)
         self.assertIn("参考产品", page)
@@ -140,7 +141,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("product_context_used", page)
 
     def test_inspiration_template_renders_agent_trace_tools(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("function renderAgentTrace(agentTrace)", page)
         self.assertIn("已使用", page)
@@ -150,7 +151,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("agentTrace:message.agentTrace", page)
 
     def test_inspiration_template_can_generate_word_document_from_answer(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("生成文档", page)
         self.assertIn("function generateAssistantDocument(button)", page)
@@ -163,7 +164,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("new Error(formatInspirationApiError(data,'文档生成失败'))", page)
 
     def test_inspiration_composer_has_tool_modes_and_upload(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
         composer_tools = page.split('<div class="composer-tools" aria-label="AI工作对话功能">', 1)[1].split('<input id="inspirationFileInput"', 1)[0]
 
         for label in ["基于产品资料", "上传文件", "思考模式", "深入研究", "联网搜索", "分镜提示词生成"]:
@@ -191,15 +192,15 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("attachment.kind==='image'", page)
         self.assertIn("preview_url", page)
 
-    def test_inspiration_composer_input_is_taller_and_auto_resizes(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+    def test_inspiration_composer_input_matches_buttons_then_auto_resizes(self):
+        page = read_page_source("inspiration.html")
 
-        self.assertIn(".inspiration-input{flex:1;min-height:96px;max-height:260px;", page)
-        self.assertIn(".inspiration-input{min-height:82px;max-height:210px}", page)
+        self.assertIn(".inspiration-input{flex:1;min-height:44px;max-height:260px;", page)
+        self.assertIn(".inspiration-input{min-height:44px;max-height:210px}", page)
         self.assertIn("overflow-y:auto", page)
-        self.assertIn('rows="4"', page)
+        self.assertIn('rows="1"', page)
         self.assertIn("function resizeInspirationInput()", page)
-        self.assertIn("const minHeight=Number.parseFloat(computed.minHeight)||96;", page)
+        self.assertIn("const minHeight=Number.parseFloat(computed.minHeight)||44;", page)
         self.assertIn("const maxHeight=Number.parseFloat(computed.maxHeight)||260;", page)
         self.assertIn("Math.min(Math.max(input.scrollHeight,minHeight),maxHeight)", page)
         self.assertIn("input.style.overflowY=input.scrollHeight>maxHeight?'auto':'hidden';", page)
@@ -207,13 +208,13 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("resizeInspirationInput();", page)
 
     def test_inspiration_composer_reserves_space_for_bottom_right_fabs(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn(".inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px 152px 12px 12px", page)
         self.assertIn(".inspiration-composer{padding:12px 12px calc(184px + env(safe-area-inset-bottom))}", page)
 
     def test_inspiration_user_message_visuals_put_attachments_above_text(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn(".chat-message.user .chat-bubble{background:#f4f7ea;border-color:#d9e5b5;color:var(--text);", page)
         self.assertIn(".chat-message.user .message-attachments{order:0;margin:0 0 8px;padding:0 0 8px;", page)
@@ -222,7 +223,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("const bubbleContent=role==='user'?attachmentHtml+bodyHtml:bodyHtml+attachmentHtml+reasoningHtml+agentTraceHtml+references+sourceHtml+tools;", page)
 
     def test_inspiration_seedance_mode_updates_label_and_placeholder(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("seedance:'粘贴脚本，或上传脚本文件后填写生成要求...'", page)
         self.assertIn("function updateInspirationPlaceholder()", page)
@@ -231,7 +232,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertNotIn("DeepSeek V4 Pro", page)
 
     def test_inspiration_model_pill_loads_configured_interface_models(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("fetch('/api/ai-config/interfaces'", page)
         self.assertIn("function loadInspirationModelConfig()", page)
@@ -240,7 +241,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("display_model", page)
 
     def test_inspiration_model_pill_uses_response_model_after_chat(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("function updateModelPillForMode(mode,overrideModel,productContextUsed)", page)
         self.assertIn("updateModelPillForMode(data.tool_mode||getActiveInspirationMode(),data.model,data.product_context_used)", page)
@@ -250,7 +251,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("modelPill.title=labelText", page)
 
     def test_inspiration_chat_request_sends_tool_mode_and_attachments(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("tool_mode:getActiveInspirationMode()", page)
         self.assertIn("product_context_mode:getProductContextMode()", page)
@@ -264,7 +265,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("renderSelectedAttachments()", page)
 
     def test_inspiration_template_renders_reasoning_and_sources(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("function renderReasoning(reasoning)", page)
         self.assertIn("思考过程", page)
@@ -274,14 +275,14 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("sources:data.sources", page)
 
     def test_inspiration_template_formats_fetch_failures(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("function formatInspirationChatError(error)", page)
         self.assertIn("Failed to fetch", page)
         self.assertIn("连接后端失败或响应超时", page)
 
     def test_inspiration_long_answers_scroll_to_answer_start(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn("function scrollChatToMessage(message,mode)", page)
         self.assertIn("mode==='top'", page)
@@ -295,7 +296,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn('"inspiration.html"', test_file)
 
     def test_inspiration_inline_script_has_valid_syntax(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
         scripts = re.findall(r"<script>\s*(.*?)</script>", page, re.S)
         self.assertEqual(1, len(scripts))
 
@@ -401,7 +402,7 @@ class InspirationNavigationTests(unittest.TestCase):
             self.assertNotIn("/static/css/style.css?v=nav-20260630", page, name)
 
     def test_ai_work_nav_is_active_only_on_ai_work_page(self):
-        page = (ROOT / "templates" / "inspiration.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("inspiration.html")
 
         self.assertIn('<a href="/app" class="nav-link on">AI工作</a>', page)
 

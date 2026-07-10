@@ -1,5 +1,9 @@
-"""数据库连接与会话管理"""
-from sqlalchemy import create_engine, inspect, text
+"""数据库连接、SQLite 安全参数与轻量迁移管理。"""
+from datetime import datetime
+from pathlib import Path
+import sqlite3
+
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from config import DATABASE_URL
 import os
@@ -8,6 +12,20 @@ import os
 os.makedirs(os.path.dirname(DATABASE_URL.replace("sqlite:///", "")), exist_ok=True)
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite_connection(dbapi_connection, _connection_record):
+    """Apply integrity and contention settings to every SQLite connection."""
+    if engine.dialect.name != "sqlite":
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA journal_mode=WAL")
+    finally:
+        cursor.close()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -24,8 +42,43 @@ def get_db():
 def init_db():
     """初始化数据库表"""
     import models  # 确保模型类被注册到 Base.metadata
+    if _schema_migration_required():
+        _backup_sqlite_database()
     Base.metadata.create_all(bind=engine)
     _ensure_compatible_columns()
+
+
+def _sqlite_database_path() -> Path | None:
+    if not DATABASE_URL.startswith("sqlite:///") or DATABASE_URL.endswith(":memory:"):
+        return None
+    raw_path = DATABASE_URL.removeprefix("sqlite:///")
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / path
+    return path.resolve()
+
+
+def _schema_migration_required() -> bool:
+    path = _sqlite_database_path()
+    if path is None or not path.exists() or path.stat().st_size == 0:
+        return False
+    existing_tables = set(inspect(engine).get_table_names())
+    required_tables = {"vector_sync_jobs", "job_runs"}
+    return not required_tables.issubset(existing_tables)
+
+
+def _backup_sqlite_database() -> Path | None:
+    """Create a consistent SQLite backup immediately before schema migration."""
+    source_path = _sqlite_database_path()
+    if source_path is None or not source_path.exists():
+        return None
+    backup_dir = source_path.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    backup_path = backup_dir / f"{source_path.stem}_before_migration_{stamp}{source_path.suffix}"
+    with sqlite3.connect(source_path) as source, sqlite3.connect(backup_path) as destination:
+        source.backup(destination)
+    return backup_path
 
 
 def _ensure_compatible_columns():

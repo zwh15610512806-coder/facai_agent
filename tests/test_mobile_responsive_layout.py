@@ -2,6 +2,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tests.frontend_source import read_page_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -136,7 +138,7 @@ class PageSpecificMobileLayoutTests(unittest.TestCase):
         self.assertIn("grid-template-columns: 1fr !important", page)
 
     def test_templates_page_mobile_detail_modal_controls_stack_cleanly(self):
-        page = (ROOT / "templates" / "templates.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("templates.html")
 
         self.assertIn("@media (max-width: 768px)", page)
         self.assertIn(".script-detail-modal", page)
@@ -150,7 +152,7 @@ class PageSpecificMobileLayoutTests(unittest.TestCase):
         self.assertNotIn(".modal-product-toolbar .btn", page)
 
     def test_search_page_mobile_filter_chips_scroll_horizontally(self):
-        page = (ROOT / "templates" / "search.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("search.html")
 
         self.assertIn("@media (max-width: 768px)", page)
         self.assertIn(".filter-chips", page)

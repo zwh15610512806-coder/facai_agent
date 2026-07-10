@@ -96,10 +96,16 @@ async def upload_reference_script(
         notes=(notes or "") + (" | AI分析: " + analysis.get("structure","") + " | 跑量点: " + analysis.get("viral_points","") if analysis else ""),
     )
     db.add(ref)
+    db.flush()
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "reference_script", ref.id, "upsert")
     db.commit()
     db.refresh(ref)
-    _sync_ref_index(ref)
-    return ApiResponse(message="已上传并AI分析", data={"id": ref.id, "analysis": analysis})
+    index_sync_status = _sync_ref_index(ref, db)
+    return ApiResponse(
+        message="已上传并AI分析",
+        data={"id": ref.id, "analysis": analysis, "index_sync_status": index_sync_status},
+    )
 
 
 @router.get("/{script_id}")
@@ -131,26 +137,29 @@ def delete_reference(script_id: int, db: Session = Depends(get_db)):
     s = db.query(ReferenceScript).filter(ReferenceScript.id == script_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="不存在")
-    _delete_ref_index(f"ref_{script_id}")
+    from services.vector_sync import enqueue_vector_sync
+    enqueue_vector_sync(db, "reference_script", script_id, "delete")
     db.delete(s)
     db.commit()
-    return ApiResponse(message="已删除")
+    index_sync_status = _delete_ref_index(f"ref_{script_id}")
+    return ApiResponse(message="已删除", data={"index_sync_status": index_sync_status})
 
 
-def _sync_ref_index(ref):
-    try:
-        from vector_store.script_store import ScriptVectorStore
-        from vector_store import get_chroma_store
-        if not get_chroma_store().is_available:
-            return
-        ScriptVectorStore().index_reference_script(ref)
-    except Exception:
-        pass
+def _sync_ref_index(ref, db: Session):
+    from services.vector_sync import ensure_and_process_vector_sync
+
+    status = ensure_and_process_vector_sync(db, "reference_script", ref.id, "upsert")
+    return "synced" if status == "succeeded" else "pending"
 
 
 def _delete_ref_index(doc_id: str):
+    from database import SessionLocal
+    from services.vector_sync import ensure_and_process_vector_sync
+
+    entity_id = int(doc_id.removeprefix("ref_"))
+    db = SessionLocal()
     try:
-        from vector_store.script_store import ScriptVectorStore
-        ScriptVectorStore().delete_embedding(doc_id)
-    except Exception:
-        pass
+        status = ensure_and_process_vector_sync(db, "reference_script", entity_id, "delete")
+        return "synced" if status == "succeeded" else "pending"
+    finally:
+        db.close()

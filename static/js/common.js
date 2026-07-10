@@ -144,9 +144,51 @@
     }
   }
 
+  function fetchWithTimeout(input, init, timeoutMs) {
+    init = Object.assign({}, init || {});
+    timeoutMs = timeoutMs == null ? 30000 : Number(timeoutMs);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return fetch(input, init);
+
+    var controller = new AbortController();
+    var upstreamSignal = init.signal;
+    var abortFromUpstream = function () {
+      controller.abort(upstreamSignal && upstreamSignal.reason);
+    };
+    if (upstreamSignal) {
+      if (upstreamSignal.aborted) abortFromUpstream();
+      else upstreamSignal.addEventListener("abort", abortFromUpstream, {once: true});
+    }
+    init.signal = controller.signal;
+
+    var timer = setTimeout(function () {
+      controller.abort(new DOMException("请求超时", "TimeoutError"));
+    }, timeoutMs);
+    return fetch(input, init).finally(function () {
+      clearTimeout(timer);
+      if (upstreamSignal) upstreamSignal.removeEventListener("abort", abortFromUpstream);
+    });
+  }
+
+  function ensureMobileUtilityNavLinks() {
+    var nav = document.querySelector('.nav-links');
+    if (!nav || nav.querySelector('.nav-mobile-utility')) return;
+    [
+      {href:'/app/import', label:'数据导入'},
+      {href:'/app/ai-config', label:'AI配置'}
+    ].forEach(function (item) {
+      var link = document.createElement('a');
+      link.className = 'nav-link nav-mobile-utility';
+      link.href = item.href;
+      link.textContent = item.label;
+      nav.appendChild(link);
+    });
+  }
+
   if (document.readyState === "loading") {
+    document.addEventListener('DOMContentLoaded', ensureMobileUtilityNavLinks);
     document.addEventListener('DOMContentLoaded', scrollActiveNavIntoView);
   } else {
+    ensureMobileUtilityNavLinks();
     setTimeout(scrollActiveNavIntoView, 0);
   }
 
@@ -158,7 +200,9 @@
     getApiErrorMessage: getApiErrorMessage,
     formatApiErrorMessage: formatApiErrorMessage,
     withBusyButton: withBusyButton,
+    fetchWithTimeout: fetchWithTimeout,
     renderPager: renderPager,
+    ensureMobileUtilityNavLinks: ensureMobileUtilityNavLinks,
     scrollActiveNavIntoView: scrollActiveNavIntoView
   };
 })();

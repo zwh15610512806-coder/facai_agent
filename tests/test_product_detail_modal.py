@@ -666,7 +666,7 @@ class ProductDetailTemplateTests(unittest.TestCase):
     def test_product_actions_use_busy_buttons_and_api_error_messages(self):
         self.assertIn("function getApiErrorMessage", self.page)
         self.assertIn("function formatApiErrorMessage", self.page)
-        self.assertIn('/static/js/common.js?v=20260708-launch', self.page)
+        self.assertIn('/static/js/common.js?v=20260710-hardening', self.page)
         self.assertIn("function withBusyButton", self.page)
         self.assertIn("withBusyButton(button", self.page)
         self.assertIn("btnExtractAllPoints", self.page)

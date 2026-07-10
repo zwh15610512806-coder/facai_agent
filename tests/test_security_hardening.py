@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from services import security
+from tests.frontend_source import read_page_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -143,7 +144,7 @@ class SecurityHardeningTests(unittest.TestCase):
                     self.assertNotIn(marker, page)
 
     def test_template_library_escapes_api_backed_html(self):
-        page = (ROOT / "templates" / "templates.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("templates.html")
 
         self.assertIn("function escHtml", page)
         self.assertIn("escHtml(s.title||'无标题')", page)
@@ -151,7 +152,7 @@ class SecurityHardeningTests(unittest.TestCase):
         self.assertIn("escHtml(currentScript.category)", page)
 
     def test_search_page_escapes_indexed_file_fields(self):
-        page = (ROOT / "templates" / "search.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("search.html")
 
         self.assertIn("function escHtml", page)
         self.assertIn("escHtml(f.file_name)", page)
@@ -168,7 +169,7 @@ class SecurityHardeningTests(unittest.TestCase):
         self.assertNotIn("'<b>'+d.product_name+'</b>", rewrite_page)
 
     def test_search_page_uses_js_literal_escaping_for_inline_actions(self):
-        page = (ROOT / "templates" / "search.html").read_text(encoding="utf-8-sig")
+        page = read_page_source("search.html")
 
         self.assertIn("function jsStringLiteral", page)
         self.assertIn("const folderArg = jsStringLiteral(f.file_path);", page)

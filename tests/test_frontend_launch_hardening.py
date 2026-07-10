@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from tests.frontend_source import read_page_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -9,7 +11,7 @@ class FrontendLaunchHardeningTests(unittest.TestCase):
     def setUp(self):
         self.import_page = (ROOT / "templates" / "import.html").read_text(encoding="utf-8-sig")
         self.products_page = (ROOT / "templates" / "products.html").read_text(encoding="utf-8-sig")
-        self.templates_page = (ROOT / "templates" / "templates.html").read_text(encoding="utf-8-sig")
+        self.templates_page = read_page_source("templates.html")
         self.common_js = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8-sig")
 
     def test_excel_upload_surfaces_only_xlsx(self):

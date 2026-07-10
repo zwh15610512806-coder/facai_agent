@@ -638,6 +638,141 @@ class AIService:
                 return {"content": fallback, "reasoning": "", "model": selected_model}
             return fallback
 
+    async def stream_chat(
+        self,
+        messages: List[Dict],
+        temperature: float = 0.8,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        interface_key: str = "default",
+        db=None,
+        thinking: bool = False,
+        reasoning_effort: str = "high",
+        request_timeout: Optional[float] = None,
+    ):
+        """Yield provider deltas and close the upstream stream on cancellation."""
+
+        start_time = time.perf_counter()
+        provider_key, selected_model, selected_max_tokens, api_key_override, base_url_override = self._resolve_chat_config(
+            interface_key,
+            model,
+            max_tokens,
+            db,
+        )
+        client = self._get_provider_client(provider_key, api_key_override, base_url_override)
+        if client is None:
+            error_summary = f"{get_provider_definition(provider_key).label} API Key or Base URL is not configured"
+            self._record_usage_safe(
+                interface_key=interface_key,
+                provider=provider_key,
+                model=selected_model,
+                prompt_tokens=self._estimate_prompt_tokens(messages),
+                completion_tokens=0,
+                total_tokens=self._estimate_prompt_tokens(messages),
+                usage_source="estimated",
+                latency_ms=int((time.perf_counter() - start_time) * 1000),
+                status="unavailable",
+                error_summary=error_summary,
+                db=db,
+            )
+            raise AIProviderError(error_summary)
+
+        payload = {
+            "model": selected_model,
+            "messages": messages,
+            "max_tokens": selected_max_tokens,
+            "stream": True,
+        }
+        if request_timeout is not None:
+            payload["timeout"] = max(1.0, float(request_timeout))
+        if thinking:
+            if provider_key == "deepseek":
+                payload["reasoning_effort"] = reasoning_effort
+                payload["extra_body"] = {"thinking": {"type": "enabled"}}
+            elif provider_key == "doubao":
+                payload["extra_body"] = {"thinking": {"type": "enabled"}}
+            else:
+                payload["temperature"] = temperature
+        else:
+            payload["temperature"] = temperature
+            payload["top_p"] = 0.9
+            if provider_key in {"deepseek", "doubao"}:
+                payload["extra_body"] = {"thinking": {"type": "disabled"}}
+
+        upstream = None
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        usage_recorded = False
+
+        def record(status: str, error_summary: str | None = None) -> None:
+            nonlocal usage_recorded
+            if usage_recorded:
+                return
+            content = "".join(content_parts)
+            reasoning = "".join(reasoning_parts)
+            prompt_tokens = self._estimate_prompt_tokens(messages)
+            completion_tokens = self._estimate_text_tokens(content + reasoning)
+            self._record_usage_safe(
+                interface_key=interface_key,
+                provider=provider_key,
+                model=selected_model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                usage_source="estimated",
+                latency_ms=int((time.perf_counter() - start_time) * 1000),
+                status=status,
+                error_summary=error_summary,
+                db=db,
+            )
+            usage_recorded = True
+
+        def next_chunk(iterator):
+            try:
+                return True, next(iterator)
+            except StopIteration:
+                return False, None
+
+        try:
+            upstream = await asyncio.to_thread(client.chat.completions.create, **payload)
+            iterator = iter(upstream)
+            while True:
+                has_chunk, chunk = await asyncio.to_thread(next_chunk, iterator)
+                if not has_chunk:
+                    break
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                delta = getattr(choices[0], "delta", None)
+                if delta is None:
+                    continue
+                content = getattr(delta, "content", None) or ""
+                reasoning = getattr(delta, "reasoning_content", None) or ""
+                if reasoning:
+                    reasoning_parts.append(str(reasoning))
+                    yield {"type": "reasoning_delta", "text": str(reasoning)}
+                if content:
+                    content_parts.append(str(content))
+                    yield {"type": "delta", "text": str(content)}
+            record("success")
+            yield {"type": "done", "model": selected_model, "provider": provider_key}
+        except (asyncio.CancelledError, GeneratorExit):
+            record("cancelled", "client disconnected or cancelled")
+            raise
+        except Exception as exc:
+            record("error", str(exc))
+            raise AIProviderError(str(exc) or exc.__class__.__name__) from exc
+        finally:
+            if upstream is not None:
+                close = getattr(upstream, "close", None)
+                if callable(close):
+                    try:
+                        await asyncio.to_thread(close)
+                    except Exception:
+                        logger.warning("Failed to close upstream AI stream", exc_info=True)
+            if not usage_recorded:
+                record("cancelled", "stream closed before completion")
+
     def _fallback_response(self, messages) -> str:
         """离线模式：用法采模板生成脚本，每次调用都随机生成新内容"""
         # 从 messages 中提取产品信息，用于 build_faicai_script

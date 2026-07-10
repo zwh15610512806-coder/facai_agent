@@ -1,13 +1,14 @@
 """General inspiration chat API."""
 import asyncio
+import json
 import logging
 import re
 import time
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,7 @@ from services.seedance_prompt_generator import (
 )
 from services.upload_limits import read_upload_bytes
 from services.web_research import search_web
+from schemas import StrictRequestModel
 from vector_store import get_embedding_degraded_reason
 
 
@@ -47,17 +49,17 @@ ProductContextMode = Literal["off", "auto", "always"]
 WebSearchMode = Literal["auto", "always"]
 
 
-class ChatTurn(BaseModel):
+class ChatTurn(StrictRequestModel):
     role: str
     content: str = Field(default="", max_length=4000)
 
 
-class DocumentChatTurn(BaseModel):
+class DocumentChatTurn(StrictRequestModel):
     role: str
     content: str = Field(default="", max_length=60000)
 
 
-class InspirationAttachment(BaseModel):
+class InspirationAttachment(StrictRequestModel):
     filename: str = Field(default="", max_length=200)
     file_type: str = Field(default="", max_length=32)
     text: str = Field(default="", max_length=24000)
@@ -88,7 +90,7 @@ class AgentTraceStep(BaseModel):
     summary: str = Field(default="", max_length=240)
 
 
-class InspirationChatRequest(BaseModel):
+class InspirationChatRequest(StrictRequestModel):
     message: str = Field(..., min_length=1, max_length=4000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=40)
     tool_mode: InspirationToolMode = "chat"
@@ -118,7 +120,7 @@ class InspirationChatResponse(BaseModel):
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
 
 
-class InspirationDocumentRequest(BaseModel):
+class InspirationDocumentRequest(StrictRequestModel):
     message: str = Field(default="", max_length=4000)
     answer: str = Field(..., min_length=1, max_length=120000)
     history: list[DocumentChatTurn] = Field(default_factory=list, max_length=40)
@@ -893,4 +895,219 @@ async def chat_with_inspiration(data: InspirationChatRequest, db: Session = Depe
         product_context_used=product_context_used,
         products=products,
         agent_trace=agent_trace,
+    )
+
+
+def _sse_event(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+
+
+def _stream_context_payload(
+    *,
+    sources: list[dict],
+    attachments: list[InspirationAttachment],
+    products: list[dict],
+    product_context_used: bool,
+    agent_trace: list[dict],
+) -> dict:
+    return {
+        "sources": sources,
+        "attachments": [attachment.model_dump() for attachment in attachments],
+        "products": products,
+        "product_context_used": product_context_used,
+        "agent_trace": agent_trace,
+    }
+
+
+async def _inspiration_stream_events(data: InspirationChatRequest, request: Request, db: Session):
+    message = data.message.strip()
+    interface_key = _interface_key_for_tool_mode(data.tool_mode)
+    model = ai_service.get_model_name(
+        _model_for_tool_mode(data.tool_mode),
+        interface_key=interface_key,
+        db=db,
+    )
+    yield _sse_event(
+        "meta",
+        {"model": model, "tool_mode": data.tool_mode, "interface_key": interface_key},
+    )
+
+    if _is_model_status_question(message) or data.tool_mode == "seedance":
+        response = (
+            await _chat_with_seedance(data, db)
+            if data.tool_mode == "seedance"
+            else InspirationChatResponse(
+                answer=_model_status_answer(data.tool_mode, interface_key, db)[0],
+                mode="ai",
+                model=_model_status_answer(data.tool_mode, interface_key, db)[1],
+                tool_mode=data.tool_mode,
+            )
+        )
+        context = _stream_context_payload(
+            sources=[source.model_dump() for source in response.sources],
+            attachments=response.attachments_used,
+            products=[product.model_dump() for product in response.products],
+            product_context_used=response.product_context_used,
+            agent_trace=[step.model_dump() for step in response.agent_trace],
+        )
+        yield _sse_event("context", context)
+        if response.reasoning:
+            yield _sse_event("reasoning_delta", {"text": response.reasoning})
+        yield _sse_event("delta", {"text": response.answer})
+        yield _sse_event("done", {"mode": response.mode, "model": response.model, **context})
+        return
+
+    model_override = _model_for_tool_mode(data.tool_mode)
+    text_attachments_used = _text_attachments(data.attachments)
+    image_attachments_used = _image_attachments(data.attachments, data.tool_mode)
+    attachments_used = text_attachments_used + image_attachments_used
+    vector_trace_started_at = time.monotonic()
+    agent_trace: list[dict] = []
+
+    if data.product_context_mode == "always":
+        try:
+            agent_result = await run_inspiration_agent(
+                message=message,
+                db=db,
+                product_context_enabled=True,
+                web_search_enabled=_should_search_web(message, data.tool_mode, data.web_search_mode),
+                attachments=text_attachments_used,
+                tool_mode=data.tool_mode,
+                product_context_func=find_product_context_for_inspiration,
+                web_search_func=search_web,
+                product_limit=6,
+                web_query=_web_search_query(message),
+                web_max_results=5,
+            )
+            product_context = agent_result.product_context
+            sources = agent_result.sources
+            agent_trace = agent_result.agent_trace
+        except Exception as exc:
+            logger.warning("AI-work streaming agentic RAG failed: %s", exc)
+            product_context = {"used": False, "context": "", "products": []}
+            sources = await _safe_web_search(message, data.tool_mode, data.web_search_mode)
+            agent_trace = [{
+                "tool": "agent",
+                "label": "Agent",
+                "status": "error",
+                "summary": "工具编排失败，已降级为普通回答。",
+            }]
+    elif data.product_context_mode == "auto":
+        product_context = _safe_product_context(message, db, force=False)
+        sources = await _safe_web_search(message, data.tool_mode, data.web_search_mode)
+    else:
+        product_context = {"used": False, "context": "", "products": []}
+        sources = await _safe_web_search(message, data.tool_mode, data.web_search_mode)
+
+    if data.product_context_mode != "off":
+        agent_trace = _trace_embedding_degradation(
+            agent_trace,
+            product_context,
+            since_monotonic=vector_trace_started_at,
+        )
+    products = product_context.get("products") or []
+    product_context_used = bool(products)
+    context = _stream_context_payload(
+        sources=sources,
+        attachments=attachments_used,
+        products=products,
+        product_context_used=product_context_used,
+        agent_trace=agent_trace,
+    )
+    yield _sse_event("context", context)
+
+    if not ai_service.is_interface_available(interface_key, db=db):
+        fallback = _fallback_answer_with_products(message, products)
+        yield _sse_event("delta", {"text": fallback})
+        yield _sse_event("done", {"mode": "fallback", "model": model, **context})
+        return
+
+    system_prompt = SYSTEM_PROMPT
+    tool_instruction = TOOL_MODE_INSTRUCTIONS.get(data.tool_mode, "")
+    if tool_instruction:
+        system_prompt = f"{system_prompt}\n{tool_instruction}"
+    if data.product_context_mode == "off" and data.tool_mode == "chat":
+        system_prompt = f"{system_prompt}\n{NO_PRODUCT_CONTEXT_INSTRUCTION}"
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(_recent_history(data.history))
+    user_message_text = _compose_user_message(
+        message,
+        product_context,
+        text_attachments_used,
+        sources,
+        data.tool_mode,
+        data.web_search_mode,
+        agent_trace,
+    )
+    messages.append({
+        "role": "user",
+        "content": _multimodal_user_content(user_message_text, image_attachments_used),
+    })
+
+    answer_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    result_model = model
+    try:
+        async for event in ai_service.stream_chat(
+            messages,
+            temperature=0.7,
+            model=model_override,
+            interface_key=interface_key,
+            db=db,
+            thinking=data.tool_mode == "thinking",
+            reasoning_effort="high",
+            request_timeout=_ai_timeout_for_tool_mode(data.tool_mode),
+        ):
+            if await request.is_disconnected():
+                return
+            event_type = str(event.get("type") or "")
+            if event_type == "reasoning_delta":
+                text_value = str(event.get("text") or "")
+                reasoning_parts.append(text_value)
+                yield _sse_event("reasoning_delta", {"text": text_value})
+            elif event_type == "delta":
+                text_value = str(event.get("text") or "")
+                answer_parts.append(text_value)
+                yield _sse_event("delta", {"text": text_value})
+            elif event_type == "done":
+                result_model = str(event.get("model") or result_model)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Inspiration streaming request failed: %s", exc)
+        yield _sse_event("error", {"message": str(exc)[:1000], "partial": "".join(answer_parts)})
+        return
+
+    if not answer_parts:
+        fallback = _fallback_answer_with_products(message, products)
+        yield _sse_event("delta", {"text": fallback})
+        answer_parts.append(fallback)
+        mode = "fallback"
+    else:
+        mode = "ai"
+    yield _sse_event(
+        "done",
+        {
+            "mode": mode,
+            "model": result_model,
+            "reasoning": "".join(reasoning_parts),
+            **context,
+        },
+    )
+
+
+@router.post("/chat/stream")
+async def stream_chat_with_inspiration(
+    data: InspirationChatRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    return StreamingResponse(
+        _inspiration_stream_events(data, request, db),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
