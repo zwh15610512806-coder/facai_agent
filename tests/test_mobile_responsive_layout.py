@@ -132,8 +132,9 @@ class PageSpecificMobileLayoutTests(unittest.TestCase):
         page = (ROOT / "templates" / "rewrite.html").read_text(encoding="utf-8-sig")
 
         self.assertIn("@media (max-width: 768px)", page)
-        self.assertIn("#productPicker > div", page)
-        self.assertIn("#productGrid", page)
+        self.assertIn(".rewrite-product-head { flex-direction:column; align-items:stretch; }", page)
+        self.assertIn(".rewrite-product-strip { display:grid; grid-template-columns:1fr; overflow:visible; min-height:0; }", page)
+        self.assertIn(".rewrite-product-strip .product-card { width:100%; min-height:116px; }", page)
         self.assertIn("#comparePanel > div", page)
         self.assertIn("grid-template-columns: 1fr !important", page)
 

@@ -1,8 +1,12 @@
 """ChromaDB vector store — singleton client + collection management."""
 import os
+import json
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 import chromadb
 import httpx
@@ -24,6 +28,8 @@ from config import (
 logger = logging.getLogger("vector_store")
 _last_embedding_degraded_reason = ""
 _last_embedding_degraded_at = 0.0
+_product_build_thread_lock = threading.Lock()
+_product_write_thread_lock = threading.Lock()
 
 
 class NoopChromaTelemetry(ProductTelemetryClient):
@@ -53,6 +59,83 @@ class EmbeddingConfigurationError(VectorStoreError):
 
 class EmbeddingCallError(VectorStoreError):
     """Raised when the Ark embedding API call or response is invalid."""
+
+
+@contextmanager
+def _cross_process_file_lock(
+    persist_dir: str,
+    filename: str,
+    thread_lock: threading.Lock,
+    *,
+    blocking: bool,
+    busy_message: str,
+):
+    acquired = thread_lock.acquire(blocking=blocking)
+    if not acquired:
+        raise VectorStoreError(busy_message)
+    handle = None
+    locked = False
+    try:
+        path = Path(persist_dir) / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a+b")
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+                msvcrt.locking(handle.fileno(), mode, 1)
+            else:
+                import fcntl
+
+                flags = fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB)
+                fcntl.flock(handle.fileno(), flags)
+            locked = True
+        except OSError as exc:
+            raise VectorStoreError(busy_message) from exc
+        yield
+    finally:
+        if handle is not None and locked:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        if handle is not None:
+            handle.close()
+        thread_lock.release()
+
+
+def product_index_build_lock(persist_dir: str | None = None, *, blocking: bool = True):
+    return _cross_process_file_lock(
+        persist_dir or CHROMA_PERSIST_DIR,
+        "product_index_build.lock",
+        _product_build_thread_lock,
+        blocking=blocking,
+        busy_message="产品向量索引正在重建，请稍后再试",
+    )
+
+
+def product_index_write_lock(persist_dir: str | None = None, *, blocking: bool = True):
+    return _cross_process_file_lock(
+        persist_dir or CHROMA_PERSIST_DIR,
+        "product_index_write.lock",
+        _product_write_thread_lock,
+        blocking=blocking,
+        busy_message="产品向量索引正在切换或写入，请稍后再试",
+    )
 
 
 def _record_embedding_degraded_reason(reason: str) -> None:
@@ -277,6 +360,7 @@ class ChromaStore:
         self._client = None
         self._embedding_fn = None
         self._product_col = None
+        self._product_col_name = None
         self._script_col = None
         self._available = None
         self._init_error = None
@@ -329,14 +413,86 @@ class ChromaStore:
         logger.info(f"Using Volcengine Ark embedding model: {EMBEDDING_MODEL_NAME}")
 
     def get_product_collection(self):
-        if self._product_col is None:
+        active_name = self.active_product_collection_name()
+        if self._product_col is None or self._product_col_name != active_name:
             self._ensure_client()
-            self._product_col = self._client.get_or_create_collection(
-                name=CHROMA_COLLECTION_PRODUCTS,
-                embedding_function=self._embedding_fn,
-                metadata={"hnsw:space": "cosine"},
-            )
+            if self._product_manifest_path().exists():
+                try:
+                    self._product_col = self._client.get_collection(
+                        name=active_name,
+                        embedding_function=self._embedding_fn,
+                    )
+                except Exception as exc:
+                    raise VectorStoreError(
+                        f"产品索引清单指向不存在或不可读的集合 {active_name}: {exc}"
+                    ) from exc
+            else:
+                self._product_col = self._client.get_or_create_collection(
+                    name=active_name,
+                    embedding_function=self._embedding_fn,
+                    metadata={"hnsw:space": "cosine"},
+                )
+            self._product_col_name = active_name
         return self._product_col
+
+    def _product_manifest_path(self) -> Path:
+        return Path(self._persist_dir) / "product_index_manifest.json"
+
+    def active_product_collection_name(self) -> str:
+        path = self._product_manifest_path()
+        if not path.exists():
+            return CHROMA_COLLECTION_PRODUCTS
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            name = str(payload.get("active_collection") or "").strip()
+            if name:
+                return name
+        except (OSError, ValueError, TypeError) as exc:
+            raise VectorStoreError(f"Product index manifest is unreadable: {path}: {exc}") from exc
+        raise VectorStoreError(f"Product index manifest has no active collection: {path}")
+
+    def create_product_collection(self, name: str):
+        self._ensure_client()
+        return self._client.get_or_create_collection(
+            name=str(name),
+            embedding_function=self._embedding_fn,
+            metadata={"hnsw:space": "cosine"},
+        )
+
+    def activate_product_collection(self, name: str, *, lock_held: bool = False) -> None:
+        if not lock_held:
+            with product_index_write_lock(self._persist_dir):
+                self.activate_product_collection(name, lock_held=True)
+            return
+        self._ensure_client()
+        try:
+            self._client.get_collection(name=str(name), embedding_function=self._embedding_fn)
+        except Exception as exc:
+            raise VectorStoreError(f"拒绝激活不存在或不可读的产品索引集合 {name}: {exc}") from exc
+        path = self._product_manifest_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_name(
+            f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        )
+        payload = {
+            "active_collection": str(name),
+            "activated_at": time.time(),
+            "embedding_model": EMBEDDING_MODEL_NAME,
+        }
+        temp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(temp_path, path)
+        self._product_col = None
+        self._product_col_name = None
+
+    def delete_product_collection(self, name: str) -> None:
+        self._ensure_client()
+        try:
+            self._client.delete_collection(str(name))
+        except (InvalidCollectionException, NotFoundError):
+            return
 
     def get_script_collection(self):
         if self._script_col is None:
@@ -357,6 +513,7 @@ class ChromaStore:
         except Exception as exc:
             raise VectorStoreError(f"删除产品向量集合失败，已停止重建以避免混用旧索引: {exc}") from exc
         self._product_col = None
+        self._product_col_name = None
         return self.get_product_collection()
 
     def reset_script_collection(self):

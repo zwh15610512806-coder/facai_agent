@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import GeneratedScript, Product
+from models import GeneratedScript, Product, ScriptTemplate
 from routers.scripts import get_history, list_history
 from schemas import GeneratedScriptOut, GeneratedScriptPageOut
 
@@ -74,6 +74,9 @@ class HistoryApiTests(unittest.TestCase):
     def test_generated_script_output_exposes_high_conversion_flag(self):
         self.assertIn("is_high_conversion", GeneratedScriptOut.model_fields)
 
+    def test_generated_script_output_exposes_template_reference_script(self):
+        self.assertIn("template_reference_script", GeneratedScriptOut.model_fields)
+
     def test_generated_script_page_output_exposes_pagination_fields(self):
         for field in ["items", "total", "page", "per_page", "total_pages"]:
             self.assertIn(field, GeneratedScriptPageOut.model_fields)
@@ -112,6 +115,35 @@ class HistoryApiTests(unittest.TestCase):
         script = get_history(record.id, db=self.db)
 
         self.assertFalse(script.is_high_conversion)
+
+    def test_history_list_and_detail_return_referenced_template_script(self):
+        template = ScriptTemplate(
+            name="制作方便模板",
+            video_type="制作方便",
+            structure={"opening": "省事钩子", "body": "操作演示", "cta": "下单理由"},
+            example_script="这是模板库中实际保存的原脚本。",
+        )
+        self.db.add(template)
+        self.db.commit()
+        self.db.refresh(template)
+        record = GeneratedScript(
+            product_id=self.product.id,
+            template_id=template.id,
+            script_content="改写后的脚本",
+            video_type="制作方便",
+            ai_model="模板库改写 · fake-model",
+        )
+        self.db.add(record)
+        self.db.commit()
+        self.db.refresh(record)
+
+        page = list_history(product_id=None, db=self.db)
+        detail = get_history(record.id, db=self.db)
+
+        self.assertEqual(page.items[0].template_name, template.name)
+        self.assertEqual(page.items[0].template_reference_script, template.example_script)
+        self.assertEqual(detail.template_name, template.name)
+        self.assertEqual(detail.template_reference_script, template.example_script)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达人工作 · 法采新媒体运营 Agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=nav-20260710-hardening">
+<link rel="stylesheet" href="/static/css/creators.css?v=20260713-creators-v2">
+<script src="/static/vendor/lucide.min.js"></script>
+<script src="/static/js/common.js?v=20260710-hardening"></script>
+</head>
+<body class="creator-page-body">
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="nav-brand-group">
+      <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+    </div>
+    <div class="nav-links">
+      <a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/creators" class="nav-link on">达人工作</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a>
+    </div>
+  </div>
+</nav>
+<a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
+<a class="ai-config-fab" href="/app/ai-config" aria-label="打开 AI配置" title="AI配置"><i data-lucide="settings"></i><span>AI配置</span></a>
+
+<header class="creator-mobile-header">
+  <div>
+    <span class="creator-eyebrow">DOUYIN CREATOR BD</span>
+    <h1>达人工作</h1>
+  </div>
+  <button class="creator-icon-button" type="button" data-action="new-creator" aria-label="新建达人"><i data-lucide="user-plus"></i></button>
+</header>
+
+<div class="creator-mobile-switcher" role="tablist" aria-label="达人工作视图">
+  <button type="button" class="is-active" data-mobile-target="list" role="tab">达人列表</button>
+  <button type="button" data-mobile-target="detail" role="tab">达人详情</button>
+  <button type="button" data-mobile-target="activity" role="tab">BD记录</button>
+</div>
+
+<main id="creatorWorkbench" class="creator-workbench" data-mobile-view="list">
+  <aside class="creator-panel creator-sidebar" aria-label="达人资料库">
+    <div class="creator-panel-heading">
+      <div>
+        <span class="creator-eyebrow">CREATOR LIBRARY</span>
+        <h1>达人资料库</h1>
+      </div>
+      <span id="creatorTotalBadge" class="creator-count-badge">0</span>
+    </div>
+    <div class="creator-toolbar creator-toolbar-primary">
+      <button class="creator-btn creator-btn-primary" type="button" data-action="new-creator"><i data-lucide="user-plus"></i>新建达人</button>
+      <button class="creator-btn creator-btn-secondary" type="button" data-action="open-import"><i data-lucide="file-spreadsheet"></i>Excel 导入</button>
+    </div>
+    <label class="creator-search-field" for="creatorSearch">
+      <i data-lucide="search"></i>
+      <input id="creatorSearch" type="search" placeholder="昵称、达人 ID、抖音号" autocomplete="off">
+    </label>
+    <div class="creator-filter-grid">
+      <label><span>阶段</span><select id="creatorStageFilter"><option value="">全部阶段</option><option value="lead">待联系</option><option value="contacted">已建联</option><option value="negotiating">洽谈中</option><option value="sampled">已寄样</option><option value="scheduled">已排期</option><option value="cooperating">合作中</option><option value="completed">已完成</option><option value="paused">暂停</option></select></label>
+      <label><span>负责人</span><select id="creatorOwnerFilter"><option value="">全部负责人</option></select></label>
+      <label><span>垂类</span><input id="creatorCategoryFilter" type="text" placeholder="如：家庭烘焙"></label>
+      <label><span>粉丝量级</span><select id="creatorFollowerFilter"><option value="">全部量级</option><option value="under_10k">1 万以下</option><option value="10k_100k">1–10 万</option><option value="100k_500k">10–50 万</option><option value="500k_1m">50–100 万</option><option value="1m_plus">100 万以上</option></select></label>
+    </div>
+    <div class="creator-list-meta">
+      <select id="creatorSort" aria-label="达人排序"><option value="updated_desc">最近更新</option><option value="paid_desc">累计实付从高到低</option><option value="recent_followup">最近跟进</option></select>
+      <button class="creator-text-button" type="button" data-action="manage-bd"><i data-lucide="users"></i>BD 团队</button>
+    </div>
+    <div class="creator-filter-exports" aria-label="按当前筛选导出">
+      <span>按筛选导出</span>
+      <button type="button" data-export-filtered-entity="creators">达人</button>
+      <button type="button" data-export-filtered-entity="collaborations">合作</button>
+      <button type="button" data-export-filtered-entity="sample_orders" title="包含必要收件快照，请谨慎传阅">寄样</button>
+    </div>
+    <div id="creatorList" class="creator-list" aria-live="polite">
+      <div class="creator-loading"><span class="creator-spinner"></span>正在载入达人…</div>
+    </div>
+    <div id="creatorPager" class="creator-pager"></div>
+  </aside>
+
+  <section class="creator-panel creator-detail-panel" aria-label="达人画像与指标">
+    <div id="creatorDetailBody" class="creator-detail-body">
+      <div class="creator-empty-state">
+        <div class="creator-empty-icon"><i data-lucide="contact-round"></i></div>
+        <h2>选择一位达人开始工作</h2>
+        <p>从左侧资料库打开达人，可查看联系方式、画像、累计实付和下一步 BD 动作。</p>
+        <button class="creator-btn creator-btn-primary" type="button" data-action="new-creator">新建第一位达人</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="creator-panel creator-activity-panel" aria-label="达人业务动态">
+    <div class="creator-activity-heading">
+      <div>
+        <span class="creator-eyebrow">BD ACTIVITY</span>
+        <h2>业务动态</h2>
+      </div>
+      <div class="creator-export-menu">
+        <button class="creator-icon-button" type="button" data-action="export-current" aria-label="导出当前达人" title="导出当前达人"><i data-lucide="download"></i></button>
+      </div>
+    </div>
+    <div class="creator-activity-tabs" role="tablist">
+      <button type="button" class="is-active" data-activity-tab="all">全部动态</button>
+      <button type="button" data-activity-tab="collaborations">合作记录</button>
+      <button type="button" data-activity-tab="followups">跟进记录</button>
+      <button type="button" data-activity-tab="samples">寄样记录</button>
+    </div>
+    <div class="creator-quick-actions">
+      <button type="button" data-action="new-collaboration"><i data-lucide="handshake"></i><span>记录合作</span></button>
+      <button type="button" data-action="new-followup"><i data-lucide="message-square-plus"></i><span>添加跟进</span></button>
+      <button type="button" data-action="new-sample"><i data-lucide="package-plus"></i><span>一键寄样</span></button>
+    </div>
+    <div id="creatorActivityList" class="creator-activity-list" aria-live="polite">
+      <div class="creator-empty-state creator-empty-state-compact"><p>选择达人后，这里会汇总合作、跟进和寄样进度。</p></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="creatorDialog" class="creator-dialog">
+  <form id="creatorForm" class="creator-form">
+    <header><div><span class="creator-eyebrow">CREATOR PROFILE</span><h2 id="creatorDialogTitle">新建达人</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <input id="creatorEditId" type="hidden">
+    <div class="creator-form-grid">
+      <label class="creator-field creator-field-wide"><span>达人昵称 *</span><input name="nickname" required maxlength="200" placeholder="对内常用名称"></label>
+      <label><span>官方达人 ID</span><input name="platform_uid" maxlength="200" placeholder="官方唯一 ID"></label>
+      <label><span>抖音号</span><input name="douyin_handle" maxlength="200" placeholder="至少与官方 ID 填一项"></label>
+      <label><span>业务阶段</span><select name="stage"><option value="lead">待联系</option><option value="contacted">已建联</option><option value="negotiating">洽谈中</option><option value="sampled">已寄样</option><option value="scheduled">已排期</option><option value="cooperating">合作中</option><option value="completed">已完成</option><option value="paused">暂停</option></select></label>
+      <label><span>BD 负责人</span><select name="owner_id" id="creatorOwnerInput"><option value="">未分配</option></select></label>
+      <label><span>MCN / 机构</span><input name="mcn_name" maxlength="200"></label>
+      <label><span>主页链接</span><input name="homepage_url" type="url" maxlength="1000"></label>
+      <label><span>联系人</span><input name="contact_name" maxlength="100"></label>
+      <label><span>联系电话</span><input name="contact_phone" maxlength="50" inputmode="tel"></label>
+      <label><span>微信号</span><input name="wechat_id" maxlength="100"></label>
+      <label class="creator-field creator-field-wide"><span>标签</span><input name="tags" placeholder="逗号分隔，如：高意向, 直播强"></label>
+    </div>
+    <footer><button type="button" class="creator-btn creator-btn-secondary" data-close-dialog>取消</button><button type="submit" class="creator-btn creator-btn-primary">保存达人</button></footer>
+  </form>
+</dialog>
+
+<dialog id="portraitDialog" class="creator-dialog creator-dialog-wide">
+  <form id="portraitForm" class="creator-form">
+    <header><div><span class="creator-eyebrow">STRUCTURED PORTRAIT</span><h2>编辑达人画像</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <div class="creator-form-grid">
+      <label><span>内容垂类</span><input name="primary_categories" placeholder="逗号分隔"></label>
+      <label><span>内容形式</span><input name="content_formats" placeholder="直播, 短视频"></label>
+      <label><span>粉丝数</span><input name="follower_count" type="number" min="0" step="1"></label>
+      <label><span>匹配度</span><select name="fit_score"><option value="">未评估</option><option value="1">1 级</option><option value="2">2 级</option><option value="3">3 级</option><option value="4">4 级</option><option value="5">5 级</option></select></label>
+      <label><span>覆盖地区</span><input name="regions" placeholder="逗号分隔"></label>
+      <label><span>内容风格</span><input name="style_tags" placeholder="逗号分隔"></label>
+      <label><span>合作偏好</span><input name="cooperation_preferences" placeholder="逗号分隔"></label>
+      <label><span>价格带</span><input name="price_range" maxlength="200" placeholder="如：1–3 万 / 场"></label>
+      <label class="creator-field creator-field-wide"><span>受众画像</span><textarea name="audience_profile" rows="3" placeholder="年龄、城市、消费偏好等"></textarea></label>
+      <label class="creator-field creator-field-wide"><span>风险备注</span><textarea name="risk_notes" rows="3" maxlength="10000"></textarea></label>
+    </div>
+    <footer><button type="button" class="creator-btn creator-btn-secondary" data-close-dialog>取消</button><button type="submit" class="creator-btn creator-btn-primary">保存画像</button></footer>
+  </form>
+</dialog>
+
+<dialog id="followupDialog" class="creator-dialog">
+  <form id="followupForm" class="creator-form">
+    <header><div><span class="creator-eyebrow">BD FOLLOW-UP</span><h2>添加跟进</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <div class="creator-form-grid">
+      <label><span>沟通方式 *</span><select name="method" required><option value="douyin">抖音私信</option><option value="wechat">微信</option><option value="phone">电话</option><option value="offline">线下</option><option value="other">其他</option></select></label>
+      <label><span>负责人</span><select name="owner_id" id="followupOwnerInput"><option value="">沿用达人负责人</option></select></label>
+      <label class="creator-field creator-field-wide"><span>沟通内容 *</span><textarea name="content" rows="4" required maxlength="20000"></textarea></label>
+      <label class="creator-field creator-field-wide"><span>沟通结果</span><textarea name="result" rows="2" maxlength="10000"></textarea></label>
+      <label><span>下次跟进</span><input name="next_followup_at" type="datetime-local"></label>
+      <label><span>明确更新阶段</span><select name="stage_after"><option value="">保持不变</option><option value="lead">待联系</option><option value="contacted">已建联</option><option value="negotiating">洽谈中</option><option value="sampled">已寄样</option><option value="scheduled">已排期</option><option value="cooperating">合作中</option><option value="completed">已完成</option><option value="paused">暂停</option></select></label>
+    </div>
+    <footer><button type="button" class="creator-btn creator-btn-secondary" data-close-dialog>取消</button><button type="submit" class="creator-btn creator-btn-primary">保存跟进</button></footer>
+  </form>
+</dialog>
+
+<dialog id="collaborationDialog" class="creator-dialog creator-dialog-wide">
+  <form id="collaborationForm" class="creator-form">
+    <header><div><span class="creator-eyebrow">COLLABORATION</span><h2 id="collaborationDialogTitle">记录合作</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <input id="collaborationEditId" type="hidden">
+    <div class="creator-form-grid">
+      <label><span>合作编号 *</span><input name="internal_code" required maxlength="100" placeholder="如：BD-20260713-001"></label>
+      <label><span>合作日期 *</span><input name="collaboration_date" type="date" required></label>
+      <label><span>合作形式 *</span><select name="collaboration_type" required><option value="live">直播</option><option value="short_video">短视频</option><option value="graphic">图文</option><option value="other">其他</option></select></label>
+      <label><span>合作状态</span><select name="status"><option value="planned">待执行</option><option value="in_progress">执行中</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label>
+      <label><span>净实付金额（元）</span><input name="actual_paid_yuan" type="number" min="0" step="0.01" value="0"></label>
+      <label><span>金额状态</span><select name="amount_status"><option value="pending">待确认</option><option value="confirmed">已确认</option></select></label>
+      <label><span>负责人</span><select name="owner_id" id="collaborationOwnerInput"><option value="">沿用达人负责人</option></select></label>
+      <div class="creator-field creator-field-wide"><span>关联产品（可多选）</span><div id="collaborationProducts" class="creator-product-options"></div></div>
+      <label class="creator-field creator-field-wide"><span>合作备注</span><textarea name="notes" rows="3" maxlength="20000"></textarea></label>
+    </div>
+    <footer><button type="button" class="creator-btn creator-btn-secondary" data-close-dialog>取消</button><button type="submit" class="creator-btn creator-btn-primary">保存合作</button></footer>
+  </form>
+</dialog>
+
+<dialog id="addressDialog" class="creator-dialog">
+  <form id="addressForm" class="creator-form">
+    <header><div><span class="creator-eyebrow">SHIPPING ADDRESS</span><h2>添加寄样地址</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <div class="creator-form-grid">
+      <label><span>收件人 *</span><input name="recipient_name" required maxlength="100"></label>
+      <label><span>手机号 *</span><input name="phone" required maxlength="50" inputmode="tel"></label>
+      <label><span>省份 *</span><input name="province" required maxlength="100"></label>
+      <label><span>城市 *</span><input name="city" required maxlength="100"></label>
+      <label><span>区县</span><input name="district" maxlength="100"></label>
+      <label class="creator-field creator-field-wide"><span>详细地址 *</span><textarea name="detail" rows="3" required maxlength="1000"></textarea></label>
+      <label class="creator-checkbox creator-field-wide"><input name="is_default" type="checkbox"><span>设为默认地址</span></label>
+    </div>
+    <footer><button type="button" class="creator-btn creator-btn-secondary" data-close-dialog>取消</button><button type="submit" class="creator-btn creator-btn-primary">保存地址</button></footer>
+  </form>
+</dialog>
+
+<dialog id="sampleOrderDialog" class="creator-dialog creator-dialog-wide">
+  <form id="sampleOrderForm" class="creator-form">
+    <header><div><span class="creator-eyebrow">SAMPLE FULFILLMENT</span><h2>一键寄样</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <div class="creator-privacy-notice"><i data-lucide="shield-check"></i><span>提交后将冻结收件人、电话、地址和产品快照；请在确认无误后创建。</span></div>
+    <div class="creator-form-grid">
+      <label class="creator-field creator-field-wide"><span>寄样地址 *</span><select name="address_id" id="sampleAddressInput" required><option value="">请先添加地址</option></select></label>
+      <div class="creator-field creator-field-wide"><div class="creator-field-heading"><span>寄样产品 *</span><button type="button" class="creator-text-button" data-action="add-sample-row"><i data-lucide="plus"></i>添加产品</button></div><div id="sampleProductRows" class="creator-sample-rows"></div></div>
+      <label class="creator-field creator-field-wide"><span>寄样备注</span><textarea name="notes" rows="3" maxlength="10000"></textarea></label>
+    </div>
+    <footer><button type="button" class="creator-btn creator-btn-secondary" data-close-dialog>取消</button><button type="submit" class="creator-btn creator-btn-primary">确认创建寄样单</button></footer>
+  </form>
+</dialog>
+
+<dialog id="creatorImportDialog" class="creator-dialog creator-dialog-wide">
+  <form id="creatorImportForm" class="creator-form">
+    <header><div><span class="creator-eyebrow">EXCEL IMPORT</span><h2>达人业务数据导入</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <div class="creator-import-links"><a href="/api/creators/import/templates/creators"><i data-lucide="download"></i>达人资料模板</a><a href="/api/creators/import/templates/collaborations"><i data-lucide="download"></i>合作记录模板</a></div>
+    <div class="creator-form-grid">
+      <label><span>数据类型</span><select name="kind" id="creatorImportKind"><option value="creators">达人资料</option><option value="collaborations">合作记录</option></select></label>
+      <label><span>文件来源</span><select name="source_type"><option value="facai_template">法采标准模板</option><option value="douyin">抖音 / 精选联盟</option><option value="manual">其他表格（手工映射）</option></select></label>
+      <label class="creator-field creator-field-wide creator-file-drop"><input name="file" type="file" accept=".xlsx" required><i data-lucide="file-up"></i><span>选择 .xlsx 文件，先预检再提交</span></label>
+    </div>
+    <section id="creatorImportWorkspace" class="creator-import-workspace" hidden>
+      <div id="creatorImportSummary"></div>
+      <div id="creatorImportMapping" class="creator-mapping-grid"></div>
+      <div id="creatorImportErrors" class="creator-import-errors"></div>
+    </section>
+    <footer><button type="button" class="creator-btn creator-btn-secondary" data-close-dialog>关闭</button><button id="creatorImportPreviewButton" type="submit" class="creator-btn creator-btn-primary">上传预检</button><button id="creatorImportValidateButton" type="button" class="creator-btn creator-btn-secondary" data-action="validate-import" hidden>校验映射</button><button id="creatorImportCommitButton" type="button" class="creator-btn creator-btn-primary" data-action="commit-import" hidden>提交有效行</button></footer>
+  </form>
+</dialog>
+
+<dialog id="privateContactDialog" class="creator-dialog">
+  <div class="creator-form creator-contact-card">
+    <header><div><span class="creator-eyebrow">PRIVATE CONTACT</span><h2>完整联系方式</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <div class="creator-privacy-notice creator-privacy-notice-warning"><i data-lucide="eye"></i><span>仅在履行业务需要时查看，请勿截图、转发或写入备注。</span></div>
+    <div id="privateContactBody" class="creator-private-contact"><div class="creator-loading"><span class="creator-spinner"></span>正在读取…</div></div>
+    <footer><button type="button" class="creator-btn creator-btn-primary" data-close-dialog>完成</button></footer>
+  </div>
+</dialog>
+
+<dialog id="bdMemberDialog" class="creator-dialog">
+  <form id="bdMemberForm" class="creator-form">
+    <header><div><span class="creator-eyebrow">BD TEAM</span><h2>BD 团队成员</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <div class="creator-inline-form"><input name="name" required maxlength="100" placeholder="新增成员姓名"><button type="submit" class="creator-btn creator-btn-primary">添加成员</button></div>
+    <div id="bdMemberList" class="creator-member-list"></div>
+    <footer><button type="button" class="creator-btn creator-btn-secondary" data-close-dialog>完成</button></footer>
+  </form>
+</dialog>
+
+<dialog id="shippingDialog" class="creator-dialog">
+  <form id="shippingForm" class="creator-form">
+    <header><div><span class="creator-eyebrow">SHIPMENT</span><h2 id="shippingDialogTitle">寄样履约</h2></div><button type="button" class="creator-icon-button" data-close-dialog aria-label="关闭"><i data-lucide="x"></i></button></header>
+    <input name="order_id" type="hidden">
+    <input name="target_status" type="hidden">
+    <div id="shippingFields" class="creator-form-grid">
+      <label><span>快递公司 *</span><input name="shipping_company" maxlength="100"></label>
+      <label><span>运单号 *</span><input name="tracking_number" maxlength="200"></label>
+      <label class="creator-field creator-field-wide"><span>履约备注</span><textarea name="notes" rows="3" maxlength="10000"></textarea></label>
+    </div>
+    <footer><button type="button" class="creator-btn creator-btn-secondary" data-close-dialog>取消</button><button type="submit" class="creator-btn creator-btn-primary">确认更新</button></footer>
+  </form>
+</dialog>
+
+<script src="/static/js/creators.js?v=20260713-creators-v2"></script>
+</body>
+</html>

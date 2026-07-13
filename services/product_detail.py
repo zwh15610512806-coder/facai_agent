@@ -1548,7 +1548,7 @@ def _alias_names_for_products(product_names: list[str], aliases: dict[str, set[s
             candidates.update(aliases.get(candidate, set()))
         for candidate in list(candidates):
             candidates.update(aliases.get(candidate, set()))
-        for candidate in candidates:
+        for candidate in sorted(candidates, key=lambda value: (_name_key(value), value)):
             candidate_key = _name_key(candidate)
             if candidate_key in root_keys:
                 continue

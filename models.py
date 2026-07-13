@@ -88,6 +88,10 @@ class GeneratedScript(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"))
     template_id = Column(Integer, ForeignKey("script_templates.id", ondelete="SET NULL"))
+    source_script_id = Column(Integer, comment="具体参考脚本ID")
+    source_script_source = Column(String(20), comment="具体参考脚本来源：facai/other")
+    source_script_title = Column(String(300), comment="具体参考脚本标题快照")
+    source_script_content = Column(Text, comment="具体参考脚本内容快照")
     script_content = Column(Text, nullable=False, comment="生成的脚本内容")
     video_type = Column(String(100), comment="视频类型")
     ai_model = Column(String(100), comment="使用的AI模型")
@@ -227,7 +231,47 @@ class ProductRagQueryLog(Base):
     degraded_reason = Column(Text)
     latency_ms = Column(Integer, nullable=False, default=0)
     error_summary = Column(Text)
+    pipeline_version = Column(String(50), nullable=False, default="product-rag-v3-facets")
+    index_version = Column(String(100), nullable=False, default="legacy")
+    query_plan = Column(JSON, default=dict)
+    candidate_trace = Column(JSON, default=list)
+    selected_evidence = Column(JSON, default=list)
+    rerank_status = Column(String(30), nullable=False, default="skipped")
+    answer_mode = Column(String(30), nullable=False, default="fallback")
     created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
+class ProductRagFeedback(Base):
+    """Lightweight user quality feedback for one product RAG answer."""
+    __tablename__ = "product_rag_feedbacks"
+    __table_args__ = (UniqueConstraint("query_log_id", name="uq_product_rag_feedback_query"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    query_log_id = Column(
+        Integer,
+        ForeignKey("product_rag_query_logs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    rating = Column(String(10), nullable=False)
+    reason = Column(String(30))
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class VectorIndexVersion(Base):
+    """Build and activation history for versioned vector indexes."""
+    __tablename__ = "vector_index_versions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity_type = Column(String(40), nullable=False, index=True)
+    collection_name = Column(String(120), nullable=False, unique=True)
+    status = Column(String(20), nullable=False, default="building", index=True)
+    chunk_count = Column(Integer, nullable=False, default=0)
+    embedding_model = Column(String(200))
+    error_summary = Column(Text)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    activated_at = Column(DateTime)
 
 
 class VectorSyncJob(Base):

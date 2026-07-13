@@ -250,14 +250,105 @@ class ExplicitVectorOperationTests(unittest.TestCase):
 
 
 class ProductChunkIndexingTests(unittest.TestCase):
+    def test_index_hash_changes_when_source_or_price_metadata_changes(self):
+        from services.product_knowledge_chunks import (
+            ProductKnowledgeChunk,
+            product_chunk_index_metadata,
+        )
+
+        base = ProductKnowledgeChunk(
+            chunk_id="product_7:info",
+            product_id=7,
+            product_name="水性色素",
+            category="烘焙调色",
+            section="product_info",
+            text="适合奶油调色。",
+            intent_tags=("coloring",),
+            source_name="资料A.md",
+        )
+        changed_source = ProductKnowledgeChunk(
+            **{**base.__dict__, "source_name": "资料B.md", "content_hash": ""}
+        )
+
+        first = product_chunk_index_metadata(base, 18.59)
+        source_changed = product_chunk_index_metadata(changed_source, 18.59)
+        price_changed = product_chunk_index_metadata(base, 20.0)
+
+        self.assertNotEqual(first["content_hash"], source_changed["content_hash"])
+        self.assertNotEqual(first["content_hash"], price_changed["content_hash"])
+
+    def test_activation_smoke_test_reads_queries_and_reupserts_one_chunk(self):
+        from vector_store.product_store import validate_product_collection_for_activation
+
+        captured = {}
+
+        class FakeCollection:
+            def count(self):
+                return 1
+
+            def get(self, limit, include):
+                captured["get"] = (limit, include)
+                return {
+                    "ids": ["product_7:info"],
+                    "documents": ["产品：水性色素"],
+                    "metadatas": [{
+                        "product_id": 7,
+                        "content_hash": "hash",
+                        "source_name": "结构化产品资料",
+                    }],
+                }
+
+            def query(self, query_texts, n_results):
+                captured["query"] = (query_texts, n_results)
+                return {"ids": [["product_7:info"]]}
+
+            def upsert(self, ids, documents, metadatas):
+                captured["upsert"] = (ids, documents, metadatas)
+
+        result = validate_product_collection_for_activation(FakeCollection(), expected_count=1)
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["query_hits"], 1)
+        self.assertEqual(captured["upsert"][0], ["product_7:info"])
+
+    def test_resume_filter_skips_chunks_with_matching_content_hash(self):
+        from vector_store.product_store import _filter_pending_chunks
+
+        class FakeCollection:
+            def get(self, include):
+                self.include = include
+                return {
+                    "ids": ["product_7:info", "product_7:price"],
+                    "metadatas": [
+                        {"content_hash": "same"},
+                        {"content_hash": "old"},
+                    ],
+                }
+
+        collection = FakeCollection()
+        ids, documents, metadatas = _filter_pending_chunks(
+            FakeCollection(),
+            ["product_7:info", "product_7:price", "product_7:usage"],
+            ["info", "price", "usage"],
+            [
+                {"content_hash": "same"},
+                {"content_hash": "new"},
+                {"content_hash": "usage"},
+            ],
+        )
+
+        self.assertEqual(ids, ["product_7:price", "product_7:usage"])
+        self.assertEqual(documents, ["price", "usage"])
+        self.assertEqual([item["content_hash"] for item in metadatas], ["new", "usage"])
+
     def test_index_product_writes_multiple_metadata_chunks(self):
         from vector_store.product_store import ProductVectorStore
 
         captured = {}
 
         class FakeCollection:
-            def delete(self, where):
-                captured["delete_where"] = where
+            def get(self, where, include):
+                return {"ids": [], "metadatas": []}
 
             def upsert(self, ids, documents, metadatas):
                 captured["ids"] = ids
@@ -286,13 +377,76 @@ class ProductChunkIndexingTests(unittest.TestCase):
         doc_ids = store.index_product(product)
 
         self.assertGreaterEqual(len(doc_ids), 3)
-        self.assertEqual(captured["delete_where"], {"product_id": 7})
         self.assertTrue(all(doc_id.startswith("product_7:") for doc_id in captured["ids"]))
         sections = {meta["section"] for meta in captured["metadatas"]}
         self.assertGreaterEqual(sections, {"product_info", "selling_point"})
         self.assertTrue(all(meta["product_id"] == 7 for meta in captured["metadatas"]))
         self.assertTrue(any(meta.get("intent_coloring") is True for meta in captured["metadatas"]))
         self.assertTrue(any("少量即可上色" in document for document in captured["documents"]))
+
+    def test_index_product_only_reembeds_changed_chunks(self):
+        from vector_store.product_store import ProductVectorStore
+
+        captured = {"deleted_ids": [], "events": []}
+
+        class FakeCollection:
+            def get(self, where, include):
+                captured["get_where"] = where
+                return {
+                    "ids": ["keep", "change", "remove"],
+                    "metadatas": [
+                        {"content_hash": captured["keep_hash"]},
+                        {"content_hash": "old"},
+                        {"content_hash": "removed"},
+                    ],
+                }
+
+            def delete(self, ids=None, where=None):
+                captured["events"].append("delete")
+                captured["deleted_ids"] = ids
+                captured["delete_where"] = where
+
+            def upsert(self, ids, documents, metadatas):
+                captured["events"].append("upsert")
+                captured["upsert_ids"] = ids
+
+        class FakeStore:
+            def get_product_collection(self):
+                return FakeCollection()
+
+        chunks = [
+            SimpleNamespace(
+                chunk_id="keep",
+                document=lambda: "keep",
+                metadata=lambda: {"content_hash": "same"},
+            ),
+            SimpleNamespace(
+                chunk_id="change",
+                document=lambda: "change",
+                metadata=lambda: {"content_hash": "new"},
+            ),
+            SimpleNamespace(
+                chunk_id="add",
+                document=lambda: "add",
+                metadata=lambda: {"content_hash": "added"},
+            ),
+        ]
+        product = SimpleNamespace(id=7, price=18.59)
+        store = ProductVectorStore()
+        store.store = FakeStore()
+        store.build_chunks = lambda _product: chunks
+        from services.product_knowledge_chunks import product_chunk_index_metadata
+
+        captured["keep_hash"] = product_chunk_index_metadata(chunks[0], product.price)["content_hash"]
+
+        indexed_ids = store.index_product(product)
+
+        self.assertEqual(indexed_ids, ["keep", "change", "add"])
+        self.assertEqual(captured["get_where"], {"product_id": 7})
+        self.assertEqual(captured["deleted_ids"], ["remove"])
+        self.assertIsNone(captured["delete_where"])
+        self.assertEqual(captured["upsert_ids"], ["change", "add"])
+        self.assertEqual(captured["events"], ["upsert", "delete"])
 
     def test_search_passes_category_intent_and_product_metadata_filters(self):
         from vector_store.product_store import ProductVectorStore

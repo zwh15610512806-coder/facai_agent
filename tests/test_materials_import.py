@@ -232,12 +232,32 @@ class MaterialsImportParsingTests(unittest.TestCase):
         self.assertNotIn("reset_product_collection()", init_body)
         self.assertNotIn("reset_script_collection()", init_body)
 
-    def test_reindex_endpoints_reset_collections_before_full_indexing(self):
+    def test_product_reindex_builds_version_before_activation(self):
         products_source = (ROOT / "routers" / "products.py").read_text(encoding="utf-8-sig")
         product_body = products_source.split("def reindex_products", 1)[1].split("\n\n@router", 1)[0]
-        self.assertIn("reset_product_collection()", product_body)
-        self.assertLess(product_body.index("reset_product_collection()"), product_body.index("index_all_products"))
+        self.assertNotIn("reset_product_collection()", product_body)
+        self.assertIn("create_product_collection", product_body)
+        self.assertIn("activate_product_collection", product_body)
+        self.assertLess(product_body.index("index_all_products"), product_body.index("activate_product_collection"))
 
+    def test_product_reindex_reconciles_database_without_consuming_sync_jobs(self):
+        products_source = (ROOT / "routers" / "products.py").read_text(encoding="utf-8-sig")
+        product_body = products_source.split("def _reindex_products_locked", 1)[1].split("\n\n@router", 1)[0]
+
+        self.assertIn("reconcile_collection_to_database", product_body)
+        self.assertIn("final_db = SessionLocal()", product_body)
+        self.assertRegex(product_body, r"reconcile_collection_to_database\(\s+final_db,")
+        self.assertGreater(
+            product_body.rindex("product_knowledge_quality_report"),
+            product_body.index("final_db = SessionLocal()"),
+        )
+        self.assertLess(
+            product_body.index("reconcile_collection_to_database"),
+            product_body.index("activate_product_collection"),
+        )
+        self.assertNotIn("VectorSyncJob.status: \"succeeded\"", product_body)
+
+    def test_script_reindex_still_resets_before_full_indexing(self):
         templates_source = (ROOT / "routers" / "templates.py").read_text(encoding="utf-8-sig")
         script_body = templates_source.split("def reindex_scripts", 1)[1].split("\n\n@router", 1)[0]
         self.assertIn("reset_script_collection()", script_body)

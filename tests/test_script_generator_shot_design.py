@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 
-from services.script_generator import ScriptGenerator
+from services.script_generator import ScriptGenerationError, ScriptGenerator
 
 
 class CapturingAI:
@@ -10,12 +10,16 @@ class CapturingAI:
     def __init__(self, response):
         self.response = response
         self.messages = None
+        self.calls = 0
 
     def get_model_name(self):
         return "fake-model"
 
     async def chat(self, messages, temperature=0.75):
         self.messages = messages
+        self.calls += 1
+        if isinstance(self.response, list):
+            return self.response.pop(0)
         return self.response
 
 
@@ -49,9 +53,395 @@ def make_template_context():
     }
 
 
+def make_neutral_template():
+    return {
+        "id": 8,
+        "name": "机制类低价模板",
+        "video_type": "成本低",
+        "structure": {
+            "opening": "从急单场景切入",
+            "proof": "展示产品稳定性",
+            "cta": "自然引导左下角下单",
+        },
+        "hook_templates": ["急单夹心来不及冷藏，就先看凝固速度。"],
+        "cta_templates": ["需要稳定出品就点左下角"],
+        "duration_range": "15-25s",
+        "description": "适合急单场景的产品证明模板",
+        "example_script": "急单夹心来不及等，就先展示凝固速度，再证明口感稳定。",
+    }
+
+
 class ScriptGeneratorShotDesignTests(unittest.TestCase):
+    def test_library_template_without_audience_call_forbids_and_strips_model_added_call(self):
+        responses = {
+            False: "姐妹们，快看过来！这款慕斯粉冷藏后更稳定。",
+            True: "（镜头推近慕斯切面）做蛋糕的姐妹们，别划走！这款慕斯粉冷藏后更稳定。",
+        }
+
+        for include_shot_design, response in responses.items():
+            with self.subTest(include_shot_design=include_shot_design):
+                ai = CapturingAI(response)
+                generator = ScriptGenerator()
+                generator.ai = ai
+
+                result = asyncio.run(generator.generate_from_library(
+                    product=make_product(),
+                    video_type="需求类",
+                    template=make_neutral_template(),
+                    include_shot_design=include_shot_design,
+                ))
+
+                system_prompt = ai.messages[0]["content"]
+                user_prompt = ai.messages[1]["content"]
+                for prompt in (system_prompt, user_prompt):
+                    self.assertIn("模板不包含人群召唤", prompt)
+                    self.assertIn("禁止新增", prompt)
+                self.assertNotIn("姐妹们", result)
+                self.assertNotIn("别划走", result)
+                self.assertIn("这款慕斯粉冷藏后更稳定。", result)
+                if include_shot_design:
+                    self.assertTrue(result.startswith("（镜头推近慕斯切面）"))
+
+    def test_library_template_hook_audience_call_is_allowed_and_preserved(self):
+        template = make_neutral_template()
+        template["hook_templates"] = ["老板们看过来，急单先看凝固速度。"]
+        ai = CapturingAI("老板们看过来，急单先看这款慕斯粉。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate_from_library(
+            product=make_product(),
+            video_type="需求类",
+            template=template,
+        ))
+
+        for message in ai.messages:
+            self.assertIn("模板明确包含人群召唤", message["content"])
+            self.assertIn("可保留相同结构的人群召唤", message["content"])
+        self.assertTrue(result.startswith("老板们看过来，"))
+
+    def test_library_matching_plain_audience_call_is_preserved_in_pure_and_shot_modes(self):
+        responses = {
+            False: "姐妹们，这款慕斯粉冷藏后更稳定。",
+            True: "（镜头推近慕斯切面）姐妹们，这款慕斯粉冷藏后更稳定。",
+        }
+        for include_shot_design, response in responses.items():
+            with self.subTest(include_shot_design=include_shot_design):
+                template = make_neutral_template()
+                template["hook_templates"] = ["姐妹们，急单先看凝固速度。"]
+                ai = CapturingAI(response)
+                generator = ScriptGenerator()
+                generator.ai = ai
+
+                result = asyncio.run(generator.generate_from_library(
+                    product=make_product(),
+                    video_type="需求类",
+                    template=template,
+                    include_shot_design=include_shot_design,
+                ))
+
+                self.assertIn("姐妹们", result)
+                self.assertEqual(ai.calls, 1)
+
+    def test_library_intensified_audience_cue_is_stripped_in_pure_and_shot_modes(self):
+        cases = (
+            (
+                "老板们看过来，急单先看凝固速度。",
+                "老板们，别划走！这款慕斯粉冷藏后更稳定。",
+                False,
+            ),
+            (
+                "老板们看过来，急单先看凝固速度。",
+                "（镜头推近慕斯切面）老板们，别划走！这款慕斯粉冷藏后更稳定。",
+                True,
+            ),
+            (
+                "姐妹们，急单先看凝固速度。",
+                "姐妹们注意了，这款慕斯粉冷藏后更稳定。",
+                False,
+            ),
+            (
+                "姐妹们，急单先看凝固速度。",
+                "（镜头推近慕斯切面）姐妹们看过来，这款慕斯粉冷藏后更稳定。",
+                True,
+            ),
+        )
+        for template_hook, response, include_shot_design in cases:
+            with self.subTest(response=response):
+                template = make_neutral_template()
+                template["hook_templates"] = [template_hook]
+                ai = CapturingAI(response)
+                generator = ScriptGenerator()
+                generator.ai = ai
+
+                result = asyncio.run(generator.generate_from_library(
+                    product=make_product(),
+                    video_type="需求类",
+                    template=template,
+                    include_shot_design=include_shot_design,
+                ))
+
+                self.assertNotIn("老板们", result)
+                self.assertNotIn("姐妹们", result)
+                self.assertNotIn("别划走", result)
+                self.assertNotIn("注意了", result)
+                self.assertNotIn("看过来", result)
+                self.assertIn("这款慕斯粉冷藏后更稳定。", result)
+                self.assertEqual(ai.calls, 1)
+
+    def test_library_template_example_audience_call_is_allowed_and_preserved(self):
+        template = make_neutral_template()
+        template["example_script"] = "姐妹们，先看夹心凝固速度，再看切面。"
+        ai = CapturingAI("姐妹们，先看这款慕斯粉的凝固速度。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate_from_library(
+            product=make_product(),
+            video_type="需求类",
+            template=template,
+        ))
+
+        self.assertIn("模板明确包含人群召唤", ai.messages[0]["content"])
+        self.assertIn("模板明确包含人群召唤", ai.messages[1]["content"])
+        self.assertTrue(result.startswith("姐妹们，"))
+
+    def test_library_substituted_audience_phrase_is_stripped_even_when_template_allows_one(self):
+        template = make_neutral_template()
+        template["hook_templates"] = ["老板们看过来，急单先看凝固速度。"]
+        ai = CapturingAI("姐妹们，别划走！这款慕斯粉冷藏后更稳定。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate_from_library(
+            product=make_product(),
+            video_type="需求类",
+            template=template,
+        ))
+
+        self.assertEqual(ai.calls, 1)
+        self.assertEqual(result, "这款慕斯粉冷藏后更稳定。")
+
+    def test_library_declarative_audience_subject_does_not_allow_model_added_call(self):
+        responses = {
+            False: "开烘焙店的朋友们，先看这款慕斯粉。",
+            True: "（镜头推近慕斯切面）开烘焙店的朋友们，先看这款慕斯粉。",
+        }
+        for include_shot_design, response in responses.items():
+            with self.subTest(include_shot_design=include_shot_design):
+                template = make_neutral_template()
+                template["hook_templates"] = ["做蛋糕的姐妹们每天都会提前备料。"]
+                ai = CapturingAI(response)
+                generator = ScriptGenerator()
+                generator.ai = ai
+
+                result = asyncio.run(generator.generate_from_library(
+                    product=make_product(),
+                    video_type="需求类",
+                    template=template,
+                    include_shot_design=include_shot_design,
+                ))
+
+                self.assertIn("模板不包含人群召唤", ai.messages[0]["content"])
+                self.assertNotIn("朋友们", result)
+                self.assertIn("先看这款慕斯粉。", result)
+                if include_shot_design:
+                    self.assertTrue(result.startswith("（镜头推近慕斯切面）"))
+
+    def test_library_generalized_audience_substitution_is_stripped_in_pure_and_shot_paths(self):
+        responses = {
+            False: "经营烘焙店的朋友们先看这款慕斯粉。",
+            True: "（镜头推近慕斯切面）经营烘焙店的朋友们先看这款慕斯粉。",
+        }
+        for include_shot_design, response in responses.items():
+            with self.subTest(include_shot_design=include_shot_design):
+                template = make_neutral_template()
+                template["hook_templates"] = ["开烘焙店的朋友们先看凝固速度。"]
+                ai = CapturingAI(response)
+                generator = ScriptGenerator()
+                generator.ai = ai
+
+                result = asyncio.run(generator.generate_from_library(
+                    product=make_product(),
+                    video_type="需求类",
+                    template=template,
+                    include_shot_design=include_shot_design,
+                ))
+
+                self.assertIn("模板明确包含人群召唤", ai.messages[0]["content"])
+                self.assertNotIn("经营烘焙店的朋友们", result)
+                self.assertIn("这款慕斯粉。", result)
+
+    def test_library_rewrite_uses_one_model_call_without_ai_opening_history_or_repair_blocks(self):
+        ai = CapturingAI("姐妹们，快看过来！这款慕斯粉冷藏后更稳定。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate_from_library(
+            product=make_product(),
+            video_type="需求类",
+            template=make_neutral_template(),
+        ))
+
+        combined_prompt = "\n".join(message["content"] for message in ai.messages)
+        self.assertEqual(ai.calls, 1)
+        self.assertNotIn("本次开头策略", combined_prompt)
+        self.assertNotIn("近期首句去重", combined_prompt)
+        self.assertNotIn("机器校验原因", combined_prompt)
+        self.assertEqual(result, "这款慕斯粉冷藏后更稳定。")
+
+    def test_library_template_without_price_structure_forbids_price_even_when_name_and_type_suggest_it(self):
+        ai = CapturingAI("急单先看凝固速度，这款慕斯粉冷藏后更稳定。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate_from_library(
+            product=make_product(),
+            video_type="成本低",
+            template=make_neutral_template(),
+        ))
+
+        for message in ai.messages:
+            self.assertIn("模板没有价格或机制段落", message["content"])
+            self.assertIn("不得新增价格、优惠、折扣、赠品或促销内容", message["content"])
+        user_prompt = ai.messages[1]["content"]
+        self.assertNotIn("价格/机制位置", user_prompt)
+        self.assertNotIn("价格/机制 →", user_prompt)
+
+    def test_library_non_price_content_mechanism_does_not_enable_price_copy(self):
+        template = make_neutral_template()
+        template["description"] = "强调内容机制和口播推进，保持产品证明段落。"
+        template["structure"] = {
+            "opening": "从急单场景切入",
+            "proof": "解释内容机制，再展示凝固稳定性",
+            "cta": "自然引导左下角下单",
+        }
+        ai = CapturingAI("急单先看凝固速度，现在8折，点左下角。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        with self.assertRaisesRegex(
+            ScriptGenerationError,
+            "模板库改写结果擅自加入价格或促销信息，请重试。",
+        ):
+            asyncio.run(generator.generate_from_library(
+                product=make_product(),
+                video_type="需求类",
+                template=template,
+            ))
+
+        for message in ai.messages:
+            self.assertIn("模板没有价格或机制段落", message["content"])
+
+    def test_library_template_with_price_structure_allows_abstract_price_in_matching_position(self):
+        template = make_neutral_template()
+        template["structure"] = {
+            "opening": "从急单场景切入",
+            "price": "产品证明后承接活动价和优惠机制",
+            "cta": "自然引导左下角下单",
+        }
+        ai = CapturingAI("急单先看凝固速度，稳定后再说几十块的活动价，最后点左下角。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate_from_library(
+            product=make_product(),
+            video_type="需求类",
+            template=template,
+        ))
+
+        for message in ai.messages:
+            self.assertIn("模板包含价格或机制功能", message["content"])
+            self.assertIn("在模板对应结构位置使用目标产品的抽象价格", message["content"])
+            self.assertIn("价格待更新时不得编造", message["content"])
+        self.assertIn("几十块", result)
+
+    def test_library_template_without_price_structure_rejects_model_price_copy(self):
+        forbidden_outputs = (
+            "急单先看凝固速度，现在活动价十来块，点左下角。",
+            "急单先看凝固速度，买一送一，点左下角。",
+            "急单先看凝固速度，一杯奶茶钱就能入手。",
+            "急单先看凝固速度，现在8折，点左下角。",
+            "急单先看凝固速度，现在立减10，点左下角。",
+            "急单先看凝固速度，现在十九块九，点左下角。",
+        )
+        for response in forbidden_outputs:
+            with self.subTest(response=response):
+                ai = CapturingAI(response)
+                generator = ScriptGenerator()
+                generator.ai = ai
+
+                with self.assertRaisesRegex(
+                    ScriptGenerationError,
+                    "模板库改写结果擅自加入价格或促销信息，请重试。",
+                ) as raised:
+                    asyncio.run(generator.generate_from_library(
+                        product=make_product(),
+                        video_type="需求类",
+                        template=make_neutral_template(),
+                    ))
+
+                self.assertEqual(raised.exception.status_code, 502)
+                self.assertEqual(ai.calls, 1)
+
+    def test_library_template_without_price_structure_allows_numeric_specs_time_and_count(self):
+        ai = CapturingAI(
+            "这款500g慕斯粉适合6寸蛋糕，保质期12个月，30秒看完3个稳定细节。"
+        )
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate_from_library(
+            product=make_product(),
+            video_type="需求类",
+            template=make_neutral_template(),
+        ))
+
+        self.assertIn("500g", result)
+        self.assertIn("6寸", result)
+        self.assertIn("12个月", result)
+        self.assertIn("30秒", result)
+        self.assertEqual(ai.calls, 1)
+
+    def test_ai_generation_repairs_invalid_opening_once_in_pure_and_shot_modes(self):
+        for include_shot_design in (False, True):
+            with self.subTest(include_shot_design=include_shot_design):
+                first_response = "姐妹们，别划走！这款慕斯粉冷藏后更稳定。"
+                repaired_response = "急单夹心最怕冷藏后还站不住，这款慕斯粉凝固更稳定。"
+                if include_shot_design:
+                    first_response = f"（镜头推近慕斯切面）{first_response}"
+                    repaired_response = f"（镜头推近慕斯切面）{repaired_response}"
+                ai = CapturingAI([first_response, repaired_response])
+                generator = ScriptGenerator()
+                generator.ai = ai
+
+                result = asyncio.run(generator.generate(
+                    product=make_product(),
+                    template=None,
+                    video_type="需求类",
+                    include_shot_design=include_shot_design,
+                ))
+
+                self.assertEqual(ai.calls, 2)
+                self.assertIn("急单夹心最怕", result)
+
+    def test_ai_shot_design_validates_spoken_opening_after_leading_camera_parentheses(self):
+        ai = CapturingAI("（手部近景，把独立袋装刀叉摆上打包台）先把餐叉按订单摆好，配送打包更干净。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate(
+            product=make_product(),
+            template=None,
+            video_type="场景类",
+            include_shot_design=True,
+        ))
+
+        self.assertEqual(ai.calls, 1)
+        self.assertIn("（手部近景", result)
+        self.assertIn("每句话添加镜头说明", ai.messages[-1]["content"])
     def test_plain_copy_prompt_and_post_process_remove_shot_design(self):
-        ai = CapturingAI("【痛点】\n0-3s\n（镜头推进展示产品）这是一句卖点。\n慕斯粉（液）口感细腻，3秒凝固也没问题。")
+        ai = CapturingAI("【痛点】\n0-3s\n（镜头推进展示产品）急单夹心先看凝固速度。\n慕斯粉（液）口感细腻，3秒凝固也没问题。")
         generator = ScriptGenerator()
         generator.ai = ai
 
@@ -77,7 +467,7 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
         self.assertNotIn("【痛点】", result)
         self.assertNotIn("0-3s", result)
         self.assertNotIn("镜头推进", result)
-        self.assertIn("这是一句卖点。", result)
+        self.assertIn("急单夹心先看凝固速度。", result)
         self.assertIn("慕斯粉（液）口感细腻，3秒凝固也没问题。", result)
 
     def test_plain_library_rewrite_outputs_single_spoken_paragraph(self):
@@ -138,7 +528,8 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
         self.assertNotIn("】", result)
         self.assertNotIn("镜头", result)
         self.assertNotIn("前3秒", result)
-        self.assertIn("姐妹们！2024年了", result)
+        self.assertNotIn("姐妹们", result)
+        self.assertIn("2024年了", result)
         self.assertIn("以前做个蛋糕夹心", result)
 
     def test_shot_design_library_rewrite_uses_unified_rewrite_prompt_and_keeps_shot_requirements(self):
@@ -207,7 +598,8 @@ class ScriptGeneratorShotDesignTests(unittest.TestCase):
         self.assertNotIn("！ 法采", result)
         self.assertNotIn("？ 拍下", result)
         self.assertIn("？拍下", result)
-        self.assertIn("姐妹们，别等恢复原价了", result)
+        self.assertNotIn("姐妹们", result)
+        self.assertIn("别等恢复原价了", result)
         self.assertIn("法采年终福利", result)
 
     def test_shot_design_prompt_requires_camera_notes_for_each_sentence(self):

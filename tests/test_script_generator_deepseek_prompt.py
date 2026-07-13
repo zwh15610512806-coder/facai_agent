@@ -11,6 +11,7 @@ class PromptCaptureAI:
         self.response = response
         self.messages = None
         self.allow_fallback = None
+        self.calls = []
 
     def get_model_name(self, *args, **kwargs):
         return "fake-model"
@@ -18,7 +19,33 @@ class PromptCaptureAI:
     async def chat(self, messages, temperature=0.85, interface_key="script_generate", **kwargs):
         self.messages = messages
         self.allow_fallback = kwargs.get("allow_fallback")
+        self.calls.append({
+            "messages": messages,
+            "temperature": temperature,
+            "interface_key": interface_key,
+            "allow_fallback": self.allow_fallback,
+        })
         return self.response
+
+
+class SequenceResponseAI(PromptCaptureAI):
+    def __init__(self, responses):
+        super().__init__()
+        self.responses = list(responses)
+
+    async def chat(self, messages, temperature=0.85, interface_key="script_generate", **kwargs):
+        self.messages = messages
+        self.allow_fallback = kwargs.get("allow_fallback")
+        self.calls.append({
+            "messages": messages,
+            "temperature": temperature,
+            "interface_key": interface_key,
+            "allow_fallback": self.allow_fallback,
+        })
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class InterfaceAvailableAI(PromptCaptureAI):
@@ -166,6 +193,189 @@ def make_template():
 
 
 class DeepSeekPromptTests(unittest.TestCase):
+    def test_ai_prompt_includes_opening_strategy_history_and_conversion_framework(self):
+        ai = PromptCaptureAI("先把独立袋装刀叉摆到打包台上，配送时更干净。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate(
+            product=make_product(),
+            template=None,
+            video_type="需求类",
+            recent_openings=["先看承托稳不稳。", "门店急单别再临时找刀叉。"],
+        ))
+
+        prompt = "\n".join(message["content"] for message in ai.messages)
+        self.assertIn("【本次开头策略】", prompt)
+        self.assertRegex(prompt, r"策略家族：(action|scene_conflict|result_contrast|cognition|product_proof|customer_feedback)")
+        self.assertIn("【近期首句去重】", prompt)
+        self.assertIn("禁止复制这些首句的角度或句式", prompt)
+        self.assertIn("CTR", prompt)
+        self.assertIn("CVR", prompt)
+        self.assertIn("真实烘焙门店场景", prompt)
+        self.assertIn("具体产品证明", prompt)
+        self.assertIn("内容重、营销轻", prompt)
+        self.assertIn("一条清晰转化主线", prompt)
+        self.assertIn("证明之后自然 CTA", prompt)
+        self.assertNotIn("必须包含输入中已有的价格/活动信息", prompt)
+        self.assertIn("本条脚本不要求价格", prompt)
+        self.assertIn("不得为了制造广告压力强行插入价格或促销", prompt)
+
+    def test_price_policy_allows_abstract_price_only_for_price_intent(self):
+        cases = [
+            ("机制类", None),
+            ("成本低", None),
+            ("需求类", "请突出优惠活动和到手价"),
+        ]
+        for video_type, extra_requirements in cases:
+            with self.subTest(video_type=video_type, extra_requirements=extra_requirements):
+                ai = PromptCaptureAI("门店备货先看独立包装，打包配送更省心。")
+                generator = ScriptGenerator()
+                generator.ai = ai
+                asyncio.run(generator.generate(
+                    product=make_product(),
+                    template=None,
+                    video_type=video_type,
+                    extra_requirements=extra_requirements,
+                ))
+                prompt = "\n".join(message["content"] for message in ai.messages)
+                self.assertIn("允许使用真实且抽象的价格/活动表达", prompt)
+                self.assertNotIn("本条脚本不要求价格", prompt)
+
+    def test_negative_price_requirements_do_not_enable_price_policy(self):
+        for extra_requirements in (
+            "不要写价格",
+            "本条不提活动和优惠",
+            "产品没有优惠，不要编造",
+            "本条无活动",
+            "不包含价格信息",
+            "目前不存在促销",
+        ):
+            with self.subTest(extra_requirements=extra_requirements):
+                ai = PromptCaptureAI("门店备货先看独立包装，打包配送更省心。")
+                generator = ScriptGenerator()
+                generator.ai = ai
+
+                asyncio.run(generator.generate(
+                    product=make_product(),
+                    template=None,
+                    video_type="需求类",
+                    extra_requirements=extra_requirements,
+                ))
+
+                prompt = "\n".join(message["content"] for message in ai.messages)
+                self.assertIn("本条脚本不要求价格", prompt)
+                self.assertNotIn("允许使用真实且抽象的价格/活动表达", prompt)
+
+    def test_no_threshold_coupon_is_treated_as_real_positive_promotion(self):
+        for extra_requirements in ("无门槛优惠券", "没有门槛的优惠券"):
+            with self.subTest(extra_requirements=extra_requirements):
+                ai = PromptCaptureAI("门店备货先看独立包装，打包配送更省心。")
+                generator = ScriptGenerator()
+                generator.ai = ai
+
+                asyncio.run(generator.generate(
+                    product=make_product(),
+                    template=None,
+                    video_type="需求类",
+                    extra_requirements=extra_requirements,
+                ))
+
+                prompt = "\n".join(message["content"] for message in ai.messages)
+                self.assertIn("允许使用真实且抽象的价格/活动表达", prompt)
+
+    def test_valid_first_response_uses_one_model_call(self):
+        ai = PromptCaptureAI("先把独立袋装刀叉放到打包台上，配送时干净又稳。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate(make_product(), None, "需求类"))
+
+        self.assertIn("独立袋装刀叉", result)
+        self.assertEqual(len(ai.calls), 1)
+
+    def test_generic_audience_opening_triggers_one_repair(self):
+        ai = SequenceResponseAI([
+            "烘焙姐妹们看过来，袋装刀叉适合门店配送。",
+            "先把独立袋装刀叉放到打包台上，配送时更干净。",
+        ])
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        result = asyncio.run(generator.generate(make_product(), None, "需求类"))
+
+        self.assertEqual(len(ai.calls), 2)
+        self.assertEqual(ai.calls[1]["temperature"], 0.95)
+        self.assertIs(ai.calls[1]["allow_fallback"], False)
+        repair_prompt = ai.calls[1]["messages"][-1]["content"]
+        self.assertIn('"generic_audience_call"', repair_prompt)
+        self.assertIn("烘焙姐妹们看过来", repair_prompt)
+        self.assertIn("重排卖点推进顺序", repair_prompt)
+        self.assertIn("先把独立袋装刀叉", result)
+
+    def test_empty_attention_opening_triggers_one_repair(self):
+        ai = SequenceResponseAI([
+            "你们知道吗？这个真的很好用。",
+            "先把独立袋装刀叉放到打包台上，配送时更干净。",
+        ])
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate(make_product(), None, "需求类"))
+
+        self.assertEqual(len(ai.calls), 2)
+        self.assertIn('"empty_attention_hook"', ai.calls[1]["messages"][-1]["content"])
+
+    def test_recent_opening_similarity_triggers_one_repair(self):
+        recent = ["先把独立袋装刀叉整整齐齐摆到门店打包台最顺手的位置，"]
+        ai = SequenceResponseAI([
+            recent[0],
+            "急单打包最怕餐叉裸放，这套独立包装直接解决卫生冲突。",
+        ])
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate(make_product(), None, "需求类", recent_openings=recent))
+
+        self.assertEqual(len(ai.calls), 2)
+        repair_prompt = ai.calls[1]["messages"][-1]["content"]
+        self.assertIn('"recent_opening_similarity"', repair_prompt)
+        self.assertIn(recent[0], repair_prompt)
+
+    def test_invalid_empty_or_failed_repair_raises_exact_quality_error(self):
+        second_responses = [
+            "烘焙姐妹们看过来，还是这套餐叉。",
+            "",
+        ]
+        for second_response in second_responses:
+            with self.subTest(second_response=repr(second_response)):
+                ai = SequenceResponseAI([
+                    "烘焙姐妹们看过来，袋装刀叉适合门店配送。",
+                    second_response,
+                ])
+                generator = ScriptGenerator()
+                generator.ai = ai
+                with self.assertRaises(ScriptGenerationError) as caught:
+                    asyncio.run(generator.generate(make_product(), None, "需求类"))
+                self.assertEqual(str(caught.exception), "AI生成开头质量未通过，请重新生成。")
+                self.assertEqual(caught.exception.status_code, 502)
+                self.assertEqual(len(ai.calls), 2)
+
+    def test_provider_error_during_repair_raises_exact_quality_error(self):
+        ai = SequenceResponseAI([
+            "烘焙姐妹们看过来，袋装刀叉适合门店配送。",
+            RuntimeError("provider failed"),
+        ])
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        with self.assertLogs("services.script_generator", level="WARNING"):
+            with self.assertRaises(ScriptGenerationError) as caught:
+                asyncio.run(generator.generate(make_product(), None, "需求类"))
+
+        self.assertEqual(str(caught.exception), "AI生成开头质量未通过，请重新生成。")
+        self.assertEqual(caught.exception.status_code, 502)
+        self.assertEqual(len(ai.calls), 2)
     def test_generation_fails_instead_of_using_local_template_when_interface_unavailable(self):
         generator = ScriptGenerator()
         generator.ai = UnavailableInterfaceAI()
@@ -214,7 +424,7 @@ class DeepSeekPromptTests(unittest.TestCase):
             self.assertIs(ai.allow_fallback, False)
 
     def test_generation_uses_interface_availability_instead_of_deepseek_global_flag(self):
-        ai = InterfaceAvailableAI("火山方舟生成脚本正文")
+        ai = InterfaceAvailableAI("门店打包先把独立袋装刀叉摆好，配送时更干净。")
         generator = ScriptGenerator()
         generator.ai = ai
 
@@ -228,7 +438,7 @@ class DeepSeekPromptTests(unittest.TestCase):
 
         self.assertEqual(ai.checked_interface, "script_generate")
         self.assertIsNotNone(ai.messages)
-        self.assertIn("火山方舟生成脚本正文", result)
+        self.assertIn("独立袋装刀叉", result)
 
     def test_plain_deepseek_prompt_adds_run_rate_self_check_and_keeps_plain_rules(self):
         ai = PromptCaptureAI("法采袋装刀叉很适合门店打包，左下角看看。")
@@ -247,7 +457,7 @@ class DeepSeekPromptTests(unittest.TestCase):
         user_prompt = ai.messages[-1]["content"]
 
         self.assertIn("抖音跑量自检框架", system_prompt)
-        self.assertIn("3-5秒", system_prompt)
+        self.assertIn("黄金前3秒服务 CTR", system_prompt)
         self.assertIn("烘焙店老板/烘焙从业者", system_prompt)
         self.assertIn("真实使用场景", system_prompt)
         self.assertIn("至少引用2个产品资料里的具体卖点", system_prompt)
@@ -259,7 +469,7 @@ class DeepSeekPromptTests(unittest.TestCase):
         self.assertIn("禁止镜头说明", user_prompt)
 
     def test_shot_design_deepseek_prompt_uses_same_run_rate_logic_and_keeps_camera_requirements(self):
-        ai = PromptCaptureAI("（主播手拿袋装刀叉）老板们看一下这套餐叉。")
+        ai = PromptCaptureAI("（主播手拿袋装刀叉）先把独立袋装餐叉摆上打包台，配送更干净。")
         generator = ScriptGenerator()
         generator.ai = ai
 
@@ -275,7 +485,7 @@ class DeepSeekPromptTests(unittest.TestCase):
         user_prompt = ai.messages[-1]["content"]
 
         self.assertIn("抖音跑量自检框架", system_prompt)
-        self.assertIn("3-5秒", system_prompt)
+        self.assertIn("黄金前3秒服务 CTR", system_prompt)
         self.assertIn("烘焙店老板/烘焙从业者", system_prompt)
         self.assertIn("真实使用场景", system_prompt)
         self.assertIn("每句话添加镜头说明", user_prompt)
@@ -283,8 +493,42 @@ class DeepSeekPromptTests(unittest.TestCase):
         self.assertNotIn("参考模板库脚本", user_prompt)
         self.assertNotIn("参考模板库脚本", system_prompt)
 
+    def test_non_price_shot_design_prompt_omits_price_marker(self):
+        ai = PromptCaptureAI("（打包台近景）先把独立袋装餐叉按订单摆好，配送更干净。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate(
+            product=make_product(),
+            template=None,
+            video_type="需求类",
+            include_shot_design=True,
+        ))
+
+        user_prompt = ai.messages[-1]["content"]
+
+        self.assertIn("【钩子】【痛点】【卖点】【CTA】", user_prompt)
+        self.assertNotIn("【价格】", user_prompt)
+
+    def test_shot_design_prompt_uses_opening_brief_without_legacy_variation_directive(self):
+        ai = PromptCaptureAI("（打包台近景）急单打包别让餐叉裸放，独立包装更稳。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate(
+            product=make_product(),
+            template=None,
+            video_type="场景类",
+            include_shot_design=True,
+        ))
+
+        system_prompt = ai.messages[0]["content"]
+
+        self.assertIn("【本次开头策略】", system_prompt)
+        self.assertNotIn("创意要求：", system_prompt)
+
     def test_plain_deepseek_prompt_discourages_default_sister_openers_and_varies_angle(self):
-        ai = PromptCaptureAI("开头不用默认称呼，直接进入门店打包场景。")
+        ai = PromptCaptureAI("门店打包先看刀叉是不是独立包装，配送更干净。")
         generator = ScriptGenerator()
         generator.ai = ai
 
@@ -299,13 +543,29 @@ class DeepSeekPromptTests(unittest.TestCase):
         system_prompt = ai.messages[0]["content"]
         user_prompt = ai.messages[-1]["content"]
 
-        self.assertIn("开头去重要求", system_prompt)
-        self.assertIn("本次开头角度：", system_prompt)
+        self.assertIn("本次开头策略", system_prompt)
+        self.assertIn("策略家族：", system_prompt)
         self.assertIn("禁止以“姐妹们”“烘焙姐妹们”", system_prompt)
-        self.assertIn("每次重新生成必须更换开头角度", system_prompt)
-        self.assertIn("第一小句必须直接进入", system_prompt)
+        self.assertIn("第一口播小句必须直接提供", system_prompt)
         self.assertNotIn("可以使用“啊、姐妹们", system_prompt)
         self.assertNotIn("可以使用“啊、姐妹们", user_prompt)
+
+    def test_generic_audience_call_ban_has_no_extra_requirements_exception(self):
+        ai = PromptCaptureAI("急单打包先看独立包装，配送更干净。")
+        generator = ScriptGenerator()
+        generator.ai = ai
+
+        asyncio.run(generator.generate(
+            product=make_product(),
+            template=None,
+            video_type="需求类",
+            extra_requirements="请从配送卫生这个产品角度切入。",
+        ))
+
+        system_prompt = ai.messages[0]["content"]
+
+        self.assertIn("禁止以“姐妹们”“烘焙姐妹们”“家人们”“老板们看过来”作为开头。", system_prompt)
+        self.assertNotIn("除非用户额外要求", system_prompt)
 
     def test_shot_design_deepseek_prompt_removes_global_sister_tone_hint(self):
         ai = PromptCaptureAI("（主播展示袋装刀叉）门店打包刀叉别只看便宜。")
@@ -322,13 +582,16 @@ class DeepSeekPromptTests(unittest.TestCase):
 
         system_prompt = ai.messages[0]["content"]
 
-        self.assertIn("开头去重要求", system_prompt)
+        self.assertIn("本次开头策略", system_prompt)
         self.assertIn("禁止以“姐妹们”“烘焙姐妹们”", system_prompt)
         self.assertNotIn("像烘焙姐妹聊天一样自然", system_prompt)
         self.assertNotIn("使用口语化表达：姐妹们", system_prompt)
 
-    def test_plain_deepseek_post_process_removes_default_sister_opening(self):
-        ai = PromptCaptureAI("烘焙姐妹们，袋装刀叉别只看便宜，门店配送更要看独立包装和承托稳定。")
+    def test_plain_ai_generation_repairs_default_sister_opening_before_post_process(self):
+        ai = SequenceResponseAI([
+            "烘焙姐妹们，袋装刀叉别只看便宜，门店配送更要看独立包装和承托稳定。",
+            "门店配送袋装刀叉别只看便宜，独立包装和承托稳定更重要。",
+        ])
         generator = ScriptGenerator()
         generator.ai = ai
 
@@ -340,8 +603,8 @@ class DeepSeekPromptTests(unittest.TestCase):
             include_shot_design=False,
         ))
 
-        self.assertFalse(result.startswith("烘焙姐妹们"))
-        self.assertIn("袋装刀叉别只看便宜", result)
+        self.assertEqual(len(ai.calls), 2)
+        self.assertTrue(result.startswith("门店配送"))
 
     def test_pending_price_deepseek_prompt_forbids_fabricating_price(self):
         ai = PromptCaptureAI("价格待更新，老板们先看规格。")
@@ -487,7 +750,7 @@ class DeepSeekPromptTests(unittest.TestCase):
         self.assertNotIn("0.64元", result)
 
     def test_deepseek_prompt_uses_reference_structure_without_copying_reference_script_content(self):
-        ai = PromptCaptureAI("姐妹们，别等恢复原价了才后悔。")
+        ai = PromptCaptureAI("先把独立袋装刀叉摆上打包台，配送出单更干净。")
         generator = ScriptGenerator()
         generator.ai = ai
 

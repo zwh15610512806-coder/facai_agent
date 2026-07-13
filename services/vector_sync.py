@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -19,6 +20,7 @@ ENTITY_TYPES = {"product", "viral_script", "reference_script"}
 OPERATIONS = {"upsert", "delete"}
 RETRY_DELAYS_SECONDS = (30, 120, 600, 1800, 7200)
 MAX_ATTEMPTS = len(RETRY_DELAYS_SECONDS) + 1
+RUNNING_LEASE_SECONDS = max(30, int(os.getenv("VECTOR_SYNC_LEASE_SECONDS", "600")))
 
 _worker_lock = threading.Lock()
 _worker_stop = threading.Event()
@@ -147,11 +149,24 @@ def process_vector_sync_job(job_id: int, *, db: Session | None = None, force: bo
         if not force and job.next_attempt_at and job.next_attempt_at > now:
             return job.status
 
-        job.status = "running"
-        job.attempt_count = int(job.attempt_count or 0) + 1
-        job.last_error = None
+        eligible_statuses = ["pending", "failed"] if force else ["pending"]
+        claim_query = session.query(VectorSyncJob).filter(
+            VectorSyncJob.id == int(job_id),
+            VectorSyncJob.status.in_(eligible_statuses),
+        )
+        if not force:
+            claim_query = claim_query.filter(VectorSyncJob.next_attempt_at <= now)
+        claimed = claim_query.update({
+            VectorSyncJob.status: "running",
+            VectorSyncJob.attempt_count: func.coalesce(VectorSyncJob.attempt_count, 0) + 1,
+            VectorSyncJob.last_error: None,
+            VectorSyncJob.next_attempt_at: now + timedelta(seconds=RUNNING_LEASE_SECONDS),
+        }, synchronize_session=False)
         session.commit()
-        session.refresh(job)
+        session.expire_all()
+        job = session.get(VectorSyncJob, int(job_id))
+        if not claimed:
+            return job.status
 
         try:
             _execute_vector_operation(job, session)
@@ -234,6 +249,90 @@ def vector_sync_status(db: Session) -> dict:
     return counts
 
 
+def reconcile_product_vector_index(db: Session, *, product_store=None) -> dict:
+    """Queue repairs when active product chunk hashes differ from the database."""
+    if product_store is None:
+        from vector_store.product_store import ProductVectorStore
+
+        product_store = ProductVectorStore()
+    from services.product_knowledge_chunks import (
+        build_product_knowledge_chunks,
+        product_chunk_index_metadata,
+    )
+
+    rows = product_store.collection.get(include=["metadatas"])
+    metadata_rows = [item for item in (rows.get("metadatas") or []) if isinstance(item, dict)]
+    if metadata_rows and not any(str(item.get("content_hash") or "") for item in metadata_rows):
+        active_products = db.query(Product).filter(Product.status == "active").count()
+        logger.warning(
+            "Active product index has no content hashes; incremental reconciliation is skipped until full reindex"
+        )
+        return {
+            "active_products": active_products,
+            "missing": 0,
+            "stale": 0,
+            "orphaned": 0,
+            "queued": 0,
+            "requires_reindex": True,
+        }
+    actual_by_product: dict[int, dict[str, str]] = {}
+    for chunk_id, metadata in zip(rows.get("ids") or [], rows.get("metadatas") or []):
+        if not isinstance(metadata, dict):
+            continue
+        try:
+            product_id = int(metadata.get("product_id"))
+        except (TypeError, ValueError):
+            continue
+        content_hash = str(metadata.get("content_hash") or "")
+        actual_by_product.setdefault(product_id, {})[str(chunk_id)] = content_hash
+
+    products = db.query(Product).filter(Product.status == "active").all()
+    active_ids = {int(product.id) for product in products}
+    missing = 0
+    stale = 0
+    orphaned = 0
+    for product in products:
+        expected_chunks = {
+            chunk.chunk_id: product_chunk_index_metadata(chunk, product.price)["content_hash"]
+            for chunk in build_product_knowledge_chunks(product)
+        }
+        actual_chunks = actual_by_product.get(int(product.id))
+        if actual_chunks is None:
+            missing += 1
+            enqueue_vector_sync(db, "product", product.id, "upsert")
+        elif actual_chunks != expected_chunks:
+            stale += 1
+            enqueue_vector_sync(db, "product", product.id, "upsert")
+    for product_id in actual_by_product:
+        if product_id in active_ids:
+            continue
+        orphaned += 1
+        enqueue_vector_sync(db, "product", product_id, "delete")
+    db.commit()
+    return {
+        "active_products": len(products),
+        "missing": missing,
+        "stale": stale,
+        "orphaned": orphaned,
+        "queued": missing + stale + orphaned,
+        "requires_reindex": False,
+    }
+
+
+def _recover_expired_running_jobs(db: Session, *, now: datetime | None = None) -> int:
+    """Return only abandoned jobs whose processing lease has expired to pending."""
+    current = now or _utcnow()
+    recovered = db.query(VectorSyncJob).filter(
+        VectorSyncJob.status == "running",
+        VectorSyncJob.next_attempt_at <= current,
+    ).update({
+        VectorSyncJob.status: "pending",
+        VectorSyncJob.next_attempt_at: current,
+    }, synchronize_session=False)
+    db.commit()
+    return int(recovered or 0)
+
+
 def retry_vector_sync_jobs(db: Session) -> int:
     jobs = db.query(VectorSyncJob).filter(VectorSyncJob.status.in_(["pending", "failed"])).all()
     now = _utcnow()
@@ -247,10 +346,23 @@ def retry_vector_sync_jobs(db: Session) -> int:
     return len(jobs)
 
 
-def _worker_loop() -> None:
+def _worker_loop(reconcile_on_startup: bool = True) -> None:
+    if reconcile_on_startup:
+        reconcile_db = SessionLocal()
+        try:
+            result = reconcile_product_vector_index(reconcile_db)
+            if result["queued"]:
+                logger.warning("Queued product vector reconciliation repairs: %s", result)
+        except Exception:
+            logger.exception("Product vector reconciliation failed")
+        finally:
+            reconcile_db.close()
     while not _worker_stop.wait(5):
         db = SessionLocal()
         try:
+            recovered = _recover_expired_running_jobs(db)
+            if recovered:
+                logger.warning("Recovered %s expired vector sync job leases", recovered)
             due_ids = [
                 row[0]
                 for row in (
@@ -272,22 +384,25 @@ def _worker_loop() -> None:
             db.close()
 
 
-def start_vector_sync_worker() -> None:
+def start_vector_sync_worker(*, reconcile_on_startup: bool | None = None) -> None:
     global _worker_thread
     with _worker_lock:
         if _worker_thread and _worker_thread.is_alive():
             return
         db = SessionLocal()
         try:
-            db.query(VectorSyncJob).filter(VectorSyncJob.status == "running").update(
-                {VectorSyncJob.status: "pending", VectorSyncJob.next_attempt_at: _utcnow()},
-                synchronize_session=False,
-            )
-            db.commit()
+            _recover_expired_running_jobs(db)
         finally:
             db.close()
+        if reconcile_on_startup is None:
+            reconcile_on_startup = os.getenv("VECTOR_RECONCILE_ON_STARTUP", "1").strip() != "0"
         _worker_stop.clear()
-        _worker_thread = threading.Thread(target=_worker_loop, name="vector-sync-worker", daemon=True)
+        _worker_thread = threading.Thread(
+            target=_worker_loop,
+            args=(bool(reconcile_on_startup),),
+            name="vector-sync-worker",
+            daemon=True,
+        )
         _worker_thread.start()
 
 

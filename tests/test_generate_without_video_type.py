@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Product, ReferenceScript, ScriptTemplate, SellingPoint, ViralScript
+from models import GeneratedScript, Product, ReferenceScript, ScriptTemplate, SellingPoint, ViralScript
 from routers import scripts as scripts_router
 from schemas import ScriptGenerateRequest
 from services.script_generator import ScriptGenerationError, ScriptGenerator
@@ -18,6 +18,7 @@ class FakeTemplateLibraryGenerator:
         self.library_called = False
         self.include_shot_design = None
         self.product = None
+        self.recent_openings = None
         self.template = None
         self.video_type = None
 
@@ -38,6 +39,7 @@ class FakeTemplateLibraryGenerator:
         product,
         video_type,
         template,
+        source_script=None,
         tone="活泼",
         extra_requirements=None,
         include_shot_design=None,
@@ -45,6 +47,7 @@ class FakeTemplateLibraryGenerator:
         self.library_called = True
         self.product = product
         self.template = template
+        self.source_script = source_script
         self.video_type = video_type
         self.include_shot_design = include_shot_design
         assert template
@@ -58,6 +61,7 @@ class FakeFailingTemplateLibraryGenerator(FakeTemplateLibraryGenerator):
         product,
         video_type,
         template,
+        source_script=None,
         tone="活泼",
         extra_requirements=None,
         include_shot_design=None,
@@ -72,6 +76,7 @@ class FakeEmptyTemplateLibraryGenerator(FakeTemplateLibraryGenerator):
         product,
         video_type,
         template,
+        source_script=None,
         tone="活泼",
         extra_requirements=None,
         include_shot_design=None,
@@ -138,12 +143,14 @@ class FakeDeepSeekGenerator:
         extra_requirements=None,
         reference_scripts=None,
         include_shot_design=False,
+        recent_openings=None,
     ):
         self.generate_called = True
         self.product = product
         self.template = template
         self.reference_scripts = reference_scripts
         self.video_type = video_type
+        self.recent_openings = recent_openings
         return "DeepSeek 只结合产品资料和跑量逻辑生成的脚本"
 
 
@@ -157,13 +164,22 @@ class FakeEmptyDeepSeekGenerator(FakeDeepSeekGenerator):
         extra_requirements=None,
         reference_scripts=None,
         include_shot_design=False,
+        recent_openings=None,
     ):
         self.generate_called = True
         self.product = product
         self.template = template
         self.reference_scripts = reference_scripts
         self.video_type = video_type
+        self.recent_openings = recent_openings
         return ""
+
+
+class FakeQualityGateFailureGenerator(FakeDeepSeekGenerator):
+    async def generate(self, *args, **kwargs):
+        self.generate_called = True
+        self.recent_openings = kwargs.get("recent_openings")
+        raise ScriptGenerationError("AI生成开头质量未通过，请重新生成。", status_code=502)
 
 
 class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
@@ -174,6 +190,12 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.db = self.Session()
         product = Product(name="测试产品", category="烘焙调味", price=18.8, brand="法采")
         self.db.add(product)
+        self.db.add(ViralScript(
+            category="烘焙调味",
+            video_type="机制类",
+            title="测试参考脚本标题",
+            script_content="测试参考脚本内容",
+        ))
         self.db.commit()
         self.db.refresh(product)
         self.db.add(SellingPoint(
@@ -231,9 +253,50 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         section_titles = {section["title"] for section in fake.product["profile_sections"]}
         self.assertIn("使用场景", section_titles)
         self.assertEqual(response.video_type, "AI智能生成")
+        self.assertIsNone(response.template_reference_script)
         record = self.db.query(scripts_router.GeneratedScript).first()
         self.assertEqual(record.video_type, "AI智能生成")
         self.assertEqual(record.ai_model, "AI生成 · fake-model")
+
+    def test_ai_generation_receives_latest_eight_same_product_ai_openings_newest_first(self):
+        other_product = Product(name="其他产品", category="烘焙调味", price=9.9, brand="法采")
+        self.db.add(other_product)
+        self.db.commit()
+        self.db.refresh(other_product)
+        for index in range(10):
+            self.db.add(GeneratedScript(
+                product_id=self.product.id,
+                script_content=f"（门店近景）第{index}条真实开头。后续卖点。",
+                video_type="需求类",
+                ai_model="AI生成 · historical-model",
+            ))
+        self.db.add_all([
+            GeneratedScript(
+                product_id=self.product.id,
+                script_content="模板记录不应进入。",
+                video_type="需求类",
+                ai_model="模板库改写 · historical-model",
+            ),
+            GeneratedScript(
+                product_id=other_product.id,
+                script_content="其他产品记录不应进入。",
+                video_type="需求类",
+                ai_model="AI生成 · historical-model",
+            ),
+        ])
+        self.db.commit()
+        fake = FakeDeepSeekGenerator()
+        scripts_router.generator = fake
+
+        asyncio.run(scripts_router.generate_script(
+            ScriptGenerateRequest(product_id=self.product.id, engine="deepseek", video_type="需求类"),
+            db=self.db,
+        ))
+
+        self.assertEqual(
+            fake.recent_openings,
+            [f"第{index}条真实开头。" for index in range(9, 1, -1)],
+        )
 
     def test_template_generation_without_video_type_uses_any_script_template_and_returns_template_name(self):
         template = self.add_template(name="全库兜底模板", video_type="对比类")
@@ -249,6 +312,7 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertEqual(response.video_type, template.video_type)
         self.assertEqual(response.template_id, template.id)
         self.assertEqual(response.template_name, template.name)
+        self.assertEqual(response.template_reference_script, template.example_script)
         record = self.db.query(scripts_router.GeneratedScript).first()
         self.assertEqual(record.video_type, template.video_type)
         self.assertEqual(record.template_id, template.id)
@@ -266,6 +330,7 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertEqual(fake.template["name"], same_type.name)
         self.assertEqual(response.video_type, "机制类")
         self.assertEqual(response.template_name, same_type.name)
+        self.assertEqual(response.template_reference_script, same_type.example_script)
 
     def test_template_generation_falls_back_to_any_template_when_type_has_no_template(self):
         fallback = self.add_template(name="全库可用模板", video_type="场景类")
@@ -298,6 +363,7 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertEqual(response.video_type, chosen.video_type)
         self.assertEqual(response.template_id, chosen.id)
         self.assertEqual(response.template_name, chosen.name)
+        self.assertEqual(response.template_reference_script, chosen.example_script)
 
     def test_template_generation_without_templates_returns_404_without_saving_record(self):
         fake = FakeTemplateLibraryGenerator()
@@ -400,6 +466,28 @@ class GenerateWithoutVideoTypeApiTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 502)
         self.assertIn("AI生成失败", caught.exception.detail)
         self.assertIsNone(self.db.query(scripts_router.GeneratedScript).first())
+
+    def test_ai_quality_gate_failure_returns_502_without_saving_rejected_history(self):
+        self.db.add(GeneratedScript(
+            product_id=self.product.id,
+            script_content="已有合格历史开头。",
+            video_type="需求类",
+            ai_model="AI生成 · historical-model",
+        ))
+        self.db.commit()
+        fake = FakeQualityGateFailureGenerator()
+        scripts_router.generator = fake
+
+        with self.assertRaises(HTTPException) as caught:
+            asyncio.run(scripts_router.generate_script(
+                ScriptGenerateRequest(product_id=self.product.id, engine="deepseek", video_type="需求类"),
+                db=self.db,
+            ))
+
+        self.assertEqual(caught.exception.status_code, 502)
+        self.assertIn("AI生成开头质量未通过", caught.exception.detail)
+        self.assertEqual(fake.recent_openings, ["已有合格历史开头。"])
+        self.assertEqual(self.db.query(GeneratedScript).count(), 1)
 
 
 class ScriptGeneratorHighConversionSearchTests(unittest.TestCase):

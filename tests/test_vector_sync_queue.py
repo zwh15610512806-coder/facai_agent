@@ -104,6 +104,58 @@ class VectorSyncQueueTests(unittest.TestCase):
         self.assertEqual(saved_job.status, "succeeded")
         self.assertIsNotNone(saved_job.completed_at)
 
+    def test_running_job_cannot_be_claimed_twice_even_with_force(self):
+        from services.vector_sync import process_vector_sync_job
+
+        product = self._add_product()
+        job = self.VectorSyncJob(
+            entity_type="product",
+            entity_id=product.id,
+            operation="upsert",
+            status="running",
+            attempt_count=1,
+            next_attempt_at=datetime.utcnow(),
+        )
+        self.db.add(job)
+        self.db.commit()
+
+        with patch("services.vector_sync._execute_vector_operation") as execute:
+            status = process_vector_sync_job(job.id, db=self.db, force=True)
+
+        self.assertEqual(status, "running")
+        execute.assert_not_called()
+
+    def test_recovery_only_requeues_running_jobs_with_expired_lease(self):
+        from datetime import timedelta
+        from services.vector_sync import _recover_expired_running_jobs
+
+        now = datetime.utcnow()
+        product = self._add_product()
+        fresh = self.VectorSyncJob(
+            entity_type="product",
+            entity_id=product.id,
+            operation="upsert",
+            status="running",
+            next_attempt_at=now + timedelta(minutes=5),
+        )
+        expired = self.VectorSyncJob(
+            entity_type="product",
+            entity_id=product.id + 1,
+            operation="upsert",
+            status="running",
+            next_attempt_at=now - timedelta(seconds=1),
+        )
+        self.db.add_all([fresh, expired])
+        self.db.commit()
+
+        recovered = _recover_expired_running_jobs(self.db, now=now)
+        self.db.refresh(fresh)
+        self.db.refresh(expired)
+
+        self.assertEqual(recovered, 1)
+        self.assertEqual(fresh.status, "running")
+        self.assertEqual(expired.status, "pending")
+
     def test_new_delete_supersedes_an_unprocessed_upsert(self):
         from services.vector_sync import enqueue_vector_sync
 
@@ -164,6 +216,55 @@ class VectorSyncQueueTests(unittest.TestCase):
             self.VectorSyncJob.entity_id == product.id,
         ).one()
         self.assertEqual(job.status, "pending")
+
+    def test_reconciliation_enqueues_product_when_chunk_hashes_are_stale(self):
+        from services.vector_sync import reconcile_product_vector_index
+
+        product = self._add_product()
+        self.db.commit()
+
+        class FakeCollection:
+            def get(self, include):
+                return {
+                    "ids": [f"product_{product.id}:product_info"],
+                    "metadatas": [
+                        {
+                            "product_id": product.id,
+                            "content_hash": "stale-hash",
+                        }
+                    ],
+                }
+
+        fake_store = type("FakeProductStore", (), {"collection": FakeCollection()})()
+
+        result = reconcile_product_vector_index(self.db, product_store=fake_store)
+
+        self.assertEqual(result["stale"], 1)
+        job = self.db.query(self.VectorSyncJob).one()
+        self.assertEqual(job.entity_id, product.id)
+        self.assertEqual(job.operation, "upsert")
+        self.assertEqual(job.status, "pending")
+
+    def test_reconciliation_requires_reindex_for_legacy_collection_without_hashes(self):
+        from services.vector_sync import reconcile_product_vector_index
+
+        product = self._add_product()
+        self.db.commit()
+
+        class FakeCollection:
+            def get(self, include):
+                return {
+                    "ids": [f"product_{product.id}:legacy"],
+                    "metadatas": [{"product_id": product.id}],
+                }
+
+        fake_store = type("FakeProductStore", (), {"collection": FakeCollection()})()
+
+        result = reconcile_product_vector_index(self.db, product_store=fake_store)
+
+        self.assertTrue(result["requires_reindex"])
+        self.assertEqual(result["queued"], 0)
+        self.assertEqual(self.db.query(self.VectorSyncJob).count(), 0)
 
 
 if __name__ == "__main__":

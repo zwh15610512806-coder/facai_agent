@@ -18,6 +18,7 @@
 <a href="/app/generate" class="nav-link on">生成脚本</a>
 <a href="/app/rewrite" class="nav-link">脚本改写</a>
 <a href="/app/products" class="nav-link">产品知识库</a>
+<a href="/app/creators" class="nav-link">达人工作</a>
 <a href="/app/templates" class="nav-link">脚本模板库</a>
 <a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
@@ -29,6 +30,15 @@
 .generate-main{max-width:1540px}
 .generate-result-hd{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
 .generate-result-back{margin-left:auto}
+.template-reference-panel{margin:-4px 0 16px;padding:10px 12px;border-left:3px solid var(--facai);background:var(--surface-darker)}
+.template-reference-head{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.template-reference-label{flex:0 0 auto;color:var(--text-3);font-size:12px;font-weight:700}
+.template-reference-name{min-width:0;color:var(--text);font-size:14px;overflow-wrap:anywhere}
+.template-reference-source{flex:0 0 auto;padding:2px 7px;border-radius:var(--r-pill);background:var(--facai-soft);color:var(--facai);font-size:11px;font-weight:700}
+.template-reference-structure{margin-top:5px;color:var(--text-3);font-size:12px}
+.template-reference{margin-top:7px}
+.template-reference summary{width:max-content;color:var(--facai);font-size:12px;font-weight:700;cursor:pointer;list-style-position:inside}
+.template-reference-script{margin-top:10px;padding:12px 14px;border-left:3px solid var(--facai);background:var(--surface-darker);color:var(--text-2);font-size:13px;line-height:1.75;white-space:pre-wrap}
 .generate-result-layout{display:grid;grid-template-columns:minmax(480px,1fr) minmax(620px,720px);gap:16px;align-items:start}
 .generate-script-col{min-width:0;display:flex;flex-direction:column}
 .script-output-frame{position:relative;min-width:0;border-radius:var(--r);overflow:hidden}
@@ -445,6 +455,15 @@
 <button id="btnBack" class="btn btn-ghost btn-sm">返回</button>
 </div></div>
 
+<div id="templateReferencePanel" class="template-reference-panel" hidden>
+<div class="template-reference-head"><span class="template-reference-label">引用脚本名称</span><strong id="templateReferenceName" class="template-reference-name"></strong><span id="templateReferenceSource" class="template-reference-source"></span></div>
+<div id="templateReferenceStructure" class="template-reference-structure"></div>
+<details id="templateReferenceDetails" class="template-reference">
+<summary>查看引用原脚本</summary>
+<div id="templateReferenceScript" class="template-reference-script"></div>
+</details>
+</div>
+
 <div class="generate-result-layout">
 <div class="generate-script-col">
 <div class="script-output-frame">
@@ -564,6 +583,8 @@ function buildRegenerateRequirement(){
  return '重新生成要求：这是一次重新生成，不要复用上一版脚本的开头、句式和推进顺序。上一版脚本开头摘要：'+summary+'。必须更换开头角度、第一句话句式、卖点顺序和 CTA；保留同一个产品、真实价格和产品资料，不要照搬上一版表达。';
 }
 function resetSeedancePrompts(msg){currentSeedancePrompts=[];document.getElementById('seedancePromptList').innerHTML='<div class="seedance-empty">'+escHtml(msg||'生成脚本后，可先编辑左侧文案，再点击「生成提示词」生成 Seedance 2.0 画面提示词。')+'</div>';}
+function resetTemplateReference(){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');panel.hidden=true;details.open=false;document.getElementById('templateReferenceName').textContent='';document.getElementById('templateReferenceSource').textContent='';document.getElementById('templateReferenceStructure').textContent='';document.getElementById('templateReferenceScript').textContent='';}
+function showTemplateReference(sourceTitle,sourceScript,sourceType,templateName){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');panel.hidden=false;details.open=false;document.getElementById('templateReferenceName').textContent=sourceTitle;document.getElementById('templateReferenceSource').textContent=sourceType==='other'?'其他脚本':'法采脚本';document.getElementById('templateReferenceStructure').textContent=templateName?'结构模板：'+templateName:'';document.getElementById('templateReferenceScript').textContent=sourceScript||'该参考脚本暂无正文。';}
 function normalizeCustomVideoType(type){return String(type||'').replace(/[<>"'`\\]/g,'').trim().replace(/\s+/g,'').slice(0,20);}
 function loadCustomVideoTypes(){
  try{const raw=localStorage.getItem(CUSTOM_VIDEO_TYPES_KEY);const list=JSON.parse(raw||'[]');if(!Array.isArray(list))return [];
@@ -737,6 +758,7 @@ async function doGenerate(extra){
  document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='';
  document.getElementById('scriptOutput').style.display='none';document.getElementById('generatingHint').style.display='';document.getElementById('btnOptimize').disabled=true;
  document.getElementById('resultActions').style.display='none';
+ resetTemplateReference();
  resetSeedancePrompts('生成脚本后，可先编辑左侧文案，再点击「生成提示词」生成 Seedance 2.0 画面提示词。');
  document.getElementById('btnGenerateSeedance').disabled=true;
  try{
@@ -753,8 +775,8 @@ async function doGenerate(extra){
   const d=await r.json();currentScript=d.script_content;currentScriptId=d.id;
   document.getElementById('scriptOutput').textContent=currentScript;
   var metaExtra='';if(preFill||extra)metaExtra=' <span class="text-accent" style="font-weight:600">（'+(preFill?'含需求':'')+(preFill&&extra?'+':'')+(extra?'已优化':'')+'）</span>';
-  var templateInfo=d.template_name?' &middot; 引用模板：<b>'+escHtml(d.template_name)+'</b>':'';
-  document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(d.product_name)+'</b> &middot; 类型：<b class="text-accent">'+escHtml(d.video_type)+'</b>'+templateInfo+metaExtra;
+  document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(d.product_name)+'</b> &middot; 类型：<b class="text-accent">'+escHtml(d.video_type)+'</b>'+metaExtra;
+  if(d.source_script_title)showTemplateReference(d.source_script_title,d.source_script_content,d.source_script_source,d.template_name);
   resetSeedancePrompts('可先直接编辑左侧生成脚本，确认后点击「生成提示词」。');
  }catch(e){currentScript='';currentScriptId=null;resetSeedancePrompts('生成失败后暂无提示词，请重新生成脚本。');document.getElementById('scriptOutput').textContent='生成失败：'+e.message}
  finally{state.generating=false;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnOptimize').disabled=false;document.getElementById('btnGenerateSeedance').disabled=false;}
@@ -765,7 +787,7 @@ document.getElementById('customVideoTypeInput').addEventListener('keydown',funct
 document.getElementById('btnGenerate').addEventListener('click',function(){doGenerate(null);});
 document.getElementById('optimizeInput').addEventListener('input',function(){document.getElementById('btnOptimize').disabled=!this.value.trim();});
 document.getElementById('btnOptimize').addEventListener('click',async function(){const s=document.getElementById('optimizeInput').value.trim();if(!s)return;await doGenerate('用户优化建议：'+s+'。请保持产品和视频类型不变，按要求重新生成。');document.getElementById('optimizeInput').value='';document.getElementById('btnOptimize').disabled=true;});
-document.getElementById('btnBack').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=false;currentScript='';currentScriptId=null;resetSeedancePrompts();});
+document.getElementById('btnBack').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=false;currentScript='';currentScriptId=null;resetTemplateReference();resetSeedancePrompts();});
 document.getElementById('scriptOutput').addEventListener('input',function(){currentScript=getEditedScript();resetSeedancePrompts('脚本已修改，请点击「生成提示词」，按当前版本重新生成 Seedance 2.0 提示词。');});
 document.getElementById('btnCopy').addEventListener('click',function(){const t=getEditedScript();if(!t)return toast('暂无可复制内容','error');copyText(t).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('btnSave').addEventListener('click',async function(){if(!currentScriptId)return toast('请先生成脚本','error');try{const r=await fetch('/api/scripts/history/'+currentScriptId+'/save-to-library',{method:'POST'});if(r.ok)toast('已保存到模板库','success');else toast('保存失败','error');}catch(e){toast('保存失败','error');}});

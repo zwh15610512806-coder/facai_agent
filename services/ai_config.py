@@ -328,6 +328,8 @@ SCRIPT_CREATION_INTERFACE_KEYS: tuple[str, ...] = (
 CONTENT_ANALYSIS_INTERFACE_KEYS: tuple[str, ...] = (
     "product_rag_global",
     "product_rag_scoped",
+    "product_rag_rerank",
+    "product_rag_verify",
     "selling_point_extract",
     "viral_script_analyze",
     "reference_script_analyze",

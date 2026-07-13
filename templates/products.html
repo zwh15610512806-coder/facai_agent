@@ -64,6 +64,13 @@ body{overflow:hidden}
 .rag-result-name.is-static{cursor:default}
 .rag-result-name.is-static:hover{color:var(--text)}
 .rag-result-meta{font-size:12px;color:var(--text-2);white-space:nowrap}
+.rag-feedback{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:8px;border-top:1px solid var(--border-soft);font-size:12px;color:var(--text-3)}
+.rag-feedback-btn{height:26px;display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text-2);padding:0 8px;cursor:pointer}
+.rag-feedback-btn:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
+.rag-feedback-btn svg,.rag-feedback-btn i{width:12px;height:12px}
+.rag-feedback-reasons{display:none;align-items:center;gap:5px;flex-wrap:wrap;width:100%}
+.rag-feedback-reasons.on{display:flex}
+.rag-feedback-status{color:var(--facai);font-weight:700}
 .source-modal-box{width:min(820px,calc(100vw - 32px));max-width:min(820px,calc(100vw - 32px));max-height:calc(100dvh - 64px);display:flex;flex-direction:column}
 .source-modal-heading{min-width:0}
 .source-modal-title{margin:0;font-family:var(--font-display);font-size:1.25rem;color:var(--text)}
@@ -187,7 +194,7 @@ body{overflow:hidden}
 <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
 </div>
 <div class="nav-links">
-<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link on">产品知识库</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link on">产品知识库</a><a href="/app/creators" class="nav-link">达人工作</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
 <a class="data-import-fab" href="/app/import" aria-label="打开 数据导入" title="数据导入"><i data-lucide="upload"></i><span>数据导入</span></a>
@@ -450,7 +457,7 @@ function appendMessage(threadId,role,text,data){
  const msg=document.createElement('div');
  msg.className='chat-message '+(role==='user'?'user':'assistant');
  const answerText=formatApiErrorMessage(text||(data&&data.answer)||'','');
- const body=(role==='assistant'?formatAssistantAnswer(answerText):esc(answerText).replace(/\n/g,'<br>'))+(data?renderRagResults(data):'');
+ const body=(role==='assistant'?formatAssistantAnswer(answerText):esc(answerText).replace(/\n/g,'<br>'))+(data?renderRagResults(data):'')+(role==='assistant'&&data&&data.query_id?renderRagFeedback(data.query_id):'');
  msg.innerHTML=(role==='user'?'':'<span class="chat-avatar"><i data-lucide="bot"></i></span>')
   +'<div class="chat-bubble">'+body+'</div>'
   +(role==='user'?'<span class="chat-avatar"><i data-lucide="user"></i></span>':'');
@@ -607,6 +614,39 @@ function renderProfileSection(section){
  return '<section class="profile-section" data-section-id="'+esc(section.id||'')+'">'
   +'<div class="profile-section-hd"><div class="profile-section-title-row"><h3 class="profile-section-title">'+esc(section.title||'产品资料')+'</h3><span class="profile-section-count">'+esc(count||0)+' 条</span></div>'+renderProfileSectionActions(section,editableItems)+'</div>'
   +'<div class="profile-section-body">'+body+'</div></section>';
+}
+
+function renderRagFeedback(queryId){
+ return '<div class="rag-feedback" data-rag-feedback="'+queryId+'"><span>这个回答有用吗？</span>'
+  +'<button type="button" class="rag-feedback-btn" onclick="submitRagFeedback('+queryId+',\'up\',null)"><i data-lucide="thumbs-up"></i><span>有用</span></button>'
+  +'<button type="button" class="rag-feedback-btn" onclick="toggleRagFeedbackReasons('+queryId+')"><i data-lucide="thumbs-down"></i><span>无用</span></button>'
+  +'<div class="rag-feedback-reasons" data-rag-feedback-reasons="'+queryId+'">'
+  +'<button type="button" class="rag-feedback-btn" onclick="submitRagFeedback('+queryId+',\'down\',\'missing\')">有遗漏</button>'
+  +'<button type="button" class="rag-feedback-btn" onclick="submitRagFeedback('+queryId+',\'down\',\'irrelevant\')">有无关项</button>'
+  +'<button type="button" class="rag-feedback-btn" onclick="submitRagFeedback('+queryId+',\'down\',\'wrong\')">信息错误</button>'
+  +'<button type="button" class="rag-feedback-btn" onclick="submitRagFeedback('+queryId+',\'down\',\'outdated\')">资料过期</button>'
+  +'</div></div>';
+}
+
+function toggleRagFeedbackReasons(queryId){
+ const reasons=document.querySelector('[data-rag-feedback-reasons="'+queryId+'"]');
+ if(reasons)reasons.classList.toggle('on');
+}
+
+async function submitRagFeedback(queryId,rating,reason){
+ const root=document.querySelector('[data-rag-feedback="'+queryId+'"]');
+ if(!root)return;
+ const buttons=root.querySelectorAll('button');
+ buttons.forEach(function(button){button.disabled=true;});
+ try{
+  const r=await fetch('/api/products/rag-feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query_id:queryId,rating:rating,reason:reason})});
+  const data=await r.json().catch(function(){return {};});
+  if(!r.ok)throw new Error(formatApiErrorMessage(data.detail||data.message||data,'反馈失败'));
+  root.innerHTML='<span class="rag-feedback-status">感谢反馈</span>';
+ }catch(e){
+  buttons.forEach(function(button){button.disabled=false;});
+  toast(e&&e.message?e.message:'反馈失败','error');
+ }
 }
 
 function renderProfileSectionActions(section,editableItems){

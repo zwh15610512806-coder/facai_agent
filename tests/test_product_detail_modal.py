@@ -772,6 +772,10 @@ class ProductDetailTemplateTests(unittest.TestCase):
         self.assertNotIn("selling_points", body)
         self.assertNotIn("sku_prices", body)
         self.assertNotIn("rag-result-card", body)
+        self.assertIn("function renderRagFeedback(queryId)", self.page)
+        self.assertIn("function submitRagFeedback(queryId,rating,reason)", self.page)
+        self.assertIn("'/api/products/rag-feedback'", self.page)
+        self.assertIn("data-rag-feedback", self.page)
 
     def test_product_workspace_uses_confirmed_reading_type_scale(self):
         self.assertIn(".products-panel-title{font-family:var(--font-ui);font-size:15px", self.page)

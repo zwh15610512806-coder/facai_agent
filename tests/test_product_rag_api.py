@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database import Base
-from models import Product, ProductRagQueryLog, SellingPoint
+from models import Product, ProductRagFeedback, ProductRagQueryLog, SellingPoint
 from routers import products as products_router
 from services import product_rag
 
@@ -94,6 +94,125 @@ class ProductRagApiTests(unittest.TestCase):
         self.assertNotIn("来源：", data["answer"])
         self.assertNotIn("已检索到", data["answer"])
         self.assertNotIn("姐妹们", data["answer"])
+        self.assertIsInstance(data["query_id"], int)
+        log = self.db.get(ProductRagQueryLog, data["query_id"])
+        self.assertEqual(log.pipeline_version, "product-rag-v3-facets")
+        self.assertIsInstance(log.query_plan, dict)
+        self.assertIsInstance(log.candidate_trace, list)
+        self.assertIsInstance(log.selected_evidence, list)
+        self.assertEqual(log.answer_mode, "fallback")
+
+    def test_rag_feedback_creates_and_updates_one_record(self):
+        product = self._add_product(
+            "水性色素",
+            "烘焙调色",
+            18.59,
+            "适合奶油调色。",
+            "少量多次添加。",
+        )
+        with patch.object(
+            product_rag,
+            "_retrieve_product_selection",
+            return_value=product_rag.ProductRetrievalSelection(
+                products=[product],
+                policy=product_rag._product_query_policy("调色产品"),
+                hit_chunks=[],
+                excluded_product_ids=[],
+                retrieval_mode="exact",
+            ),
+        ):
+            answer = self.client.post(
+                "/api/products/rag-chat",
+                json={"query": "调色产品", "limit": 10},
+            ).json()
+
+        first = self.client.post(
+            "/api/products/rag-feedback",
+            json={"query_id": answer["query_id"], "rating": "up"},
+        )
+        second = self.client.post(
+            "/api/products/rag-feedback",
+            json={
+                "query_id": answer["query_id"],
+                "rating": "down",
+                "reason": "irrelevant",
+            },
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        feedback = self.db.query(ProductRagFeedback).one()
+        self.assertEqual(feedback.query_log_id, answer["query_id"])
+        self.assertEqual(feedback.rating, "down")
+        self.assertEqual(feedback.reason, "irrelevant")
+
+    def test_rag_feedback_rejects_unknown_query(self):
+        response = self.client.post(
+            "/api/products/rag-feedback",
+            json={"query_id": 99999, "rating": "down", "reason": "wrong"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_exact_price_question_uses_deterministic_answer_without_ai(self):
+        product = self._add_product(
+            "布蕾粉",
+            "烘焙夹心",
+            38.6,
+            "适合制作布蕾蛋糕夹心。",
+            "建议冷藏定型。",
+        )
+
+        async def fail_if_called(*args, **kwargs):
+            raise AssertionError("price answer must not call the generation model")
+
+        product_rag.ai_service.chat = fail_if_called
+        with patch.object(
+            product_rag,
+            "_retrieve_product_selection",
+            return_value=product_rag.ProductRetrievalSelection(
+                products=[product],
+                policy=product_rag._product_query_policy("布蕾粉价格"),
+                hit_chunks=[],
+                excluded_product_ids=[],
+                retrieval_mode="exact",
+            ),
+        ):
+            response = self.client.post(
+                "/api/products/rag-chat",
+                json={"query": "布蕾粉价格", "limit": 10},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["mode"], "fallback")
+        self.assertEqual(data["results"][0]["name"], "布蕾粉")
+        self.assertIn("¥38.6", data["answer"])
+
+    def test_ai_context_uses_retrieved_chunks_instead_of_full_profile(self):
+        result = {
+            "name": "布蕾粉",
+            "category": "烘焙夹心",
+            "price": 38.6,
+            "retrieval_chunks": [{
+                "section": "selling_point",
+                "source_name": "布蕾粉档案.md",
+                "document": "建议冷藏定型。",
+            }],
+            "profile_sections": [{
+                "title": "使用场景",
+                "items": [{"label": "无关资料", "content": "不应进入上下文的完整五维资料"}],
+            }],
+            "selling_points": [{"point_type": "卖点", "content": "不应重复注入的卖点"}],
+            "sku_prices": [],
+            "sources": [],
+        }
+
+        context = product_rag._context_for_ai([result])
+
+        self.assertIn("建议冷藏定型", context)
+        self.assertNotIn("不应进入上下文的完整五维资料", context)
+        self.assertNotIn("不应重复注入的卖点", context)
 
     def test_product_context_helper_returns_context_without_generating_answer(self):
         self._add_product(
@@ -451,6 +570,17 @@ class ProductRagApiTests(unittest.TestCase):
         data = response.json()
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["id"], product.id)
+
+    def test_semantic_search_failure_returns_original_service_error(self):
+        class FailingSearchStore:
+            def search(self, *args, **kwargs):
+                raise RuntimeError("embedding unavailable")
+
+        with patch("vector_store.product_store.ProductVectorStore", return_value=FailingSearchStore()):
+            response = self.client.get("/api/products/search/semantic", params={"q": "调色"})
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("embedding unavailable", response.json()["detail"])
 
     def test_product_rag_chat_is_scoped_to_selected_product(self):
         tea = self._add_product(

@@ -193,9 +193,23 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
         self.assertIn("模板库改写：从脚本模板库按同类型优先选择模板，改写为当前产品脚本", self.page)
         self.assertNotIn("DeepSeek AI", self.page)
 
-    def test_generation_result_displays_referenced_template_when_available(self):
+    def test_generation_result_displays_referenced_script_when_available(self):
+        self.assertIn("d.source_script_title", self.page)
+        self.assertIn("d.source_script_content", self.page)
+        self.assertIn("d.source_script_source", self.page)
         self.assertIn("d.template_name", self.page)
-        self.assertIn("引用模板：<b>'+escHtml(d.template_name)+'</b>", self.page)
+        self.assertIn('id="templateReferencePanel"', self.page)
+        self.assertIn('id="templateReferenceName"', self.page)
+        self.assertIn('id="templateReferenceSource"', self.page)
+        self.assertIn('id="templateReferenceStructure"', self.page)
+        self.assertIn("引用脚本名称", self.page)
+        self.assertIn('id="templateReferenceDetails"', self.page)
+        self.assertIn('id="templateReferenceScript"', self.page)
+        self.assertIn("document.getElementById('templateReferenceName').textContent=sourceTitle", self.page)
+        self.assertIn("结构模板：", self.page)
+        self.assertIn("该参考脚本暂无正文。", self.page)
+        self.assertIn("resetTemplateReference", self.page)
+        self.assertNotIn("var templateInfo=d.template_name", self.page)
 
     def test_redo_requests_a_distinct_ai_regeneration(self):
         self.assertIn("function buildRegenerateRequirement()", self.page)

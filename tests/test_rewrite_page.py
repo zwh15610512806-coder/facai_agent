@@ -1,5 +1,7 @@
 import asyncio
+import json
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -36,8 +38,151 @@ class RewritePageTests(unittest.TestCase):
     def setUp(self):
         self.page = (ROOT / "templates" / "rewrite.html").read_text(encoding="utf-8-sig")
 
-    def test_product_picker_hides_after_target_product_is_selected(self):
+    def test_rewrite_form_and_compact_product_picker_share_one_page(self):
+        self.assertIn("<title>脚本改写 — 法采新媒体运营 Agent</title>", self.page)
+        self.assertIn("<header class=\"page-hd\"><h1>脚本改写</h1>", self.page)
+        self.assertIn('id="step1"', self.page)
         self.assertIn('id="productPicker"', self.page)
+        self.assertIn('id="productSearch"', self.page)
+        self.assertIn('id="productGrid"', self.page)
+        self.assertNotIn('id="step2"', self.page)
+        self.assertNotIn('id="btnToStep2"', self.page)
+        self.assertNotIn('id="btnRewrite"', self.page)
+        self.assertNotIn('id="categoryFilter"', self.page)
+        self.assertNotIn('id="selectedHint"', self.page)
+        self.assertNotIn('id="extraReq"', self.page)
+        self.assertNotIn('id="includeShotDesign"', self.page)
+        self.assertNotIn("输出设置", self.page)
+        self.assertNotIn("爆款脚本改写", self.page)
+
+    def test_product_picker_shows_at_most_six_matching_products(self):
+        self.assertIn("function getVisibleProducts(filter)", self.page)
+        self.assertIn("return filtered.slice(0,6)", self.page)
+        self.assertIn("(p.name||'').toLowerCase().includes(query)", self.page)
+        self.assertIn("productCategoryLabel(p).toLowerCase().includes(query)", self.page)
+        self.assertIn("getVisibleProducts(filter)", self.page)
+
+    def test_product_picker_uses_requested_default_products_in_order(self):
+        self.assertIn(
+            "var DEFAULT_PRODUCT_NAMES=['袋装刀叉','翻糖','盒装刀叉','调味果酱','夹心脆','开心果酱']",
+            self.page,
+        )
+        self.assertIn("function getDefaultProducts()", self.page)
+        self.assertIn("if(!query)return getDefaultProducts()", self.page)
+        self.assertIn("name===keyword", self.page)
+        self.assertIn("name.includes(keyword)", self.page)
+        self.assertNotIn("默认显示最近", self.page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for inline rewrite UI runtime checks")
+    def test_inline_rewrite_ui_runtime_handles_defaults_search_and_single_request(self):
+        inline_scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>", self.page, flags=re.S)
+        self.assertTrue(inline_scripts)
+        page_script = inline_scripts[-1]
+        harness = r"""
+const vm = require('vm');
+const fixtures = [
+  {id:27,name:'开心果酱',category:'烘焙调味',selling_point_count:15,selling_point_summary:'开心果'},
+  {id:68,name:'白色翻糖膏',category:'烘焙装饰',selling_point_count:5,selling_point_summary:'白色'},
+  {id:3,name:'翻糖膏',category:'烘焙装饰',selling_point_count:10,selling_point_summary:'翻糖'},
+  {id:45,name:'夹心脆',category:'烘焙夹心',selling_point_count:14,selling_point_summary:'夹心'},
+  {id:1,name:'袋装刀叉',category:'烘焙配件',selling_point_count:3,selling_point_summary:'袋装'},
+  {id:32,name:'调味果酱',category:'烘焙调味',selling_point_count:14,selling_point_summary:'调味'},
+  {id:2,name:'盒装刀叉',category:'烘焙配件',selling_point_count:3,selling_point_summary:'盒装'},
+  {id:33,name:'多肉果酱',category:'烘焙调味',selling_point_count:6,selling_point_summary:'多肉'}
+];
+const elements = {};
+const focused = {productId:null};
+class FakeElement {
+  constructor(id=''){this.id=id;this.value='';this.textContent='';this.innerText='';this.innerHTML='';this.style={};this.disabled=false;this.checked=true;this.listeners={};this.classList={add(){},remove(){},contains(){return false;}};}
+  addEventListener(type,handler){this.listeners[type]=handler;}
+  appendChild(){}
+  remove(){}
+  focus(){this.focused=true;}
+  select(){}
+  setSelectionRange(){}
+  setAttribute(){}
+  closest(){return null;}
+  querySelector(selector){const match=selector.match(/data-product-id="(\d+)"/);if(!match)return null;return {focus(){focused.productId=Number(match[1]);}};}
+}
+function element(id){if(!elements[id])elements[id]=new FakeElement(id);return elements[id];}
+const rewriteCalls = [];
+async function fakeFetch(url,options){
+  if(url==='/api/products/')return {ok:true,json:async()=>fixtures};
+  if(url==='/api/scripts/rewrite'){
+    rewriteCalls.push(JSON.parse(options.body));
+    return {ok:true,json:async()=>({rewritten_script:'改写结果',product_name:'袋装刀叉',original_script:elements.originalScript.value})};
+  }
+  throw new Error('Unexpected fetch '+url);
+}
+const sandbox = {
+  console, URLSearchParams, Promise,
+  fetch:fakeFetch,
+  setTimeout(){return 0;}, clearTimeout(){},
+  navigator:{clipboard:{writeText:async()=>{}}},
+  document:{
+    getElementById:element,
+    createElement(){return new FakeElement();},
+    addEventListener(){},
+    execCommand(){return true;},
+    body:new FakeElement('body'),
+    documentElement:{scrollTop:0}
+  },
+  location:{search:''},
+  scrollTo(){},
+  isSecureContext:true
+};
+sandbox.window=sandbox;
+vm.createContext(sandbox);
+vm.runInContext(""" + json.dumps(page_script, ensure_ascii=False) + r""", sandbox);
+
+async function flush(){await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));}
+(async()=>{
+  await flush();
+  const defaults=sandbox.getVisibleProducts('').map(p=>p.name);
+  const search=sandbox.getVisibleProducts('果酱').map(p=>p.name);
+  elements.originalScript.value='不足二十字';
+  sandbox.selectProduct(1);
+  const shortCallCount=rewriteCalls.length;
+  elements.originalScript.value='这是一段已经超过二十个字并且可以触发脚本改写请求的测试文案';
+  sandbox.selectProduct(1);
+  sandbox.selectProduct(2);
+  const during={inFlight:sandbox.rewriteInFlight,rewriting:elements.productGrid.innerHTML.includes('rewriting'),announced:elements.productActionHint.textContent.includes('正在将脚本改写为'),focusedProductId:focused.productId};
+  await flush();
+  console.log(JSON.stringify({defaults,search,shortCallCount,rewriteCalls,during,finished:sandbox.rewriteInFlight}));
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            script_path = Path(temp_dir) / "rewrite-runtime-test.js"
+            script_path.write_text(harness, encoding="utf-8")
+            result = subprocess.run(
+                ["node", str(script_path)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=20,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertEqual(
+            payload["defaults"],
+            ["袋装刀叉", "翻糖膏", "盒装刀叉", "调味果酱", "夹心脆", "开心果酱"],
+        )
+        self.assertEqual(set(payload["search"]), {"调味果酱", "多肉果酱", "开心果酱"})
+        self.assertLessEqual(len(payload["search"]), 6)
+        self.assertEqual(payload["shortCallCount"], 0)
+        self.assertEqual(len(payload["rewriteCalls"]), 1)
+        self.assertTrue(payload["rewriteCalls"][0]["include_shot_design"])
+        self.assertEqual(payload["rewriteCalls"][0]["product_id"], 1)
+        self.assertEqual(
+            payload["during"],
+            {"inFlight": True, "rewriting": True, "announced": True, "focusedProductId": 1},
+        )
+        self.assertFalse(payload["finished"])
+
+    def test_clicking_product_immediately_starts_rewrite_when_script_is_valid(self):
         select_product = re.search(
             r"function selectProduct\(id\)\{(?P<body>.*?)\n\}",
             self.page,
@@ -46,26 +191,27 @@ class RewritePageTests(unittest.TestCase):
 
         self.assertIsNotNone(select_product)
         body = select_product.group("body")
-        self.assertIn("productPicker", body)
-        self.assertIn(".style.display='none'", body)
-        self.assertIn("btnRewrite", body)
+        self.assertIn("if(rewriteInFlight)return", body)
+        self.assertIn("originalScript=ta.value.trim()", body)
+        self.assertIn("if(originalScript.length<20)", body)
+        self.assertIn("selectedProduct=products.find", body)
+        self.assertIn("submitRewrite(null)", body)
 
-    def test_target_product_can_be_reselected_after_selection(self):
-        self.assertIn('id="selectedProductText"', self.page)
-        self.assertIn('id="btnReselectProduct"', self.page)
-        self.assertIn("hint.style.display='flex'", self.page)
-        self.assertIn("document.getElementById('selectedProductText').textContent='目标产品：'", self.page)
-        self.assertIn("function reselectProduct()", self.page)
-        self.assertIn("document.getElementById('productPicker').style.display=''", self.page)
-        self.assertIn("renderProducts(document.getElementById('productSearch').value)", self.page)
-        self.assertIn("btnReselectProduct').addEventListener('click',reselectProduct)", self.page)
+    def test_product_cards_show_disabled_and_rewriting_states(self):
+        self.assertIn("var rewriteInFlight=false", self.page)
+        self.assertIn("rewriteInFlight&&selected", self.page)
+        self.assertIn("scriptReady?'':' disabled'", self.page)
+        self.assertIn("class=\"product-card", self.page)
+        self.assertIn("rewriteInFlight=true", self.page)
+        self.assertIn("rewriteInFlight=false", self.page)
+        self.assertIn("改写中", self.page)
 
-    def test_selected_product_and_preview_use_plain_text_symbols(self):
-        self.assertNotIn("+ '&yen;'", self.page)
-        self.assertNotIn("+ '&hellip;'", self.page)
-        self.assertIn("| ¥", self.page)
-        self.assertIn("selectedProduct.price", self.page)
-        self.assertIn("+'...'", self.page)
+    def test_rewrite_inflight_state_is_announced_and_preserves_card_focus(self):
+        self.assertIn('id="productActionHint"', self.page)
+        self.assertIn('aria-live="polite"', self.page)
+        self.assertIn('data-product-id="', self.page)
+        self.assertIn("activeCard.focus()", self.page)
+        self.assertIn("正在将脚本改写为", self.page)
 
     def test_product_cards_escape_api_fields_before_innerhtml(self):
         match = re.search(
@@ -79,8 +225,9 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("jsStringLiteral(p.selling_point_summary||'暂无卖点')", body)
         self.assertIn("escHtml(productCategoryLabel(p))", body)
         self.assertIn("escHtml(p.name)", body)
-        self.assertIn("escHtml(productPriceLabel(p))", body)
         self.assertIn("Number(p.selling_point_count||0)", body)
+        self.assertIn("+count+' 个卖点", body)
+        self.assertNotIn("productPriceLabel", body)
         self.assertNotIn("'+p.name+'", body)
         self.assertNotIn("'+productCategoryLabel(p)+'", body)
 
@@ -102,6 +249,8 @@ class RewritePageTests(unittest.TestCase):
     def test_rewrite_page_promises_material_script_format(self):
         self.assertIn("保留参考结构并输出为资料脚本格式", self.page)
         self.assertIn("画面括号 + 口播文案", self.page)
+        self.assertIn("并按“画面括号 + 口播文案”的资料表脚本格式输出", self.page)
+        self.assertNotIn("可选择输出", self.page)
         self.assertIn("已保留参考结构并按资料脚本格式输出", self.page)
         self.assertNotIn("已保留原脚本结构", self.page)
 
@@ -112,11 +261,11 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("document.getElementById('rewriteReqPreFill').value.trim()", self.page)
         self.assertIn("reqs.push('用户需求：'+preFill)", self.page)
 
-    def test_rewrite_page_has_optional_shot_design_toggle(self):
-        self.assertIn("需要设计画面", self.page)
-        self.assertIn('id="includeShotDesign" type="checkbox" checked', self.page)
-        self.assertIn("取消勾选后只输出一段口播文案", self.page)
-        self.assertIn("var includeShotDesign=document.getElementById('includeShotDesign').checked", self.page)
+    def test_rewrite_page_keeps_shot_design_enabled_without_visible_setting(self):
+        self.assertNotIn("需要设计画面", self.page)
+        self.assertNotIn('id="includeShotDesign"', self.page)
+        self.assertNotIn("取消勾选后只输出一段口播文案", self.page)
+        self.assertIn("var includeShotDesign=true", self.page)
         self.assertIn("include_shot_design:includeShotDesign", self.page)
 
     def test_rewrite_request_defaults_to_existing_shot_design_format(self):
@@ -279,7 +428,7 @@ class RewritePageTests(unittest.TestCase):
 
     def test_result_actions_include_back_before_copy(self):
         top_back = re.search(
-            r'id="resultMeta".*?id="btnBackToStep2FromResult"',
+            r'id="resultMeta".*?id="btnBackToForm"',
             self.page,
             flags=re.S,
         )
@@ -297,7 +446,7 @@ class RewritePageTests(unittest.TestCase):
         self.assertIsNotNone(top_back)
         self.assertIsNotNone(bottom_actions)
         self.assertIsNotNone(script_actions)
-        self.assertIn("btnBackToStep2FromResult", self.page)
+        self.assertIn("btnBackToForm", self.page)
         self.assertIn("document.getElementById('resultActions').style.display='none'", self.page)
         self.assertIn("document.getElementById('resultActions').style.display='flex'", self.page)
 
@@ -321,24 +470,25 @@ class RewritePageTests(unittest.TestCase):
         self.assertIn("escHtml(d.product_name)", body)
         self.assertNotIn("'<b>'+d.product_name+'</b>", body)
 
-    def test_redo_directly_submits_rewrite_without_returning_to_step2(self):
+    def test_redo_directly_submits_rewrite_without_returning_to_form(self):
         self.assertIn("async function submitRewrite", self.page)
         self.assertIn("submitRewrite('请在保留参考文案结构的前提下，直接生成一个不同于上一版的新版本", self.page)
         self.assertNotIn("document.getElementById('extraReq').value='请生成一个不同于上一版的版本'", self.page)
 
-    def test_result_back_button_returns_to_previous_step(self):
+    def test_result_back_button_returns_to_single_page_form(self):
         handler = re.search(
-            r"btnBackToStep2FromResult'\)\.addEventListener\('click',function\(\)\{(?P<body>.*?)\}\);",
+            r"btnBackToForm'\)\.addEventListener\('click',function\(\)\{(?P<body>.*?)\}\);",
             self.page,
             flags=re.S,
         )
 
         self.assertIsNotNone(handler)
         body = handler.group("body")
-        self.assertIn("step2", body)
+        self.assertIn("step1", body)
         self.assertIn(".style.display=''", body)
         self.assertIn("step3", body)
         self.assertIn(".style.display='none'", body)
+        self.assertNotIn("step2", body)
 
     def test_result_page_has_seedance_prompt_panel(self):
         self.assertIn("Seedance 2.0", self.page)

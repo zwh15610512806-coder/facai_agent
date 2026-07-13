@@ -5,6 +5,7 @@ const MAIN_PAGES = [
   '/app/generate',
   '/app/rewrite',
   '/app/products',
+  '/app/creators',
   '/app/templates',
   '/app/history',
   '/app/import',

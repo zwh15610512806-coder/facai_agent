@@ -1,21 +1,29 @@
 """产品管理 API — CRUD + 搜索 + 筛选 + 文件上传"""
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from config import MAX_UPLOAD_SIZE
-from database import get_db
-from models import Product, SellingPoint
+from config import EMBEDDING_MODEL_NAME, MAX_UPLOAD_SIZE
+from database import SessionLocal, get_db
+from models import (
+    Product,
+    ProductRagFeedback,
+    ProductRagQueryLog,
+    SellingPoint,
+    VectorIndexVersion,
+    VectorSyncJob,
+)
 from schemas import (
     ProductCreate, ProductUpdate, ProductOut, ProductWriteOut,
     ProductListItem, SellingPointOut, SellingPointUpdate, ApiResponse
 )
-from typing import List, Optional
+from typing import List, Literal, Optional
 import mimetypes
 import os
 import re
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlencode
 import import_materials
@@ -25,11 +33,29 @@ from services.product_detail import (
     _manual_source_name,
     build_product_detail_payload,
 )
+from services.product_knowledge_chunks import (
+    product_knowledge_quality_report,
+    validate_product_knowledge_quality_report,
+)
 from services.product_price_extractor import apply_product_price_metadata, extract_product_price_metadata
 from services.product_rag import answer_global_product_question, answer_product_question
 from services.upload_limits import write_upload_file
 
 router = APIRouter()
+
+
+class ProductRagFeedbackRequest(BaseModel):
+    query_id: int = Field(..., ge=1)
+    rating: Literal["up", "down"]
+    reason: Optional[Literal["missing", "irrelevant", "wrong", "outdated"]] = None
+
+    @model_validator(mode="after")
+    def require_down_reason(self):
+        if self.rating == "down" and not self.reason:
+            raise ValueError("负反馈请选择原因")
+        if self.rating == "up":
+            self.reason = None
+        return self
 
 # 产品文件存储目录
 PRODUCT_FILES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "product_files")
@@ -332,18 +358,161 @@ def semantic_search_products(
 
 @router.post("/reindex")
 def reindex_products(db: Session = Depends(get_db)):
-    """批量重建所有产品的向量索引"""
+    from vector_store import VectorStoreError, product_index_build_lock
+
     try:
-        from vector_store import VectorStoreError
-        from vector_store.product_store import ProductVectorStore
+        with product_index_build_lock(blocking=False):
+            return _reindex_products_locked(db)
+    except VectorStoreError as exc:
+        if "正在重建" in str(exc):
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise
+
+
+def _reindex_products_locked(db: Session):
+    """Build a complete product index version, then atomically activate it."""
+    version_name = "products_v" + datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+    version_record = None
+    target_collection = None
+    try:
+        from vector_store import VectorStoreError, product_index_write_lock
+        from vector_store.product_store import (
+            ProductVectorStore,
+            validate_product_collection_for_activation,
+        )
         pvs = ProductVectorStore()
-        pvs.store.reset_product_collection()
-        count = pvs.index_all_products(db)
-        return ApiResponse(message=f"已重建 {count} 个产品知识块向量索引")
+        previous_name = pvs.store.active_product_collection_name()
+        quality_report = (
+            product_knowledge_quality_report(
+                db.query(Product).filter(Product.status == "active").all()
+            )
+            if db is not None
+            else {}
+        )
+        if quality_report:
+            try:
+                validate_product_knowledge_quality_report(quality_report)
+            except ValueError as exc:
+                raise VectorStoreError(f"产品知识质量门槛未通过: {exc}") from exc
+        if db is not None:
+            version_record = VectorIndexVersion(
+                entity_type="product",
+                collection_name=version_name,
+                status="building",
+                embedding_model=EMBEDDING_MODEL_NAME,
+            )
+            db.add(version_record)
+            db.commit()
+            db.refresh(version_record)
+        target_collection = pvs.store.create_product_collection(version_name)
+        build_watermark = 0
+        if db is not None:
+            build_watermark = int(
+                db.query(func.max(VectorSyncJob.id))
+                .filter(VectorSyncJob.entity_type == "product")
+                .scalar()
+                or 0
+            )
+        count = pvs.index_all_products(db, collection=target_collection)
+        validation = validate_product_collection_for_activation(target_collection, count)
+        if db is not None:
+            db.rollback()
+        replay_upper = build_watermark
+        reconciliation = {
+            "active_products": 0,
+            "repaired_products": 0,
+            "deleted_products": 0,
+        }
+        with product_index_write_lock(getattr(pvs.store, "_persist_dir", None)):
+            final_db = SessionLocal() if db is not None else None
+            try:
+                if final_db is not None:
+                    replay_upper = int(
+                        final_db.query(func.max(VectorSyncJob.id))
+                        .filter(VectorSyncJob.entity_type == "product")
+                        .scalar()
+                        or build_watermark
+                    )
+                    changed_product_ids = [
+                        int(row[0])
+                        for row in (
+                            final_db.query(VectorSyncJob.entity_id)
+                            .filter(
+                                VectorSyncJob.entity_type == "product",
+                                VectorSyncJob.id > build_watermark,
+                                VectorSyncJob.id <= replay_upper,
+                            )
+                            .distinct()
+                            .all()
+                        )
+                    ]
+                    for changed_product_id in changed_product_ids:
+                        changed_product = final_db.get(Product, changed_product_id)
+                        if changed_product is not None and changed_product.status == "active":
+                            pvs.index_product(
+                                changed_product,
+                                final_db,
+                                collection=target_collection,
+                                lock_held=True,
+                            )
+                        else:
+                            pvs.delete_embedding(
+                                changed_product_id,
+                                collection=target_collection,
+                                lock_held=True,
+                            )
+                    reconciliation = pvs.reconcile_collection_to_database(
+                        final_db,
+                        target_collection,
+                        lock_held=True,
+                    )
+                    quality_report = product_knowledge_quality_report(
+                        final_db.query(Product).filter(Product.status == "active").all()
+                    )
+                    validate_product_knowledge_quality_report(quality_report)
+            finally:
+                if final_db is not None:
+                    final_db.close()
+            indexed_count = int(target_collection.count())
+            validation = validate_product_collection_for_activation(
+                target_collection,
+                indexed_count,
+            )
+            pvs.store.activate_product_collection(version_name, lock_held=True)
+        if db is not None and version_record is not None:
+            db.query(VectorIndexVersion).filter(
+                VectorIndexVersion.entity_type == "product",
+                VectorIndexVersion.status == "active",
+                VectorIndexVersion.id != version_record.id,
+            ).update({VectorIndexVersion.status: "retired"}, synchronize_session=False)
+            version_record.status = "active"
+            version_record.chunk_count = indexed_count
+            version_record.activated_at = datetime.now(UTC).replace(tzinfo=None)
+            db.commit()
+        return ApiResponse(
+            message=f"已构建并启用 {indexed_count} 个产品知识块向量索引",
+            data={
+                "collection": version_name,
+                "previous_collection": previous_name,
+                "chunk_count": indexed_count,
+                "quality": quality_report,
+                "validation": validation,
+                "reconciliation": reconciliation,
+            },
+        )
     except VectorStoreError as e:
+        if target_collection is not None:
+            try:
+                pvs.store.delete_product_collection(version_name)
+            except Exception:
+                pass
+        if db is not None and version_record is not None:
+            version_record.status = "failed"
+            version_record.error_summary = str(e)[:4000]
+            db.commit()
         raise HTTPException(
             status_code=503,
-            detail=f"索引未重建：向量集合重置或写入失败，已停止以避免混用旧索引；请检查 ARK_API_KEY、ARK_BASE_URL、EMBEDDING_MODEL_NAME 和火山方舟 endpoint 权限: {e}",
+            detail=f"索引未重建：新版本构建失败，旧索引继续使用；请检查 ARK_API_KEY、ARK_BASE_URL、EMBEDDING_MODEL_NAME 和火山方舟 endpoint 权限: {e}",
         )
     except Exception as e:
         raise HTTPException(
@@ -373,6 +542,29 @@ async def global_product_rag_chat(
 def global_product_rag_chat_get():
     """Avoid routing a browser GET for rag-chat into /{product_id}."""
     return RedirectResponse(url="/app/products", status_code=303)
+
+
+@router.post("/rag-feedback")
+def save_product_rag_feedback(
+    data: ProductRagFeedbackRequest,
+    db: Session = Depends(get_db),
+):
+    query_log = db.get(ProductRagQueryLog, data.query_id)
+    if query_log is None:
+        raise HTTPException(status_code=404, detail="问答记录不存在")
+    feedback = (
+        db.query(ProductRagFeedback)
+        .filter(ProductRagFeedback.query_log_id == data.query_id)
+        .first()
+    )
+    if feedback is None:
+        feedback = ProductRagFeedback(query_log_id=data.query_id)
+        db.add(feedback)
+    feedback.rating = data.rating
+    feedback.reason = data.reason
+    db.commit()
+    db.refresh(feedback)
+    return ApiResponse(message="反馈已记录", data={"feedback_id": feedback.id})
 
 
 @router.get("/source-preview")

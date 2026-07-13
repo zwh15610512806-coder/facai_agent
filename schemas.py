@@ -271,6 +271,11 @@ class ScriptGenerateResponse(BaseModel):
     created_at: datetime
     template_id: Optional[int] = None
     template_name: Optional[str] = None
+    template_reference_script: Optional[str] = None
+    source_script_id: Optional[int] = None
+    source_script_source: Optional[Literal["facai", "other"]] = None
+    source_script_title: Optional[str] = None
+    source_script_content: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -287,6 +292,11 @@ class GeneratedScriptOut(BaseModel):
     product_name: Optional[str] = None
     template_id: Optional[int] = None
     template_name: Optional[str] = None
+    template_reference_script: Optional[str] = None
+    source_script_id: Optional[int] = None
+    source_script_source: Optional[Literal["facai", "other"]] = None
+    source_script_title: Optional[str] = None
+    source_script_content: Optional[str] = None
     script_content: str
     video_type: Optional[str] = None
     ai_model: Optional[str] = None

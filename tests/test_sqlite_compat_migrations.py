@@ -45,7 +45,14 @@ class SQLiteCompatibilityMigrationTests(unittest.TestCase):
         )
         self.assertGreaterEqual(
             self._column_names("generated_scripts"),
-            {"ai_model", "is_high_conversion"},
+            {
+                "ai_model",
+                "is_high_conversion",
+                "source_script_id",
+                "source_script_source",
+                "source_script_title",
+                "source_script_content",
+            },
         )
         self.assertGreaterEqual(
             self._column_names("reference_scripts"),

@@ -57,7 +57,7 @@ app.add_middleware(RequestBodyLimitMiddleware)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-from routers import auth, products, templates as tpl_routes, scripts, import_data, reference_scripts, inspiration, ai_config, search_local
+from routers import auth, products, templates as tpl_routes, scripts, import_data, reference_scripts, inspiration, ai_config, search_local, creators
 
 app.include_router(products.router, prefix="/api/products", tags=["products"])
 app.include_router(tpl_routes.router, prefix="/api/templates", tags=["templates"])
@@ -68,6 +68,7 @@ app.include_router(inspiration.router, prefix="/api/inspiration", tags=["inspira
 app.include_router(ai_config.router, prefix="/api/ai-config", tags=["ai-config"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(search_local.router, prefix="/api/search-proxy", tags=["search"])
+app.include_router(creators.router, prefix="/api/creators", tags=["creators"])
 
 def _apply_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -153,6 +154,8 @@ def app_page(request: Request): return templates.TemplateResponse(request, "insp
 def generate_page(request: Request): return templates.TemplateResponse(request, "index.html", {"request": request})
 @app.get("/app/products")
 def products_page(request: Request): return templates.TemplateResponse(request, "products.html", {"request": request})
+@app.get("/app/creators")
+def creators_page(request: Request): return templates.TemplateResponse(request, "creators.html", {"request": request})
 @app.get("/app/import")
 def import_page(request: Request): return templates.TemplateResponse(request, "import.html", {"request": request})
 @app.get("/app/templates")

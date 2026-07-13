@@ -1,6 +1,15 @@
 """脚本生成引擎 — 核心业务逻辑"""
 from services.ai_service import ai_service
 from services.rewrite_prompts import build_rewrite_system_prompt
+from services.script_opening import (
+    OpeningBrief,
+    collect_template_audience_phrases,
+    extract_normalized_leading_audience_signature,
+    select_opening_brief,
+    strip_generic_audience_opening,
+    template_allows_audience_call,
+    validate_opening,
+)
 from services.script_price import abstract_script_price, sanitize_script_price_text
 from models import ViralScript, ReferenceScript
 from sqlalchemy.orm import Session
@@ -8,10 +17,22 @@ from sqlalchemy import or_
 from typing import List, Dict, Optional, Any
 import json
 import logging
-import random
 import re
 
 logger = logging.getLogger(__name__)
+
+
+_PRICE_NUMBER = r"(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+)"
+_PRICE_OR_PROMOTION_COPY_RE = re.compile(
+    r"价格|原价|售价|活动价|优惠|促销|折扣|赠品|券|到手|恢复原价"
+    r"|买\s*(?:\d+|[一二两三四五六七八九十几]+)\s*送\s*(?:\d+|[一二两三四五六七八九十几]+)"
+    r"|满\s*(?:\d+(?:\.\d+)?|[一二两三四五六七八九十百千几]+)\s*(?:元)?\s*减\s*(?:\d+(?:\.\d+)?|[一二两三四五六七八九十百千几]+)"
+    r"|几毛钱|几块钱|十来块|1开头|一杯奶茶钱|几十块|三位数|千元级"
+    r"|[¥￥]\s*\d+(?:\.\d+)?"
+    rf"|{_PRICE_NUMBER}\s*(?:元|块|毛|角)(?:\s*{_PRICE_NUMBER})?"
+    rf"|{_PRICE_NUMBER}\s*折"
+    rf"|立减\s*{_PRICE_NUMBER}"
+)
 
 
 class ScriptGenerationError(RuntimeError):
@@ -39,15 +60,6 @@ class ScriptGenerator:
         "场景类": "场景建立 → 动作展示 → 成品呈现 → 场景转化 → CTA。核心是让用户看见自己会在何处使用",
         "AI智能生成": "根据产品资料、价格状态、卖点强弱和抖音跑量逻辑自动选择最适合的生成角度，可以在机制、痛点、需求、认知、场景、对比之间择优组合，但必须输出一个清晰主线",
     }
-
-    DEEPSEEK_OPENING_STRATEGIES = (
-        "价格机制开场：第一句先讲清活动、成本或省心机制，但只能使用输入里真实存在的价格/活动信息",
-        "痛点场景开场：第一句直接切进门店备货、打包、配送、出品或接急单时的具体麻烦",
-        "结果反差开场：第一句对比普通做法和法采产品带来的效率、品质或成本变化",
-        "认知反差开场：第一句先点破烘焙店老板容易忽略的选品细节",
-        "动作画面开场：第一句从拿起、切开、装袋、打包、配送、上架等具体动作进入",
-        "客户反馈开场：第一句从顾客体验、门店复购或出餐效率切入，不编造具体数据",
-    )
 
     def __init__(self):
         self.ai = ai_service
@@ -115,7 +127,7 @@ class ScriptGenerator:
             else "- 仍参考抖音带货跑量逻辑和真实产品场景，但不套用模板脚本格式。"
         )
         connector_line = (
-            "- 可以使用“啊、姐妹们、关键、如果”等口语连接词，让文案读起来顺滑自然。"
+            "- 可以使用“啊、关键、如果、直接”等口语连接词，让文案读起来顺滑自然。"
             if use_template_reference
             else "- 可以使用“关键、如果、直接、你看、说白了”等口语连接词，让文案读起来顺滑自然。"
         )
@@ -129,29 +141,77 @@ class ScriptGenerator:
             f"{reference_line}"
         )
 
-    def _format_deepseek_run_rate_framework(self) -> str:
+    def _format_ai_run_rate_framework(self) -> str:
         return (
             "\n【抖音跑量自检框架】\n"
-            "- 开头3-5秒必须给出具体钩子，可以是价格机制、痛点反差、场景冲突、效果对比或认知反差，避免泛化开头。\n"
+            "- 黄金前3秒服务 CTR：第一口播小句立即给出具体动作、真实门店冲突、结果反差、认知纠正、产品证明、客户反馈或已核实机制。\n"
+            "- 禁止用人群召唤或空洞注意力钩子开场。\n"
             "- 目标人群必须明确为烘焙店老板/烘焙从业者，不要写成泛消费者种草。\n"
-            "- 用一个真实使用场景承接痛点或需求，让观众能立刻代入门店备货、出品、配送、打包或活动促销。\n"
+            "- 正文用真实使用场景（真实烘焙门店场景）加具体产品证明服务 CVR，让观众能代入备货、出品、配送或打包。\n"
             "- 至少引用2个产品资料里的具体卖点，卖点要落到成本、效率、品质、稳定性、使用步骤或成品效果，禁止空泛夸张。\n"
             "- 价格、活动、赠品必须与输入一致；最终脚本用抽象价格表达，禁止输出几毛几分钱的精确金额；价格待更新时不得编造价格、折扣、赠品或到手价。\n"
-            "- CTA必须自然引导左下角/小黄车，但避免全篇硬广，要先让用户相信产品值得点开。\n"
-            "- 先内部自评并修正：钩子是否能留住人，场景是否真实，卖点是否具体，价格是否一致，CTA是否明确；最终不要输出评分或解释。"
+            "- 内容重、营销轻，只走一条清晰转化主线；完成产品证明之后自然 CTA，避免全篇硬广。\n"
+            "- 先内部自评并修正钩子、场景、产品事实、价格政策和 CTA；最终不要输出评分或解释。"
         )
 
-    def _choose_deepseek_opening_strategy(self) -> str:
-        return random.choice(self.DEEPSEEK_OPENING_STRATEGIES)
+    def _format_ai_opening_requirement(
+        self,
+        opening_brief: OpeningBrief,
+        recent_openings: Optional[List[str]],
+    ) -> str:
+        lines = [
+            "\n【本次开头策略】",
+            f"- 策略家族：{opening_brief.family}",
+            f"- 中文指令：{opening_brief.instruction}",
+            "- 禁止以“姐妹们”“烘焙姐妹们”“家人们”“老板们看过来”作为开头。\n"
+            "- 第一口播小句必须直接提供具体动作、真实门店冲突、结果反差、认知纠正、产品证明、客户反馈或已核实机制。",
+        ]
+        openings = [opening.strip() for opening in (recent_openings or []) if opening.strip()][:8]
+        if openings:
+            lines.extend(["\n【近期首句去重】", "- 禁止复制这些首句的角度或句式，也不得只替换商品名后复用。"])
+            lines.extend(f"- {opening}" for opening in openings)
+        return "\n".join(lines)
 
-    def _format_deepseek_opening_variety_requirement(self, opening_strategy: str) -> str:
-        return (
-            "\n【开头去重要求】\n"
-            f"- 本次开头角度：{opening_strategy}\n"
-            "- 禁止以“姐妹们”“烘焙姐妹们”“家人们”“老板们看过来”作为默认开头，除非用户额外要求。\n"
-            "- 第一小句必须直接进入价格机制、痛点场景、结果反差、认知反差、客户反馈或具体动作画面，不要先喊人群称呼。\n"
-            "- 每次重新生成必须更换开头角度和第一句话句式，不要连续使用同一种开场句。"
-        )
+    def _price_intent_required(
+        self,
+        video_type: str,
+        opening_family: str,
+        extra_requirements: Optional[str],
+    ) -> bool:
+        requirements = extra_requirements or ""
+        intent_pattern = re.compile(r"价格|价位|活动|优惠|促销|赠品|买.{0,12}送|券|折扣|到手")
+        intent_matches = list(intent_pattern.finditer(requirements))
+        if intent_matches:
+            negation = (
+                r"(?:不要(?:写|提|说|展示)?|不需要|无需|别|禁止|不提|不写|不展示|不说|"
+                r"不包含|不存在|没有|无(?!门槛)|去掉|避免)"
+            )
+            for match in intent_matches:
+                before = requirements[max(0, match.start() - 14) : match.start()]
+                after = requirements[match.end() : match.end() + 10]
+                no_threshold_promotion = re.search(
+                    r"(?:没有|无)\s*门槛(?:的)?$",
+                    before,
+                )
+                negated_before = re.search(
+                    rf"{negation}[^，。；;！？!?]{{0,8}}$",
+                    before,
+                ) if not no_threshold_promotion else None
+                negated_after = re.match(
+                    rf"[^，。；;！？!?]{{0,4}}{negation}",
+                    after,
+                )
+                if not negated_before and not negated_after:
+                    return True
+            return False
+        if video_type in {"机制类", "成本低"} or opening_family == "cost_mechanism":
+            return True
+        return False
+
+    def _format_ai_price_policy(self, price_required: bool) -> str:
+        if price_required:
+            return "价格政策：本条允许使用真实且抽象的价格/活动表达，但只能依据输入事实，不得虚构或输出精确金额。"
+        return "价格政策：本条脚本不要求价格，不得为了制造广告压力强行插入价格或促销。"
 
     def _post_process_script_output(
         self,
@@ -162,7 +222,7 @@ class ScriptGenerator:
         text = (script or "").strip()
         if include_shot_design:
             if remove_default_audience_opening:
-                text = self._remove_default_audience_opening(text)
+                text = strip_generic_audience_opening(text)
             return sanitize_script_price_text(text)
 
         text = self._strip_plain_script_preamble(text)
@@ -183,22 +243,8 @@ class ScriptGenerator:
         text = re.sub(r"(?<=[\u4e00-\u9fff0-9，。！？、；：])\s+(?=[\u4e00-\u9fff0-9“”])", "", text)
         text = re.sub(r"\s+([，。！？、；：,.!?;:])", r"\1", text)
         if remove_default_audience_opening:
-            text = self._remove_default_audience_opening(text)
+            text = strip_generic_audience_opening(text)
         return sanitize_script_price_text(text.strip())
-
-    def _remove_default_audience_opening(self, text: str) -> str:
-        """Remove generic audience-call prefixes from DeepSeek-created scripts only."""
-        if not text:
-            return ""
-
-        prefix_pattern = (
-            r"^(\s*(?:[（(][^（）()]{1,120}[）)]\s*)?)"
-            r"(?:做烘焙的)?(?:烘焙)?姐妹们(?:看过来|注意了|别划走)?[，,、！!\s]*"
-        )
-
-        lines = text.splitlines()
-        lines[0] = re.sub(prefix_pattern, r"\1", lines[0]).lstrip()
-        return "\n".join(lines).strip()
 
     def _strip_plain_script_preamble(self, text: str) -> str:
         """Keep only the actual spoken script when the model adds analysis or intro text."""
@@ -579,6 +625,7 @@ class ScriptGenerator:
         extra_requirements: Optional[str] = None,
         reference_scripts: Optional[List[Dict]] = None,
         include_shot_design: bool = False,
+        recent_openings: Optional[List[str]] = None,
     ) -> str:
         """
         生成短视频脚本
@@ -598,11 +645,18 @@ class ScriptGenerator:
                 status_code=503,
             )
 
+        recent_openings = [opening for opening in (recent_openings or []) if (opening or "").strip()][:8]
+        opening_brief = select_opening_brief(video_type, product, recent_openings)
+        price_required = self._price_intent_required(video_type, opening_brief.family, extra_requirements)
+
         # 构建系统提示
         system_prompt = self._build_system_prompt(
             video_type,
             tone,
             include_shot_design=include_shot_design,
+            opening_brief=opening_brief,
+            recent_openings=recent_openings,
+            price_required=price_required,
         )
 
         # 构建用户提示
@@ -614,6 +668,7 @@ class ScriptGenerator:
             extra_requirements=extra_requirements,
             reference_scripts=reference_scripts or [],
             include_shot_design=include_shot_design,
+            price_required=price_required,
         )
 
         # 调用 AI
@@ -637,23 +692,82 @@ class ScriptGenerator:
         if not (response or "").strip():
             raise ScriptGenerationError("AI生成模型调用失败或未返回内容，请检查 AI 配置后重试。")
 
+        opening_check = validate_opening(response, recent_openings, product.get("name", ""))
+        if not opening_check.valid:
+            logger.warning(
+                "AI opening rejected before repair: reasons=%s opening=%r",
+                opening_check.reasons,
+                opening_check.opening,
+            )
+            repair_prompt = (
+                "首次脚本未通过开头质量校验，请只修正一次并直接输出完整成稿。\n"
+                f"机器校验原因：{json.dumps(list(opening_check.reasons), ensure_ascii=False)}\n"
+                f"近期首句：{json.dumps(recent_openings, ensure_ascii=False)}\n"
+                f"首次脚本：\n{response}\n\n"
+                "必须更换开头角度和第一句句式，重排卖点推进顺序，并更换 CTA 表达；"
+                "继续遵守原产品资料、价格政策、输出格式和不编造事实的要求。"
+            )
+            repair_messages = [
+                *messages,
+                {"role": "assistant", "content": response},
+                {"role": "user", "content": repair_prompt},
+            ]
+            try:
+                repaired_response = await self._chat_with_interface(
+                    repair_messages,
+                    temperature=0.95,
+                    interface_key="script_generate",
+                    allow_fallback=False,
+                )
+            except Exception as exc:
+                logger.warning("AI opening repair failed: %s", exc)
+                raise ScriptGenerationError(
+                    "AI生成开头质量未通过，请重新生成。",
+                    status_code=502,
+                ) from exc
+
+            repaired_check = validate_opening(
+                repaired_response or "",
+                recent_openings,
+                product.get("name", ""),
+            )
+            if not (repaired_response or "").strip() or not repaired_check.valid:
+                logger.warning(
+                    "AI opening rejected after repair: reasons=%s opening=%r",
+                    repaired_check.reasons,
+                    repaired_check.opening,
+                )
+                raise ScriptGenerationError(
+                    "AI生成开头质量未通过，请重新生成。",
+                    status_code=502,
+                )
+            response = repaired_response
+
         script = self._post_process_script_output(
             response,
             include_shot_design,
-            remove_default_audience_opening=True,
         )
         if not script.strip():
             raise ScriptGenerationError("AI生成模型返回内容为空，请重试或检查 AI 配置。")
         return script
 
-    def _build_system_prompt(self, video_type: str, tone: str, include_shot_design: bool = False) -> str:
+    def _build_system_prompt(
+        self,
+        video_type: str,
+        tone: str,
+        include_shot_design: bool = False,
+        opening_brief: Optional[OpeningBrief] = None,
+        recent_openings: Optional[List[str]] = None,
+        price_required: bool = False,
+    ) -> str:
         """构建系统提示词"""
         strategy = self.TYPE_STRATEGIES.get(
             video_type,
             self.TYPE_STRATEGIES["机制类"]
         )
-        opening_strategy = self._choose_deepseek_opening_strategy()
-        opening_requirement = self._format_deepseek_opening_variety_requirement(opening_strategy)
+        opening_brief = opening_brief or select_opening_brief(video_type, {}, recent_openings)
+        opening_requirement = self._format_ai_opening_requirement(opening_brief, recent_openings)
+        price_policy = self._format_ai_price_policy(price_required)
         if not include_shot_design:
             return f"""你是法采食品店的短视频带货纯口播文案专家，擅长把烘焙产品卖点写成一段自然达人口播。
 
@@ -665,8 +779,9 @@ class ScriptGenerator:
 - 禁止【】段落标签、时间码、分镜标题、镜头说明、画面说明、字幕提示、口播标签和场景说明。
 - 可以借鉴抖音爆款带货视频的成交逻辑、痛点推进、卖点顺序和口语节奏，但不能套用模板脚本格式。
 - 语言要像真实带货达人顺口说出来，可以使用“关键、如果、直接、你看、说白了”这类自然连接词。
-- 必须包含产品卖点、已有价格/促销信息或价格待更新提示，并有明确左下角下单引导。
-{self._format_deepseek_run_rate_framework()}
+- 必须包含产品卖点和明确左下角下单引导；价格按本次价格政策执行。
+{price_policy}
+{self._format_ai_run_rate_framework()}
 {opening_requirement}
 
 当前任务：
@@ -675,20 +790,6 @@ class ScriptGenerator:
 - 语言风格：{tone}
 
 请严格按纯口播一段话输出。"""
-
-        # 随机创意变体，避免每次生成相同的开场套路
-        import random
-        variations = [
-            "这次尝试一个全新的开场角度，避免重复之前的套路。",
-            "用不同的情绪基调来开场，可以更夸张或更接地气。",
-            "这次换一种叙事节奏，比如先抛问题再揭晓答案。",
-            "尝试更有冲击力的镜头语言描述，让画面感更强。",
-            "卖点呈现顺序可以打乱，找到最能打透用户心理的排列。",
-            "这次的语气可以更真实自然，像朋友推荐一样，减少广告感。",
-            "价格部分可以用更有张力的表达方式，制造稀缺感。",
-            "CTA 这次换一个完全不同的角度和句式。",
-        ]
-        variation = random.choice(variations)
 
         return f"""你是法采食品店的短视频带货口播+画面脚本专家，擅长把烘焙产品卖点写成适合抖音跑量的真实门店场景脚本。
 
@@ -699,15 +800,15 @@ class ScriptGenerator:
 - 可以用时间段和功能标签组织脚本，但每一句口播都要配合具体镜头/画面说明。
 - 镜头说明必须服务产品证明：真实门店场景、产品细节、使用动作、成品效果、价格机制或左下角下单引导。
 - 口语表达要像烘焙店老板/烘焙从业者在真实分享，可以使用“关键、如果、直接、你看、说白了”等自然连接词。
-- 必须包含产品卖点、已有价格/促销信息或价格待更新提示，并有明确左下角/小黄车下单引导。
+- 必须包含产品卖点和明确左下角/小黄车下单引导；价格按本次价格政策执行。
+- {price_policy}
 - 避免全篇硬广，先用场景、证明和具体卖点让用户相信产品值得点开。
 
 当前任务：
 - 视频类型：{video_type}
 - 创作策略：{strategy}
 - 语言风格：{tone}
-- 创意要求：{variation}
-{self._format_deepseek_run_rate_framework()}
+{self._format_ai_run_rate_framework()}
 {opening_requirement}
 
 请严格按照上述策略创作，确保脚本具备抖音跑量能力。"""
@@ -921,6 +1022,7 @@ class ScriptGenerator:
         extra_requirements: Optional[str] = None,
         reference_scripts: Optional[List[Dict]] = None,
         include_shot_design: bool = False,
+        price_required: bool = False,
     ) -> str:
         """构建用户提示词"""
         parts = []
@@ -960,12 +1062,16 @@ class ScriptGenerator:
         parts.append(f"2. 语言风格：{tone}")
         if include_shot_design:
             parts.append(f"3. 时间标记：每个段落标注时间范围（如 0-3s）")
-            parts.append(f"4. 段落标记：用【钩子】【痛点】【卖点】【价格】【CTA】等标记功能")
+            functional_markers = "【钩子】【痛点】【卖点】"
+            if price_required:
+                functional_markers += "【价格】"
+            functional_markers += "【CTA】"
+            parts.append(f"4. 段落标记：用{functional_markers}等标记功能")
             parts.append(f"5. 开头3秒内必须有一个强钩子")
         else:
             parts.append(f"3. 开头要有强钩子，但不要用标题、时间码或段落标签标出来")
             parts.append(f"4. 输出风格参考自然达人带货口播，像一口气说完的一段话，不要解释创作过程")
-        parts.append(f"6. 必须包含输入中已有的价格/活动信息和明确的左下角下单引导；如果价格待更新，不能编造具体价格")
+        parts.append(f"6. {self._format_ai_price_policy(price_required)}并保留明确的左下角下单引导；价格待更新时不能编造具体价格")
         parts.append(f"7. 融入具体的产品卖点，不要空泛")
 
         parts.append(self._format_shot_design_requirement(include_shot_design, use_template_reference=False))
@@ -1024,16 +1130,67 @@ CTA 模板：
 示例脚本：
 {self._format_template_prompt_value(template.get('example_script'), limit=1600)}"""
 
+    def _template_has_price_structure(self, template: Dict) -> bool:
+        fields = (
+            template.get("structure"),
+            template.get("hook_templates"),
+            template.get("cta_templates"),
+            template.get("description"),
+            template.get("example_script"),
+        )
+        text = "\n".join(
+            self._format_template_prompt_value(value, limit=4000)
+            for value in fields
+        )
+        return bool(re.search(
+            r"价格|价位|售价|到手价|活动|成本|优惠|折扣|赠品|券|促销|满减|立减|买.{0,12}送"
+            r"|(?:价格|活动|优惠|促销|折扣|赠送|满减|到手|成本)\s*机制"
+            r"|机制\s*(?:价格|活动|优惠|促销|折扣|赠送|满减|到手|成本)",
+            text,
+        ))
+
+    def _contains_price_or_promotion_copy(self, text: str) -> bool:
+        return bool(_PRICE_OR_PROMOTION_COPY_RE.search(text or ""))
+
+    def _format_library_template_policy(
+        self,
+        allows_audience_call: bool,
+        has_price_structure: bool,
+    ) -> str:
+        if allows_audience_call:
+            audience_policy = (
+                "- 模板明确包含人群召唤，可保留相同结构的人群召唤；"
+                "不得新增其他人群称呼，也不得强化或扩写该召唤。"
+            )
+        else:
+            audience_policy = (
+                "- 模板不包含人群召唤，禁止新增“姐妹们”“宝子们”“家人们”"
+                "“老板们看过来”或泛化的“做/开...的...们”开头。"
+            )
+
+        if has_price_structure:
+            price_policy = (
+                "- 模板包含价格或机制功能，可在模板对应结构位置使用目标产品的抽象价格；"
+                "价格待更新时不得编造价格、活动、优惠、折扣、赠品或促销机制。"
+            )
+        else:
+            price_policy = (
+                "- 模板没有价格或机制段落，最终脚本不得新增价格、优惠、折扣、赠品或促销内容，"
+                "也不得额外增加价格或机制段落。"
+            )
+        return f"\n【本次模板专属最高优先级政策】\n{audience_policy}\n{price_policy}"
+
     async def generate_from_library(
         self,
         product: Dict,
         video_type: str,
         template: Dict,
+        source_script: Optional[Dict] = None,
         tone: str = "活泼",
         extra_requirements: Optional[str] = None,
         include_shot_design: bool = False,
     ) -> str:
-        """模板库改写模式：基于脚本模板库中选中的 ScriptTemplate 改写为目标产品版本。"""
+        """模板库改写模式：使用结构模板和一条具体脚本改写目标产品版本。"""
         if not self._ai_available_for_interface("script_library_rewrite"):
             raise ScriptGenerationError(
                 "模板库改写模型未配置，请到 AI配置 中检查模板库改写接口后重试。",
@@ -1041,6 +1198,13 @@ CTA 模板：
             )
         if not template:
             raise ScriptGenerationError("模板库改写缺少引用模板，请先在脚本模板库创建模板。", status_code=404)
+        if not source_script:
+            source_script = {
+                "source": "facai",
+                "title": template.get("name") or "结构模板示例",
+                "video_type": template.get("video_type") or video_type,
+                "content": template.get("example_script") or "",
+            }
 
         # 构建改写专用 Prompt
         product_name = product.get("name", "")
@@ -1057,25 +1221,45 @@ CTA 模板：
         sp_block = "\n".join(sp_texts) if sp_texts else "（请根据产品信息提炼卖点）"
 
         template_block = self._format_rewrite_template_block(template)
+        source_name = "法采脚本" if source_script.get("source") == "facai" else "其他脚本"
+        source_title = self._trim_prompt_text(source_script.get("title") or "无标题脚本", limit=300)
+        source_video_type = self._trim_prompt_text(source_script.get("video_type") or "未标注", limit=100)
+        source_content = self._trim_prompt_text(
+            sanitize_script_price_text(source_script.get("content") or ""),
+            limit=6000,
+        )
+        source_block = (
+            f"来源：{source_name}\n"
+            f"标题：{source_title}\n"
+            f"视频类型：{source_video_type}\n"
+            f"脚本正文：\n{source_content}"
+        )
+        allowed_audience_phrases = collect_template_audience_phrases(template)
+        allows_audience_call = template_allows_audience_call(template)
+        has_price_structure = self._template_has_price_structure(template)
+        template_policy = self._format_library_template_policy(
+            allows_audience_call,
+            has_price_structure,
+        )
 
         if include_shot_design:
-            rewrite_rules = """1. 以本次引用模板为主参考源，借鉴它的成交结构、段落功能、情绪推进和画面节奏。
-2. 替换所有产品名、卖点、价格、规格为目标产品内容，所有品牌名统一为“法采”。
-3. 保留“开头钩子 → 场景/痛点 → 卖点证明 → 价格/机制 → CTA”的成交功能，但不要照抄模板示例脚本。
-4. 禁止复制模板示例脚本原文、模板开头原句、CTA 原句、商品名、价格或固定称呼。
+            rewrite_rules = """1. 结构模板决定段落功能和顺序；具体参考脚本只用于借鉴开头方式、痛点推进、卖点顺序、口语节奏和画面功能。
+2. 替换参考内容中的产品名、品牌、卖点和规格为目标产品内容，所有品牌名统一为“法采”。
+3. 严格保留结构模板实际包含的段落功能和顺序，不新增模板没有的功能段落。
+4. 禁止复制模板示例脚本原文，也禁止复制具体参考脚本的原文、开头原句、CTA 原句、商品名、品牌、精确价格或固定称呼。
 5. 每一句口播都要匹配具体镜头/画面说明，画面要服务产品证明和下单转化。
 6. 禁止输出“改写自”、模板编号、选择过程、分析解释或 Markdown。"""
         else:
-            rewrite_rules = """1. 以本次引用模板为主参考源，只借鉴模板的成交结构、痛点推进、卖点顺序、价格/机制位置和口语节奏。
-2. 替换所有产品名、卖点、价格、规格为目标产品内容，所有品牌名统一为“法采”。
-3. 禁止复制模板示例脚本原文、模板开头原句、CTA 原句、商品名、价格或固定称呼。
+            rewrite_rules = """1. 结构模板决定段落功能和顺序，只借鉴模板的成交结构；具体参考脚本只用于借鉴开头方式、痛点推进、卖点顺序和口语节奏。
+2. 替换参考内容中的产品名、品牌、卖点和规格为目标产品内容，所有品牌名统一为“法采”。
+3. 禁止复制模板示例脚本原文，也禁止复制具体参考脚本的原文、开头原句、CTA 原句、商品名、品牌、精确价格或固定称呼。
 4. 严禁输出“改写自”、模板名称、模板编号、时间码、【】段落标题、镜头/画面/字幕/口播/场景说明。
 5. 最终只输出一段连续口播文案，不换行，不用列表，不用 Markdown。
 6. 口吻参考达人自然带货口播，多用顺滑连接词，让内容像一整段真实口播。"""
 
-        user_prompt = f"""你是脚本模板库改写专家。本次只引用 1 条脚本模板库模板作为结构参考，不使用爆款脚本库或参考脚本库全文。
+        user_prompt = f"""你是脚本模板库改写专家。本次使用 1 条结构模板和 1 条具体参考脚本进行重新创作。
 
-你的任务：基于本次引用模板的结构和成交逻辑，改写为以下目标产品的带货脚本。
+你的任务：服从结构模板的段落功能，根据具体参考脚本的成交推进节奏，重新创作以下目标产品的带货脚本。
 
 ====================================
 目标产品信息
@@ -1093,9 +1277,15 @@ CTA 模板：
 ====================================
 
 ====================================
-脚本模板库引用模板
+脚本模板库结构模板
 ====================================
+结构模板：{template.get('name') or '未命名模板'}
 {template_block}
+
+====================================
+具体参考脚本
+====================================
+{source_block}
 
 ====================================
 改写要求
@@ -1107,10 +1297,14 @@ CTA 模板：
         if extra_requirements:
             user_prompt += f"\n\n【额外要求】{extra_requirements}"
 
+        user_prompt += template_policy
         user_prompt += "\n\n请开始改写脚本："
 
         messages = [
-            {"role": "system", "content": self._build_library_system_prompt(include_shot_design)},
+            {
+                "role": "system",
+                "content": self._build_library_system_prompt(include_shot_design) + template_policy,
+            },
             {"role": "user", "content": user_prompt},
         ]
 
@@ -1132,9 +1326,30 @@ CTA 模板：
         if not (response or "").strip():
             raise ScriptGenerationError("模板库改写模型未返回有效脚本，请检查 AI 配置后重试。")
 
-        script = self._post_process_script_output(response, include_shot_design)
+        if not has_price_structure and self._contains_price_or_promotion_copy(response):
+            raise ScriptGenerationError(
+                "模板库改写结果擅自加入价格或促销信息，请重试。",
+                status_code=502,
+            )
+
+        script = self._post_process_script_output(
+            response,
+            include_shot_design,
+            remove_default_audience_opening=False,
+        )
+        output_audience_phrase = extract_normalized_leading_audience_signature(script)
+        if (
+            output_audience_phrase
+            and output_audience_phrase not in allowed_audience_phrases
+        ):
+            script = strip_generic_audience_opening(script)
         if not script.strip():
             raise ScriptGenerationError("模板库改写模型返回内容为空，请重试或检查 AI 配置。")
+        if not has_price_structure and self._contains_price_or_promotion_copy(script):
+            raise ScriptGenerationError(
+                "模板库改写结果擅自加入价格或促销信息，请重试。",
+                status_code=502,
+            )
         return script
 
     def _build_library_system_prompt(self, include_shot_design: bool) -> str:

@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Product, ScriptTemplate, ViralScript, GeneratedScript
+from models import Product, ScriptTemplate, ViralScript, GeneratedScript, ReferenceScript
 from schemas import (
     ScriptGenerateRequest, ScriptGenerateResponse,
     ScriptRewriteRequest, ScriptRewriteResponse,
@@ -12,6 +12,7 @@ from schemas import (
     GeneratedScriptOut, GeneratedScriptPageOut, ApiResponse
 )
 from services.script_generator import ScriptGenerationError, ScriptGenerator
+from services.script_opening import extract_spoken_opening
 from services.product_detail import build_product_detail_payload
 from services.script_rewriter import ScriptRewriteGenerationError, script_rewriter
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
@@ -24,6 +25,24 @@ router = APIRouter()
 
 # 全局脚本生成器实例
 generator = ScriptGenerator()
+
+
+def _recent_ai_openings(db: Session, product_id: int) -> List[str]:
+    records = (
+        db.query(GeneratedScript)
+        .filter(
+            GeneratedScript.product_id == product_id,
+            GeneratedScript.ai_model.startswith("AI生成 ·"),
+        )
+        .order_by(GeneratedScript.id.desc())
+        .limit(8)
+        .all()
+    )
+    return [
+        opening
+        for opening in (extract_spoken_opening(record.script_content) for record in records)
+        if opening
+    ]
 
 
 def _script_template_context(template: ScriptTemplate) -> dict:
@@ -64,6 +83,57 @@ def _select_rewrite_template(
         raise HTTPException(status_code=404, detail="脚本模板库为空，请先在脚本模板库创建模板")
 
     return random.choice(candidates)
+
+
+def _random_rewrite_source_from_queries(viral_query, reference_query) -> dict | None:
+    viral_count = viral_query.count()
+    reference_count = reference_query.count()
+    total = viral_count + reference_count
+    if total <= 0:
+        return None
+
+    selected_index = random.randrange(total)
+    if selected_index < viral_count:
+        script = viral_query.order_by(ViralScript.id.asc()).offset(selected_index).first()
+        source = "facai"
+    else:
+        script = (
+            reference_query.order_by(ReferenceScript.id.asc())
+            .offset(selected_index - viral_count)
+            .first()
+        )
+        source = "other"
+
+    if not script:
+        return None
+    return {
+        "id": script.id,
+        "source": source,
+        "title": (script.title or "无标题脚本").strip() or "无标题脚本",
+        "video_type": script.video_type or "",
+        "content": script.script_content,
+    }
+
+
+def _select_rewrite_source_script(db: Session, video_type: str) -> dict:
+    same_type_source = _random_rewrite_source_from_queries(
+        db.query(ViralScript).filter(ViralScript.video_type == video_type),
+        db.query(ReferenceScript).filter(ReferenceScript.video_type == video_type),
+    )
+    if same_type_source:
+        return same_type_source
+
+    fallback_source = _random_rewrite_source_from_queries(
+        db.query(ViralScript),
+        db.query(ReferenceScript),
+    )
+    if fallback_source:
+        return fallback_source
+
+    raise HTTPException(
+        status_code=404,
+        detail="具体脚本库为空，请先在脚本模板库添加法采脚本或其他脚本",
+    )
 
 
 @router.post("/seedance-prompts/upload", response_model=SeedancePromptUploadResponse)
@@ -109,6 +179,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
     requested_video_type = (request.video_type or "").strip()
     video_type = requested_video_type
     template = None
+    source_script = None
 
     if engine == "template":
         template = _select_rewrite_template(
@@ -118,6 +189,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         )
         if not requested_video_type or request.template_id:
             video_type = template.video_type
+        source_script = _select_rewrite_source_script(db, video_type)
 
     if not video_type:
         if engine != "template":
@@ -162,6 +234,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
                 product=product_context,
                 video_type=video_type,
                 template=template_context,
+                source_script=source_script,
                 tone=request.tone,
                 extra_requirements=request.extra_requirements,
                 include_shot_design=request.include_shot_design,
@@ -172,6 +245,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
             raise HTTPException(status_code=502, detail="模板库改写失败：模型未返回有效脚本，请检查 AI 配置后重试")
     else:
         # AI生成模式：基于产品资料创作；明确选择类型时只参考同类型脚本结构
+        recent_openings = _recent_ai_openings(db, product.id)
         try:
             script_content = await generator.generate(
                 product=product_context,
@@ -181,6 +255,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
                 extra_requirements=request.extra_requirements,
                 reference_scripts=reference_scripts,
                 include_shot_design=request.include_shot_design,
+                recent_openings=recent_openings,
             )
         except ScriptGenerationError as exc:
             raise HTTPException(status_code=exc.status_code, detail=f"AI生成失败：{exc}") from exc
@@ -194,6 +269,10 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
     record = GeneratedScript(
         product_id=product.id,
         template_id=template.id if template else None,
+        source_script_id=source_script["id"] if source_script else None,
+        source_script_source=source_script["source"] if source_script else None,
+        source_script_title=source_script["title"] if source_script else None,
+        source_script_content=source_script["content"] if source_script else None,
         script_content=script_content,
         video_type=video_type,
         ai_model=f"{engine_label} · {generator.get_model_name(model_interface_key)}",
@@ -210,6 +289,11 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         created_at=record.created_at,
         template_id=template.id if template else None,
         template_name=template.name if template else None,
+        template_reference_script=template.example_script if template else None,
+        source_script_id=source_script["id"] if source_script else None,
+        source_script_source=source_script["source"] if source_script else None,
+        source_script_title=source_script["title"] if source_script else None,
+        source_script_content=source_script["content"] if source_script else None,
     )
 
 
@@ -233,20 +317,26 @@ def list_history(
     page = min(page, total_pages)
     records = query.order_by(GeneratedScript.created_at.desc(), GeneratedScript.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
     template_ids = {r.template_id for r in records if r.template_id}
-    template_names = {}
+    templates_by_id = {}
     if template_ids:
-        template_names = {
-            t.id: t.name
+        templates_by_id = {
+            t.id: t
             for t in db.query(ScriptTemplate).filter(ScriptTemplate.id.in_(template_ids)).all()
         }
     result = []
     for r in records:
+        template = templates_by_id.get(r.template_id)
         item = GeneratedScriptOut(
             id=r.id,
             product_id=r.product_id,
             product_name=r.product.name if r.product else None,
             template_id=r.template_id,
-            template_name=template_names.get(r.template_id),
+            template_name=template.name if template else None,
+            template_reference_script=template.example_script if template else None,
+            source_script_id=r.source_script_id,
+            source_script_source=r.source_script_source,
+            source_script_title=r.source_script_title,
+            source_script_content=r.source_script_content,
             script_content=r.script_content,
             video_type=r.video_type,
             ai_model=r.ai_model,
@@ -273,18 +363,23 @@ def get_history(script_id: int, db: Session = Depends(get_db)):
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
 
+    template = (
+        db.query(ScriptTemplate).filter(ScriptTemplate.id == record.template_id).first()
+        if record.template_id
+        else None
+    )
+
     return GeneratedScriptOut(
         id=record.id,
         product_id=record.product_id,
         product_name=record.product.name if record.product else None,
         template_id=record.template_id,
-        template_name=(
-            db.query(ScriptTemplate.name)
-            .filter(ScriptTemplate.id == record.template_id)
-            .scalar()
-            if record.template_id
-            else None
-        ),
+        template_name=template.name if template else None,
+        template_reference_script=template.example_script if template else None,
+        source_script_id=record.source_script_id,
+        source_script_source=record.source_script_source,
+        source_script_title=record.source_script_title,
+        source_script_content=record.source_script_content,
         script_content=record.script_content,
         video_type=record.video_type,
         ai_model=record.ai_model,
