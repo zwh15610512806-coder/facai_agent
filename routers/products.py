@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
 from config import EMBEDDING_MODEL_NAME, MAX_UPLOAD_SIZE
 from database import SessionLocal, get_db
@@ -16,9 +16,10 @@ from models import (
 )
 from schemas import (
     ProductCreate, ProductUpdate, ProductOut, ProductWriteOut,
-    ProductListItem, SellingPointOut, SellingPointUpdate, ApiResponse
+    ProductListItem, ProductPageOut, SellingPointOut, SellingPointUpdate, ApiResponse
 )
 from typing import List, Literal, Optional
+import math
 import mimetypes
 import os
 import re
@@ -226,6 +227,38 @@ def _visible_selling_points(points):
     ]
 
 
+def _filtered_product_query(db: Session, *, category: str | None, search: str | None, status: str):
+    query = db.query(Product).filter(Product.status == status)
+    if category:
+        query = query.filter(Product.category == category)
+    if search and search.strip():
+        query = query.filter(Product.name.contains(search.strip()))
+    return query
+
+
+def _product_list_items(products: list[Product]) -> list[ProductListItem]:
+    result = []
+    for product in products:
+        points = _visible_selling_points(product.selling_points)
+        summary = "；".join(f"[{point.point_type}]{point.content}" for point in points[:3])
+        result.append(ProductListItem(
+            id=product.id,
+            name=product.name,
+            category=product.category,
+            price=product.price,
+            original_price=product.original_price,
+            commission_rate=product.commission_rate,
+            brand=product.brand,
+            image_url=product.image_url,
+            info_file=Path(product.info_file).name if product.info_file else None,
+            pending_fields=_normalize_pending_fields(product.pending_fields),
+            status=product.status,
+            selling_point_count=len(points),
+            selling_point_summary=summary or "暂无卖点",
+        ))
+    return result
+
+
 def _clear_hidden_marker(product_id: int, priority: int, db: Session):
     db.query(SellingPoint).filter(
         SellingPoint.product_id == product_id,
@@ -258,39 +291,40 @@ def list_products(
     db: Session = Depends(get_db),
 ):
     """获取产品列表，支持品类筛选和关键词搜索"""
-    query = db.query(Product).filter(Product.status == status)
+    products = (
+        _filtered_product_query(db, category=category, search=search, status=status)
+        .options(selectinload(Product.selling_points))
+        .order_by(Product.created_at.desc())
+        .all()
+    )
+    return _product_list_items(products)
 
-    if category:
-        query = query.filter(Product.category == category)
-    if search:
-        search = search.strip()
-    if search:
-        query = query.filter(Product.name.contains(search))
 
-    products = query.order_by(Product.created_at.desc()).all()
-
-    result = []
-    for p in products:
-        sps = _visible_selling_points(p.selling_points)
-        summary = "；".join([f"[{sp.point_type}]{sp.content}" for sp in sps[:3]])
-        item = ProductListItem(
-            id=p.id,
-            name=p.name,
-            category=p.category,
-            price=p.price,
-            original_price=p.original_price,
-            commission_rate=p.commission_rate,
-            brand=p.brand,
-            image_url=p.image_url,
-            info_file=p.info_file,
-            pending_fields=_normalize_pending_fields(p.pending_fields),
-            status=p.status,
-            selling_point_count=len(sps),
-            selling_point_summary=summary if summary else "暂无卖点",
-        )
-        result.append(item)
-
-    return result
+@router.get("/page", response_model=ProductPageOut)
+def list_products_page(
+    category: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    status: str = Query("active"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    query = _filtered_product_query(db, category=category, search=search, status=status)
+    total = query.count()
+    products = (
+        query.options(selectinload(Product.selling_points))
+        .order_by(Product.created_at.desc(), Product.id.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    return ProductPageOut(
+        items=_product_list_items(products),
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=math.ceil(total / per_page) if total else 0,
+    )
 
 
 @router.get("/categories", response_model=List[str])
@@ -829,9 +863,35 @@ async def upload_product_file(
     # 保存文件
     file_path = _safe_product_upload_path(product_id, file.filename)
     temp_path = f"{file_path}.{uuid.uuid4().hex}.uploading"
+    from services.bounded_executor import WorkQueueFull, run_blocking
+    from services.upload_validation import UploadPolicy, UploadValidationError, validate_upload
     try:
         await _write_upload_file(file, temp_path, max_bytes=MAX_UPLOAD_SIZE)
+        policy = UploadPolicy(
+            extensions=frozenset({
+                ".pdf", ".docx", ".xlsx", ".txt", ".md", ".csv",
+                ".jpg", ".jpeg", ".png", ".webp",
+            }),
+            max_bytes=MAX_UPLOAD_SIZE,
+            max_uncompressed_bytes=64 * 1024 * 1024,
+            max_rows=20_000,
+            max_columns=200,
+        )
+        content = await run_blocking(Path(temp_path).read_bytes)
+        await run_blocking(validate_upload, file.filename or "attachment", content, policy)
         os.replace(temp_path, file_path)
+    except WorkQueueFull as exc:
+        try:
+            os.unlink(temp_path)
+        except FileNotFoundError:
+            pass
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
+    except UploadValidationError as exc:
+        try:
+            os.unlink(temp_path)
+        except FileNotFoundError:
+            pass
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
         try:
             os.unlink(temp_path)
@@ -868,8 +928,8 @@ async def upload_product_file(
         return ApiResponse(
             message=f"文件已上传，并从资料中提取了 {len(points)} 条卖点",
             data={
-                "file_path": file_path,
                 "file_name": file.filename,
+                "download_url": f"/api/products/{product_id}/download",
                 "points_extracted": len(points),
                 "price_updated": "price" in price_updates,
                 "updated_fields": price_updates,
@@ -880,8 +940,8 @@ async def upload_product_file(
     return ApiResponse(
         message=f"文件已上传",
         data={
-            "file_path": file_path,
             "file_name": file.filename,
+            "download_url": f"/api/products/{product_id}/download",
             "price_updated": "price" in price_updates,
             "updated_fields": price_updates,
         }

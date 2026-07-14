@@ -1,13 +1,14 @@
 import importlib.util
+import os
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from main import app
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,15 +22,68 @@ def _load_watchdog_module():
 
 
 class HealthEndpointTests(unittest.TestCase):
-    def test_healthz_checks_only_process_and_local_database(self):
+    def test_healthz_is_process_liveness_only(self):
         with TestClient(app) as client:
             response = client.get("/healthz")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "ok", "database": "ok"})
+        self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_readyz_reports_database_search_vector_worker_and_disk(self):
+        from routers import search_local
+
+        ready_state = dict(search_local._state)
+        ready_state.update({
+            "is_indexing": False,
+            "last_indexed": datetime.now().replace(microsecond=0).isoformat(),
+            "total_files": 1,
+            "last_error": "",
+        })
+        with (
+            patch.dict(os.environ, {"FACAI_AUTH_ENABLED": "0"}),
+            patch.object(search_local, "_loaded", True),
+            patch.object(search_local, "_state", ready_state),
+            TestClient(app) as client,
+        ):
+            response = client.get("/readyz")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ready")
+        for key in ("database", "search_index", "vector", "worker", "disk"):
+            self.assertIn(key, payload["checks"])
 
 
 class ManagedServiceTests(unittest.TestCase):
+    def test_project_environment_is_loaded_before_service_security_checks(self):
+        from scripts.runtime_environment import load_project_environment
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / ".env").write_text(
+                "FACAI_AUTH_ENABLED=1\nFACAI_ADMIN_TOKEN=loaded-from-project-env\n",
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {}, clear=False):
+                original_enabled = os.environ.pop("FACAI_AUTH_ENABLED", None)
+                original_token = os.environ.pop("FACAI_ADMIN_TOKEN", None)
+                try:
+                    load_project_environment(root)
+                    self.assertEqual(os.environ["FACAI_AUTH_ENABLED"], "1")
+                    self.assertEqual(
+                        os.environ["FACAI_ADMIN_TOKEN"],
+                        "loaded-from-project-env",
+                    )
+                finally:
+                    if original_enabled is None:
+                        os.environ.pop("FACAI_AUTH_ENABLED", None)
+                    else:
+                        os.environ["FACAI_AUTH_ENABLED"] = original_enabled
+                    if original_token is None:
+                        os.environ.pop("FACAI_ADMIN_TOKEN", None)
+                    else:
+                        os.environ["FACAI_ADMIN_TOKEN"] = original_token
+
     def test_unmanaged_occupied_port_is_reported_without_starting_or_killing(self):
         service = _load_watchdog_module()
 

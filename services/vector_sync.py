@@ -25,6 +25,7 @@ RUNNING_LEASE_SECONDS = max(30, int(os.getenv("VECTOR_SYNC_LEASE_SECONDS", "600"
 _worker_lock = threading.Lock()
 _worker_stop = threading.Event()
 _worker_thread: threading.Thread | None = None
+_worker_last_heartbeat: datetime | None = None
 
 
 def _utcnow() -> datetime:
@@ -347,6 +348,8 @@ def retry_vector_sync_jobs(db: Session) -> int:
 
 
 def _worker_loop(reconcile_on_startup: bool = True) -> None:
+    global _worker_last_heartbeat
+    _worker_last_heartbeat = _utcnow()
     if reconcile_on_startup:
         reconcile_db = SessionLocal()
         try:
@@ -358,6 +361,7 @@ def _worker_loop(reconcile_on_startup: bool = True) -> None:
         finally:
             reconcile_db.close()
     while not _worker_stop.wait(5):
+        _worker_last_heartbeat = _utcnow()
         db = SessionLocal()
         try:
             recovered = _recover_expired_running_jobs(db)
@@ -385,7 +389,7 @@ def _worker_loop(reconcile_on_startup: bool = True) -> None:
 
 
 def start_vector_sync_worker(*, reconcile_on_startup: bool | None = None) -> None:
-    global _worker_thread
+    global _worker_thread, _worker_last_heartbeat
     with _worker_lock:
         if _worker_thread and _worker_thread.is_alive():
             return
@@ -397,6 +401,7 @@ def start_vector_sync_worker(*, reconcile_on_startup: bool | None = None) -> Non
         if reconcile_on_startup is None:
             reconcile_on_startup = os.getenv("VECTOR_RECONCILE_ON_STARTUP", "1").strip() != "0"
         _worker_stop.clear()
+        _worker_last_heartbeat = _utcnow()
         _worker_thread = threading.Thread(
             target=_worker_loop,
             args=(bool(reconcile_on_startup),),
@@ -411,3 +416,16 @@ def stop_vector_sync_worker() -> None:
     thread = _worker_thread
     if thread and thread.is_alive():
         thread.join(timeout=2)
+
+
+def vector_worker_status(*, now: datetime | None = None) -> dict:
+    current = now or _utcnow()
+    thread = _worker_thread
+    heartbeat_age = None
+    if _worker_last_heartbeat is not None:
+        heartbeat_age = max(0.0, (current - _worker_last_heartbeat).total_seconds())
+    return {
+        "alive": bool(thread and thread.is_alive()),
+        "last_heartbeat": _worker_last_heartbeat.isoformat() if _worker_last_heartbeat else None,
+        "heartbeat_age_seconds": heartbeat_age,
+    }

@@ -211,7 +211,44 @@ class AIUsageRecord(Base):
     latency_ms = Column(Integer, nullable=False, default=0)
     status = Column(String(30), nullable=False, index=True)
     error_summary = Column(Text)
+    actor_name = Column(String(100), index=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
+class AuditEvent(Base):
+    """Security-relevant action metadata; request bodies are never persisted."""
+
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    actor_name = Column(String(100), nullable=False, index=True)
+    actor_role = Column(String(30), nullable=False, index=True)
+    auth_source = Column(String(30), nullable=False)
+    method = Column(String(10), nullable=False)
+    path = Column(String(500), nullable=False, index=True)
+    status_code = Column(Integer, nullable=False)
+    client_ip = Column(String(100))
+    request_id = Column(String(100), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
+class DurableTask(Base):
+    """Recoverable background task with a processing lease and bounded retries."""
+
+    __tablename__ = "durable_tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_type = Column(String(100), nullable=False, index=True)
+    payload = Column(JSON, nullable=False, default=dict)
+    status = Column(String(30), nullable=False, default="pending", index=True)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=3)
+    next_attempt_at = Column(DateTime, nullable=False, default=func.now(), index=True)
+    lease_until = Column(DateTime, index=True)
+    last_error = Column(Text)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    completed_at = Column(DateTime)
 
 
 class ProductRagQueryLog(Base):

@@ -145,7 +145,7 @@ class CreatorMigrationTests(unittest.TestCase):
         self.assertTrue(index["unique"])
         self.assertEqual(["kind", "file_sha256"], index["column_names"])
 
-    def test_missing_integrity_trigger_requires_and_repairs_migration(self):
+    def test_missing_integrity_trigger_causes_fail_closed_schema_drift_error(self):
         database, original = self._swap_database()
         try:
             database.init_db()
@@ -153,7 +153,8 @@ class CreatorMigrationTests(unittest.TestCase):
                 connection.execute(text("DROP TRIGGER trg_creators_validate_update"))
             self.assertTrue(database._schema_migration_required())
 
-            database.init_db()
+            with self.assertRaisesRegex(RuntimeError, "schema drift"):
+                database.init_db()
             with self.engine.connect() as connection:
                 trigger_exists = connection.execute(
                     text(
@@ -165,10 +166,10 @@ class CreatorMigrationTests(unittest.TestCase):
         finally:
             self._restore_database(database, original)
 
-        self.assertEqual(1, trigger_exists)
-        self.assertFalse(migration_required_after_repair)
+        self.assertEqual(0, trigger_exists)
+        self.assertTrue(migration_required_after_repair)
 
-    def test_wrong_named_integrity_trigger_is_rebuilt(self):
+    def test_wrong_named_integrity_trigger_causes_fail_closed_schema_drift_error(self):
         database, original = self._swap_database()
         try:
             database.init_db()
@@ -182,12 +183,13 @@ class CreatorMigrationTests(unittest.TestCase):
                 )
             self.assertTrue(database._schema_migration_required())
 
-            database.init_db()
+            with self.assertRaisesRegex(RuntimeError, "schema drift"):
+                database.init_db()
             migration_required_after_repair = database._schema_migration_required()
         finally:
             self._restore_database(database, original)
 
-        self.assertFalse(migration_required_after_repair)
+        self.assertTrue(migration_required_after_repair)
 
     def test_relative_sqlite_path_uses_process_working_directory(self):
         import database

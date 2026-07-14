@@ -455,9 +455,50 @@ def _upgrade_default_work_interface_setting(
     setting.provider = "doubao"
     setting.model = default_model_for_interface(definition)
     setting.max_tokens = definition.default_max_tokens
-    db.commit()
-    db.refresh(setting)
     return setting
+
+
+def _default_interface_setting(definition: AIInterfaceDefinition) -> AIInterfaceSetting:
+    return AIInterfaceSetting(
+        interface_key=definition.key,
+        provider=definition.default_provider,
+        model=default_model_for_interface(definition),
+        max_tokens=definition.default_max_tokens,
+    )
+
+
+def get_interface_setting_for_read(db: Session, interface_key: str) -> AIInterfaceSetting:
+    """Read one setting without creating, upgrading, or committing rows."""
+
+    definition = get_interface_definition(interface_key)
+    setting = (
+        db.query(AIInterfaceSetting)
+        .filter(AIInterfaceSetting.interface_key == definition.key)
+        .first()
+    )
+    return setting or _default_interface_setting(definition)
+
+
+def ensure_interface_settings(db: Session) -> None:
+    """Explicit startup migration for defaults, legacy provider settings and secrets."""
+
+    from services.secret_store import is_protected_secret, protect_secret
+
+    for definition in AI_INTERFACES:
+        setting = (
+            db.query(AIInterfaceSetting)
+            .filter(AIInterfaceSetting.interface_key == definition.key)
+            .first()
+        )
+        if setting is None:
+            setting = _default_interface_setting(definition)
+            db.add(setting)
+        else:
+            _upgrade_default_work_interface_setting(db, setting, definition)
+        secret = (getattr(setting, "api_key_secret", None) or "").strip()
+        if is_configured_secret(secret) and not is_protected_secret(secret):
+            setting.api_key_secret = protect_secret(secret)
+    db.commit()
 
 
 def get_or_create_interface_setting(db: Session, interface_key: str) -> AIInterfaceSetting:
@@ -468,14 +509,9 @@ def get_or_create_interface_setting(db: Session, interface_key: str) -> AIInterf
         .first()
     )
     if setting:
-        return _upgrade_default_work_interface_setting(db, setting, definition)
+        return setting
 
-    setting = AIInterfaceSetting(
-        interface_key=definition.key,
-        provider=definition.default_provider,
-        model=default_model_for_interface(definition),
-        max_tokens=definition.default_max_tokens,
-    )
+    setting = _default_interface_setting(definition)
     db.add(setting)
     db.commit()
     db.refresh(setting)
@@ -484,7 +520,13 @@ def get_or_create_interface_setting(db: Session, interface_key: str) -> AIInterf
 
 def resolve_interface_connection(setting: AIInterfaceSetting, provider: AIProviderDefinition | None = None) -> dict:
     provider_def = provider or get_provider_definition(setting.provider)
-    custom_api_key = (getattr(setting, "api_key_secret", None) or "").strip()
+    from services.secret_store import SecretStorageError, reveal_secret
+
+    stored_api_key = (getattr(setting, "api_key_secret", None) or "").strip()
+    try:
+        custom_api_key = reveal_secret(stored_api_key)
+    except SecretStorageError:
+        custom_api_key = ""
     custom_base_url = (getattr(setting, "base_url_override", None) or "").strip()
 
     if is_configured_secret(custom_api_key):
@@ -537,7 +579,8 @@ def update_interface_setting(
     setting.model = model
     setting.max_tokens = int(max_tokens)
     if api_key is not None and api_key.strip():
-        setting.api_key_secret = api_key.strip()
+        from services.secret_store import protect_secret
+        setting.api_key_secret = protect_secret(api_key.strip())
     elif clear_api_key or provider_changed:
         setting.api_key_secret = ""
 
@@ -647,7 +690,7 @@ def display_model_for_interface(setting: AIInterfaceSetting, latest: AIUsageReco
 
 
 def interface_to_dict(db: Session, definition: AIInterfaceDefinition) -> dict:
-    setting = get_or_create_interface_setting(db, definition.key)
+    setting = get_interface_setting_for_read(db, definition.key)
     latest = latest_usage(db, definition.key)
     provider = get_provider_definition(setting.provider)
     connection = resolve_interface_connection(setting, provider)
@@ -713,6 +756,8 @@ def record_usage(
     error_summary: str = "",
     db: Session | None = None,
 ) -> None:
+    from services.request_context import current_actor_name
+
     error_summary = (error_summary or "").strip()
     if len(error_summary) > 500:
         error_summary = error_summary[:497] + "..."
@@ -727,6 +772,7 @@ def record_usage(
         latency_ms=max(0, int(latency_ms or 0)),
         status=status,
         error_summary=error_summary,
+        actor_name=current_actor_name(),
     )
     if db is not None:
         _record_with_session(db, record)

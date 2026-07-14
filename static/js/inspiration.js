@@ -6,6 +6,7 @@ let chatHistory=[];
 const INSPIRATION_HISTORY_KEY='facai.inspiration.conversations.v1';
 const MAX_CONVERSATIONS=24;
 const MAX_MESSAGES_PER_CONVERSATION=60;
+const CONVERSATION_RETENTION_MS=30*24*60*60*1000;
 let conversations=[];
 let activeConversationId='';
 let activeInspirationMode='chat';
@@ -159,14 +160,16 @@ function sortConversations(){
 }
 function saveConversations(){
  try{
-  const stored=conversations.filter(function(conversation){return conversation.messages&&conversation.messages.length;}).slice(0,MAX_CONVERSATIONS);
+  const cutoff=Date.now()-CONVERSATION_RETENTION_MS;
+  const stored=conversations.filter(function(conversation){return conversation.messages&&conversation.messages.length&&Number(conversation.updatedAt)>=cutoff;}).slice(0,MAX_CONVERSATIONS);
   localStorage.setItem(INSPIRATION_HISTORY_KEY,JSON.stringify(stored));
  }catch(error){}
 }
 function loadConversations(){
  try{
   const raw=JSON.parse(localStorage.getItem(INSPIRATION_HISTORY_KEY)||'[]');
-  conversations=(Array.isArray(raw)?raw:[]).map(sanitizeConversation).filter(Boolean).slice(0,MAX_CONVERSATIONS);
+  const cutoff=Date.now()-CONVERSATION_RETENTION_MS;
+  conversations=(Array.isArray(raw)?raw:[]).map(sanitizeConversation).filter(function(conversation){return conversation&&Number(conversation.updatedAt)>=cutoff;}).slice(0,MAX_CONVERSATIONS);
  }catch(error){
   conversations=[];
  }

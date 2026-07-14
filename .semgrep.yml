@@ -1,0 +1,31 @@
+rules:
+  - id: facai-no-dynamic-exec
+    message: Dynamic eval/exec is forbidden in application code.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: exec(...)
+    paths:
+      exclude: [tests, .venv, data]
+
+  - id: facai-no-shell-true
+    message: shell=True bypasses the command boundary and is forbidden.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$FUNC(..., shell=True, ...)
+          - pattern: subprocess.$FUNC(..., shell = True, ...)
+    paths:
+      exclude: [tests, .venv, data]
+
+  - id: facai-no-hardcoded-api-secret
+    message: Do not commit API keys or bearer tokens.
+    severity: ERROR
+    languages: [generic]
+    patterns:
+      - pattern-regex: '(?i)(api[_-]?key|bearer[_-]?token)\s*[=:]\s*["''][A-Za-z0-9_\-]{24,}["'']'
+    paths:
+      exclude: [tests, .venv, data, requirements.lock]

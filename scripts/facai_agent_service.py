@@ -9,16 +9,19 @@ import time
 import urllib.request
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = ROOT / "logs"
 PID_FILE = LOG_DIR / "facai-agent-server.pid"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from services.security import assert_startup_security
-from services.runtime_logging import configure_runtime_logging
+from scripts.runtime_environment import load_project_environment  # noqa: E402
 
+load_project_environment(ROOT)
+
+from scripts.verify_runtime import assert_verified_runtime  # noqa: E402
+from services.runtime_logging import configure_runtime_logging  # noqa: E402
+from services.security import assert_startup_security  # noqa: E402
 
 configure_runtime_logging(LOG_DIR / "facai-agent-watchdog.log")
 LOGGER = logging.getLogger("facai.watchdog")
@@ -130,6 +133,8 @@ def supervise_once(process: subprocess.Popen | None, port: int) -> tuple[subproc
 
 
 def main() -> int:
+    assert_verified_runtime()
+    log(f"Verified isolated runtime: {sys.executable}")
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--interval", type=int, default=30)

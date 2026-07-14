@@ -67,6 +67,13 @@ def update_job(
         job = session.get(JobRun, int(job_id))
         if job is None:
             return
+        if job.status == "interrupted":
+            # A still-running durable worker may report progress after another
+            # process incorrectly treated it as an orphan.  The progress write
+            # is proof that the owner is alive, so restore the running state.
+            job.status = "running"
+            job.finished_at = None
+            job.error_summary = None
         if current is not None:
             job.progress_current = max(int(current), 0)
         if total is not None:
@@ -141,13 +148,22 @@ def latest_job(job_type: str, *, db: Session | None = None) -> dict[str, Any] | 
         )
         if job is None:
             return None
-        as_iso = lambda value: value.isoformat() if value is not None else None
+        def as_iso(value):
+            return value.isoformat() if value is not None else None
+
+        progress = None
+        if job.progress_total:
+            progress = round(
+                min(100.0, max(0.0, job.progress_current / job.progress_total * 100)),
+                1,
+            )
         return {
             "id": job.id,
             "job_type": job.job_type,
             "status": job.status,
             "progress_current": job.progress_current,
             "progress_total": job.progress_total,
+            "progress": progress,
             "message": job.message or "",
             "details": job.details or {},
             "error_summary": job.error_summary or "",

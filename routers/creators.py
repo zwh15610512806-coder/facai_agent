@@ -7,7 +7,6 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from creator_schemas import (
     BdMemberCreate,
@@ -40,6 +39,7 @@ from config import MAX_UPLOAD_SIZE
 from database import get_db
 from services import creator_importer, creator_service
 from services.upload_limits import read_upload_bytes
+from services.bounded_executor import WorkQueueFull, run_blocking
 
 
 router = APIRouter()
@@ -81,14 +81,17 @@ async def post_import_preview(
     if Path(filename).suffix.lower() != ".xlsx":
         raise HTTPException(status_code=400, detail="Excel 仅支持 .xlsx 文件")
     content = await read_upload_bytes(file, max_bytes=MAX_UPLOAD_SIZE)
-    return await run_in_threadpool(
-        creator_importer.preview_upload,
-        db,
-        kind=kind,
-        source_type=source_type,
-        filename=filename,
-        content=content,
-    )
+    try:
+        return await run_blocking(
+            creator_importer.preview_upload,
+            db,
+            kind=kind,
+            source_type=source_type,
+            filename=filename,
+            content=content,
+        )
+    except WorkQueueFull as exc:
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
 
 
 @router.post("/import/{token}/validate", response_model=ImportResultOut)

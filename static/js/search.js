@@ -1,6 +1,6 @@
 // ====== State ======
 let currentPage = 1, totalPages = 1, pageSize = 15, totalResults = 0, aiSearchQuery = '';
-let currentFilters = { q:'', type:'', ext:'', date_from:'', date_to:'', folder:'' };
+let currentFilters = { q:'', type:'', ext:'', date_from:'', date_to:'', folder_id:'' };
 let _prevFilters = null, _prevAiQuery = '', _prevPage = 1;
 
 const $ = id => document.getElementById(id);
@@ -102,16 +102,16 @@ function renderFiles(files) {
   $('fileList').innerHTML = files.map(f => {
     const isF = f.file_type === 'folder';
     const fileId = Number(f.id)||0;
-    const folderArg = jsStringLiteral(f.file_path);
+    const folderNameArg = jsStringLiteral(f.file_name);
+    const folderPathArg = jsStringLiteral(f.parent_folder||'');
     const typeArg = jsStringLiteral(f.file_type);
     const extArg = jsStringLiteral(f.file_extension||'');
-    const ch = isF ? `onclick="filterByFolder(${folderArg})" style="cursor:pointer"` : '';
+    const ch = isF ? `onclick="filterByFolder(${fileId},${folderNameArg},${folderPathArg})" style="cursor:pointer"` : '';
     return `<div class="file-item${isF ? ' folder' : ''}" data-id="${fileId}" ${ch}>
       <div class="file-icon ${iconClass(f.file_type)}">${fileIcon(f.file_type)}</div>
       <div class="file-info">
         <div class="file-name" title="${escAttr(f.file_name)}">${escHtml(f.file_name)}</div>
         ${f.parent_folder ? `<div class="file-folder">📁 ${escHtml((f.parent_folder || '').replace(/,/g, ' › '))}</div>` : ''}
-        <div class="file-path">📍 ${escHtml(f.file_path)}</div>
         <div class="file-meta">
           <span>📅 ${fmtDate(f.file_modified)}</span>
           ${isF ? '<span>📂 文件夹</span>' : `<span>💾 ${fmtSize(f.file_size)}</span><span>📎 ${escHtml((f.file_extension || '').toUpperCase())}</span>`}
@@ -119,7 +119,7 @@ function renderFiles(files) {
       </div>
       <div class="file-actions">
         ${isF
-          ? `<button class="act-btn pri" onclick="event.stopPropagation();filterByFolder(${folderArg})"><i data-lucide="folder-open"></i>查看</button>`
+          ? `<button class="act-btn pri" onclick="event.stopPropagation();filterByFolder(${fileId},${folderNameArg},${folderPathArg})"><i data-lucide="folder-open"></i>查看</button>`
           : `<button class="act-btn pri" onclick="event.stopPropagation();previewFile(${fileId},${typeArg},${extArg})"><i data-lucide="eye"></i>预览</button>
              <button class="act-btn" onclick="event.stopPropagation();downloadFile(${fileId})"><i data-lucide="download"></i>下载</button>`}
       </div>
@@ -256,13 +256,12 @@ function goToPage(p) {
 }
 
 // ====== Folder nav ======
-function filterByFolder(fp) {
+function filterByFolder(fileId, folderName, parentLabel) {
   _prevFilters = { ...currentFilters }; _prevAiQuery = aiSearchQuery; _prevPage = currentPage;
-  currentFilters = { q:'', type:'', ext:'', date_from:'', date_to:'', folder:fp };
+  currentFilters = { q:'', type:'', ext:'', date_from:'', date_to:'', folder_id:fileId };
   currentPage = 1; aiSearchQuery = ''; $('aiBanner').classList.remove('show');
-  const parts = fp.replace(/^\\\\/, '').split('\\').filter(Boolean);
-  $('folderBreadcrumbPath').textContent = parts.slice(3).join(' › ');
-  $('folderBreadcrumbName').textContent = parts[parts.length - 1] || fp;
+  $('folderBreadcrumbPath').textContent = String(parentLabel||'').replace(/,/g,' › ');
+  $('folderBreadcrumbName').textContent = folderName||'文件夹';
   $('folderBreadcrumb').classList.add('show');
   searchFiles();
 }
@@ -271,7 +270,7 @@ function closeFolderView() {
   if (_prevFilters) {
     currentFilters = { ..._prevFilters }; aiSearchQuery = _prevAiQuery; currentPage = _prevPage;
   } else {
-    currentFilters = { q:'', type:'', ext:'', date_from:'', date_to:'', folder:'' };
+    currentFilters = { q:'', type:'', ext:'', date_from:'', date_to:'', folder_id:'' };
     aiSearchQuery = ''; currentPage = 1;
   }
   $('folderBreadcrumb').classList.remove('show');
@@ -378,7 +377,7 @@ $('clearFiltersBtn').addEventListener('click', () => {
   $('typeFilters').querySelector('.fchip[data-type=""]').classList.add('on');
   aiSearchQuery = ''; $('aiBanner').classList.remove('show');
   $('folderBreadcrumb').classList.remove('show');
-  currentFilters = { q:'', type:'', ext:'', date_from:'', date_to:'', folder:'' };
+  currentFilters = { q:'', type:'', ext:'', date_from:'', date_to:'', folder_id:'' };
   currentPage = 1;
   $('fileList').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">开始搜索文件</div><div class="empty-text">在搜索框中输入关键词，即可查找局域网内的文件</div></div>';
   $('resultsCount').innerHTML = '找到 <strong>0</strong> 个文件';

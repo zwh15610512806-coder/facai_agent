@@ -82,6 +82,8 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("function addConversationMessage(role,content,extras)", page)
         self.assertIn("localStorage.getItem(INSPIRATION_HISTORY_KEY)", page)
         self.assertIn("localStorage.setItem(INSPIRATION_HISTORY_KEY", page)
+        self.assertIn("CONVERSATION_RETENTION_MS=30*24*60*60*1000", page)
+        self.assertIn("Number(conversation.updatedAt)>=cutoff", page)
 
     def test_inspiration_history_has_pin_archive_delete_actions(self):
         page = read_page_source("inspiration.html")

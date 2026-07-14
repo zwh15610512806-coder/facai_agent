@@ -680,7 +680,15 @@ async def _chat_with_seedance(data: InspirationChatRequest, db: Session) -> Insp
 async def upload_inspiration_attachment(file: UploadFile = File(...)):
     data = await read_upload_bytes(file, max_bytes=MAX_ATTACHMENT_BYTES)
     try:
-        attachment = extract_inspiration_attachment(file.filename or "attachment", file.content_type or "", data)
+        from services.bounded_executor import WorkQueueFull, run_blocking
+        attachment = await run_blocking(
+            extract_inspiration_attachment,
+            file.filename or "attachment",
+            file.content_type or "",
+            data,
+        )
+    except WorkQueueFull as exc:
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
     except AttachmentExtractionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return InspirationAttachment(

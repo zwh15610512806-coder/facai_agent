@@ -18,6 +18,7 @@ SEARCH_ROOT = ROOT / "search-root"
 SEARCH_ROOT.mkdir(parents=True, exist_ok=True)
 
 os.environ.update({
+    "FACAI_AUTH_ENABLED": "0",
     "DATABASE_URL": f"sqlite:///{(ROOT / 'test.db').as_posix()}",
     "CHROMA_PERSIST_DIR": str(ROOT / "chroma"),
     "SEARCH_INDEX_BACKEND": "sqlite",

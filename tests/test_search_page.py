@@ -121,11 +121,13 @@ class SearchPageTests(unittest.TestCase):
 
     def test_inline_actions_use_js_string_literal_escaping(self):
         self.assertIn("function jsStringLiteral", self.page)
-        self.assertIn("const folderArg = jsStringLiteral(f.file_path);", self.page)
+        self.assertIn("const folderNameArg = jsStringLiteral(f.file_name);", self.page)
+        self.assertIn("const folderPathArg = jsStringLiteral(f.parent_folder||'');", self.page)
         self.assertIn("const typeArg = jsStringLiteral(f.file_type);", self.page)
         self.assertIn("const extArg = jsStringLiteral(f.file_extension||'');", self.page)
-        self.assertIn("filterByFolder(${folderArg})", self.page)
+        self.assertIn("filterByFolder(${fileId},${folderNameArg},${folderPathArg})", self.page)
         self.assertIn("previewFile(${fileId},${typeArg},${extArg})", self.page)
+        self.assertNotIn("f.file_path", self.page)
         self.assertNotIn("escPath(f.file_path)", self.page)
         self.assertNotIn("escAttr(f.file_type)", self.page)
         self.assertNotIn("escAttr(f.file_extension||'')", self.page)

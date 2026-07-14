@@ -141,7 +141,15 @@ async def upload_seedance_prompt_script(file: UploadFile = File(...)):
     """Extract script text for Seedance prompt generation without persisting it."""
     data = await read_upload_bytes(file, max_bytes=MAX_ATTACHMENT_BYTES)
     try:
-        attachment = extract_attachment_text(file.filename or "attachment", file.content_type or "", data)
+        from services.bounded_executor import WorkQueueFull, run_blocking
+        attachment = await run_blocking(
+            extract_attachment_text,
+            file.filename or "attachment",
+            file.content_type or "",
+            data,
+        )
+    except WorkQueueFull as exc:
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
     except AttachmentExtractionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return SeedancePromptUploadResponse(

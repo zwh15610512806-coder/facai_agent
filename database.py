@@ -1,14 +1,16 @@
 """数据库连接、SQLite 安全参数与轻量迁移管理。"""
+import os
+import re
+import shutil
+import sqlite3
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
-import re
-import sqlite3
 
 from sqlalchemy import create_engine, event, inspect, text
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import declarative_base, sessionmaker
+
 from config import DATABASE_URL
-import os
 
 # 确保数据目录存在
 os.makedirs(os.path.dirname(DATABASE_URL.replace("sqlite:///", "")), exist_ok=True)
@@ -112,15 +114,65 @@ def get_db():
 
 
 def init_db():
-    """初始化数据库表"""
-    import models  # 确保模型类被注册到 Base.metadata
-    import creator_models  # 注册达人商务域模型
-    if _schema_migration_required():
-        _backup_sqlite_database()
-    Base.metadata.create_all(bind=engine)
-    _ensure_creator_indexes()
-    _ensure_compatible_columns()
-    _ensure_creator_integrity_triggers()
+    """Bring the database to the versioned Alembic head and initialize settings."""
+    import creator_models  # noqa: F401 - 注册达人商务域模型
+    import models  # noqa: F401 - 确保模型类被注册到 Base.metadata
+    _run_schema_migrations()
+    from services.ai_config import ensure_interface_settings
+    with SessionLocal() as session:
+        ensure_interface_settings(session)
+
+
+def _alembic_config():
+    from alembic.config import Config
+
+    root = Path(__file__).resolve().parent
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("script_location", str(root / "migrations"))
+    config.set_main_option("sqlalchemy.url", engine.url.render_as_string(hide_password=False))
+    return config
+
+
+def _run_schema_migrations() -> None:
+    """Upgrade to Alembic head, restoring the pre-upgrade SQLite backup on failure."""
+    from alembic import command
+    from alembic.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    config = _alembic_config()
+    expected_head = ScriptDirectory.from_config(config).get_current_head()
+    with engine.connect() as connection:
+        current_revision = MigrationContext.configure(connection).get_current_revision()
+    if current_revision == expected_head:
+        if _schema_migration_required():
+            raise RuntimeError(
+                "Database schema drift detected at the current Alembic revision; "
+                "run an explicit repair migration before startup."
+            )
+        return
+
+    database_path = _sqlite_database_path()
+    existed_before = bool(database_path and database_path.exists() and database_path.stat().st_size)
+    backup_path = _backup_sqlite_database() if existed_before else None
+    try:
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        if _schema_migration_required():
+            raise RuntimeError(
+                "Database schema drift detected after Alembic upgrade; restore the last "
+                "verified backup and run the explicit schema repair migration."
+            )
+    except Exception:
+        engine.dispose()
+        if backup_path is not None and database_path is not None:
+            shutil.copy2(backup_path, database_path)
+        elif not existed_before and database_path is not None:
+            for suffix in ("", "-wal", "-shm"):
+                candidate = Path(f"{database_path}{suffix}")
+                if candidate.exists():
+                    candidate.unlink()
+        raise
 
 
 def _sqlite_database_path() -> Path | None:
@@ -315,6 +367,9 @@ def _ensure_compatible_columns():
                 "base_url_override": "VARCHAR(500)",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",
+            },
+            "ai_usage_records": {
+                "actor_name": "VARCHAR(100)",
             },
             "product_rag_query_logs": {
                 "pipeline_version": "VARCHAR(50) NOT NULL DEFAULT 'product-rag-v3-facets'",

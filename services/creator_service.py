@@ -9,9 +9,9 @@ from enum import Enum
 from typing import Iterable
 
 from fastapi import HTTPException
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import case, exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from creator_models import (
     BdMember,
@@ -214,9 +214,17 @@ def portrait_summary(creator: Creator, metrics: dict) -> str:
     return "；".join(parts) or "画像资料待完善"
 
 
-def creator_list_item(db: Session, creator: Creator) -> dict:
-    metrics = creator_metrics(db, creator.id)
-    last_followup_at, next_followup_at = _followup_dates(db, creator.id)
+def creator_list_item(
+    db: Session,
+    creator: Creator,
+    *,
+    metrics: dict | None = None,
+    followup_dates: tuple[datetime | None, datetime | None] | None = None,
+) -> dict:
+    metrics = metrics if metrics is not None else creator_metrics(db, creator.id)
+    last_followup_at, next_followup_at = (
+        followup_dates if followup_dates is not None else _followup_dates(db, creator.id)
+    )
     portrait = creator.portrait
     return {
         "id": creator.id,
@@ -382,7 +390,11 @@ def list_creators(
     page: int,
     per_page: int,
 ) -> dict:
-    query = db.query(Creator).filter(Creator.archived_at.is_(None))
+    query = (
+        db.query(Creator)
+        .options(joinedload(Creator.owner), joinedload(Creator.portrait))
+        .filter(Creator.archived_at.is_(None))
+    )
     if search:
         term = f"%{search.strip()}%"
         query = query.filter(
@@ -443,8 +455,74 @@ def list_creators(
         raise HTTPException(status_code=422, detail="排序方式无效")
 
     creators = query.offset((page - 1) * per_page).limit(per_page).all()
+    creator_ids = [creator.id for creator in creators]
+    metrics_by_creator: dict[int, dict] = {}
+    followups_by_creator: dict[int, tuple[datetime | None, datetime | None]] = {}
+    if creator_ids:
+        confirmed = (
+            (CreatorCollaboration.amount_status == "confirmed")
+            & (CreatorCollaboration.status != "cancelled")
+        )
+        metric_rows = (
+            db.query(
+                CreatorCollaboration.creator_id,
+                func.coalesce(func.sum(case((confirmed, CreatorCollaboration.actual_paid_cents), else_=0)), 0),
+                func.coalesce(func.sum(case((confirmed, 1), else_=0)), 0),
+                func.max(case((CreatorCollaboration.status != "cancelled", CreatorCollaboration.collaboration_date))),
+            )
+            .filter(CreatorCollaboration.creator_id.in_(creator_ids))
+            .group_by(CreatorCollaboration.creator_id)
+            .all()
+        )
+        for creator_id, total_paid, collaboration_count, latest_date in metric_rows:
+            total_paid = int(total_paid or 0)
+            collaboration_count = int(collaboration_count or 0)
+            metrics_by_creator[int(creator_id)] = {
+                "confirmed_paid_cents": total_paid,
+                "confirmed_collaboration_count": collaboration_count,
+                "average_paid_cents": total_paid // collaboration_count if collaboration_count else 0,
+                "latest_collaboration_date": latest_date,
+            }
+
+        ranked_followups = (
+            db.query(
+                CreatorFollowup.creator_id.label("creator_id"),
+                CreatorFollowup.followed_up_at.label("followed_up_at"),
+                CreatorFollowup.next_followup_at.label("next_followup_at"),
+                func.row_number().over(
+                    partition_by=CreatorFollowup.creator_id,
+                    order_by=(CreatorFollowup.followed_up_at.desc(), CreatorFollowup.id.desc()),
+                ).label("position"),
+            )
+            .filter(CreatorFollowup.creator_id.in_(creator_ids))
+            .subquery()
+        )
+        followup_rows = db.query(
+            ranked_followups.c.creator_id,
+            ranked_followups.c.followed_up_at,
+            ranked_followups.c.next_followup_at,
+        ).filter(ranked_followups.c.position == 1).all()
+        followups_by_creator = {
+            int(creator_id): (followed_up_at, next_followup_at)
+            for creator_id, followed_up_at, next_followup_at in followup_rows
+        }
+
+    empty_metrics = {
+        "confirmed_paid_cents": 0,
+        "confirmed_collaboration_count": 0,
+        "average_paid_cents": 0,
+        "latest_collaboration_date": None,
+    }
     return {
-        "items": [creator_list_item(db, creator) for creator in creators],
+        "items": [
+            creator_list_item(
+                db,
+                creator,
+                metrics=metrics_by_creator.get(creator.id, empty_metrics),
+                followup_dates=followups_by_creator.get(creator.id, (None, None)),
+            )
+            for creator in creators
+        ],
         "total": total,
         "page": page,
         "per_page": per_page,

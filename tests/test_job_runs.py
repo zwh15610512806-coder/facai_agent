@@ -48,6 +48,19 @@ class PersistentJobRunTests(unittest.TestCase):
         self.assertIn("重启", job.message)
         self.assertIsNotNone(job.finished_at)
 
+    def test_new_progress_revives_an_active_job_marked_interrupted(self):
+        from services.job_runs import recover_interrupted_jobs, start_job, update_job
+
+        job_id = start_job("search_rebuild", total=100, db=self.db)
+        recover_interrupted_jobs(db=self.db)
+
+        update_job(job_id, current=50, message="worker still active", db=self.db)
+
+        job = self.db.get(JobRun, job_id)
+        self.assertEqual(job.status, "running")
+        self.assertIsNone(job.finished_at)
+        self.assertIsNone(job.error_summary)
+
     def test_helpers_create_job_runs_table_when_missing(self):
         from services.job_runs import latest_job, start_job
 
@@ -58,6 +71,7 @@ class PersistentJobRunTests(unittest.TestCase):
 
         self.assertEqual(latest["id"], job_id)
         self.assertEqual(latest["message"], "扫描中")
+        self.assertIsNone(latest["progress"])
 
 
 if __name__ == "__main__":

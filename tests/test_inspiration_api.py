@@ -18,7 +18,7 @@ from models import AIInterfaceSetting, Product, SellingPoint
 
 class InspirationApiTests(unittest.TestCase):
     TINY_PNG = base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=="
     )
 
     def setUp(self):

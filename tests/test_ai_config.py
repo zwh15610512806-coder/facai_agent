@@ -240,6 +240,7 @@ class AiConfigApiTests(unittest.TestCase):
 
     def test_legacy_default_deepseek_work_setting_upgrades_to_volcengine_ark(self):
         from models import AIInterfaceSetting
+        from services.ai_config import ensure_interface_settings
 
         self.db.add_all([
             AIInterfaceSetting(
@@ -268,6 +269,7 @@ class AiConfigApiTests(unittest.TestCase):
             ),
         ])
         self.db.commit()
+        ensure_interface_settings(self.db)
 
         response = self.client.get("/api/ai-config/interfaces")
 
@@ -360,6 +362,10 @@ class AiConfigApiTests(unittest.TestCase):
         self.assertEqual(data["custom_base_url"], "https://dashscope.aliyuncs.com/compatible-mode/v1/tenant")
         self.assertEqual(data["base_url"], "https://dashscope.aliyuncs.com/compatible-mode/v1/tenant")
         self.assertNotIn("tenant-secret-123456", response.text)
+        from models import AIInterfaceSetting
+        stored = self.db.query(AIInterfaceSetting).filter_by(interface_key="inspiration_chat").one()
+        self.assertTrue(stored.api_key_secret.startswith("dpapi:v1:"))
+        self.assertNotIn("tenant-secret-123456", stored.api_key_secret)
 
         get_response = self.client.get("/api/ai-config/interfaces")
         self.assertNotIn("tenant-secret-123456", get_response.text)
@@ -383,6 +389,17 @@ class AiConfigApiTests(unittest.TestCase):
         self.assertEqual(cleared["api_key_source"], "missing")
         self.assertEqual(cleared["api_key_mask"], "")
         self.assertEqual(cleared["custom_base_url"], "")
+
+    def test_get_interfaces_does_not_create_or_upgrade_database_rows(self):
+        from models import AIInterfaceSetting
+
+        before = self.db.query(AIInterfaceSetting).count()
+        response = self.client.get("/api/ai-config/interfaces")
+        after = self.db.query(AIInterfaceSetting).count()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(before, 0)
+        self.assertEqual(after, 0)
 
     def test_changing_provider_without_new_key_clears_interface_secret(self):
         response = self.client.put(

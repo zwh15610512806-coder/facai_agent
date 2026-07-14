@@ -129,6 +129,14 @@ class ProductListItem(BaseModel):
     def normalize_pending_fields(cls, value):
         return _normalize_pending_fields(value)
 
+
+class ProductPageOut(BaseModel):
+    items: List[ProductListItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+
     class Config:
         from_attributes = True
 

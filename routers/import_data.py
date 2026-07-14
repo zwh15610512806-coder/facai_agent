@@ -24,8 +24,18 @@ from pathlib import Path
 from typing import Any, List
 from config import MAX_UPLOAD_SIZE, UPLOAD_DIR
 from services.upload_limits import read_upload_bytes
+from services.bounded_executor import WorkQueueFull, run_blocking
+from services.upload_validation import UploadPolicy, UploadValidationError, validate_upload
 
 router = APIRouter()
+
+PRODUCT_TABLE_POLICY = UploadPolicy(
+    extensions=frozenset({".csv", ".xlsx"}),
+    max_bytes=MAX_UPLOAD_SIZE,
+    max_uncompressed_bytes=50 * 1024 * 1024,
+    max_rows=20_000,
+    max_columns=200,
+)
 
 PRODUCT_FILES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "product_files")
 os.makedirs(PRODUCT_FILES_DIR, exist_ok=True)
@@ -113,7 +123,13 @@ async def import_csv(
         raise HTTPException(status_code=400, detail="仅支持CSV文件")
 
     content = await read_upload_bytes(file, max_bytes=MAX_UPLOAD_SIZE)
-    result, _ids = _import_csv_content(content, db)
+    try:
+        await run_blocking(validate_upload, file.filename or "products.csv", content, PRODUCT_TABLE_POLICY)
+        result, _ids = await run_blocking(_import_csv_content, content, db)
+    except WorkQueueFull as exc:
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
+    except UploadValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return result
 
 
@@ -132,7 +148,13 @@ async def import_excel(
         raise HTTPException(status_code=500, detail="需要安装 openpyxl 和 pandas")
 
     content = await read_upload_bytes(file, max_bytes=MAX_UPLOAD_SIZE)
-    result, _ids = _import_excel_content(content, db)
+    try:
+        await run_blocking(validate_upload, file.filename or "products.xlsx", content, PRODUCT_TABLE_POLICY)
+        result, _ids = await run_blocking(_import_excel_content, content, db)
+    except WorkQueueFull as exc:
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
+    except UploadValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return result
 
 

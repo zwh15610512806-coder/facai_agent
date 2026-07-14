@@ -87,6 +87,12 @@ def _safe_uuid(value: str) -> str:
 
 
 def _save_image_attachment(filename: str, content_type: str, data: bytes) -> ExtractedAttachment:
+    from services.upload_validation import UploadValidationError, validate_upload, ATTACHMENT_POLICY
+
+    try:
+        validate_upload(filename, data, ATTACHMENT_POLICY)
+    except UploadValidationError as exc:
+        raise AttachmentExtractionError(str(exc), exc.status_code) from exc
     if len(data) > MAX_ATTACHMENT_BYTES:
         raise AttachmentExtractionError("文件过大，请控制在 12MB 以内。", 413)
     if not data:
@@ -199,6 +205,8 @@ def _extract_xlsx_text(data: bytes) -> str:
 
 
 def extract_attachment_text(filename: str, content_type: str, data: bytes) -> ExtractedAttachment:
+    from services.upload_validation import UploadValidationError, validate_upload, ATTACHMENT_POLICY
+
     ext = _extension(filename)
     if ext in ALL_IMAGE_EXTENSIONS or _normalized_content_type(content_type).startswith("image/"):
         raise AttachmentExtractionError("图片上传先不做，当前请上传 PDF、Word、文本或表格文件。", 415)
@@ -208,6 +216,10 @@ def extract_attachment_text(filename: str, content_type: str, data: bytes) -> Ex
         raise AttachmentExtractionError("文件过大，请控制在 12MB 以内。", 413)
     if not data:
         raise AttachmentExtractionError("文件为空，请重新选择。", 400)
+    try:
+        validate_upload(filename, data, ATTACHMENT_POLICY)
+    except UploadValidationError as exc:
+        raise AttachmentExtractionError(str(exc), exc.status_code) from exc
 
     if ext in TEXT_EXTENSIONS:
         text = _decode_text(data)

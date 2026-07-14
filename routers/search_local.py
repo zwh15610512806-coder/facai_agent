@@ -36,6 +36,15 @@ FILE_TYPE_MAP = {
 }
 EXT_TYPE_MAP = {ext: file_type for file_type, exts in FILE_TYPE_MAP.items() for ext in exts}
 PREVIEW_RANGE_CHUNK_SIZE = 1024 * 1024
+PUBLIC_FILE_FIELDS = (
+    "id",
+    "file_name",
+    "file_type",
+    "file_extension",
+    "file_size",
+    "file_modified",
+    "parent_folder",
+)
 
 _lock = threading.RLock()
 _loaded = False
@@ -340,6 +349,14 @@ def _run_index(job_id: int | None = None) -> None:
             _state["is_indexing"] = False
 
 
+def _run_index_task(payload: dict) -> None:
+    _run_index(payload.get("job_id"))
+
+
+from services.task_queue import register_task_handler
+register_task_handler("search_rebuild", _run_index_task)
+
+
 def _normalise_ext(ext: str) -> str:
     return ext.strip().lower().lstrip(".")
 
@@ -492,7 +509,9 @@ def _search_items(
 
 
 def _public_item(item: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in item.items() if not k.startswith("_")}
+    """Expose metadata by opaque index ID without leaking server paths."""
+
+    return {key: item.get(key) for key in PUBLIC_FILE_FIELDS}
 
 
 def _page(items: list[dict[str, Any]], page: int, per_page: int) -> dict[str, Any]:
@@ -560,14 +579,30 @@ async def index_status():
             "last_indexed": _state["last_indexed"],
             "total_files": _state["total_files"],
             "message": _state["message"],
-            "roots": SEARCH_ROOTS,
+            "root_count": len(SEARCH_ROOTS),
             "backend": _active_backend(),
             "migration_status": _state.get("migration_status", "not_started"),
             "last_error": _state.get("last_error", ""),
         }
     if _active_backend() == "sqlite":
         from services.job_runs import latest_job
-        payload["job_run"] = latest_job("search_rebuild")
+        job = latest_job("search_rebuild")
+        payload["job_run"] = (
+            {
+                key: job.get(key)
+                for key in (
+                    "id",
+                    "status",
+                    "progress",
+                    "progress_current",
+                    "progress_total",
+                    "message",
+                    "created_at",
+                    "updated_at",
+                )
+            }
+            if job else None
+        )
     return _json(payload)
 
 
@@ -583,9 +618,18 @@ async def start_index():
     job_id = None
     if _active_backend() == "sqlite":
         from services.job_runs import start_job
-        job_id = start_job("search_rebuild", message="检索索引启动中", details={"roots": SEARCH_ROOTS})
-    thread = threading.Thread(target=_run_index, args=(job_id,), name="facai-search-index", daemon=True)
-    thread.start()
+        job_id = start_job("search_rebuild", message="检索索引启动中", details={"root_count": len(SEARCH_ROOTS)})
+    from services.task_queue import enqueue_task, task_worker_status
+    if task_worker_status()["alive"]:
+        enqueue_task("search_rebuild", {"job_id": job_id}, max_attempts=3)
+    else:
+        # Router-only test/dev apps do not run the main lifespan worker.
+        threading.Thread(
+            target=_run_index,
+            args=(job_id,),
+            name="facai-search-index-fallback",
+            daemon=True,
+        ).start()
     return _json({"success": True, "message": "索引已在后台启动"})
 
 
@@ -596,10 +640,16 @@ async def search_files(
     ext: str = Query(""),
     date_from: str = Query(""),
     date_to: str = Query(""),
-    folder: str = Query(""),
+    folder_id: int | None = Query(None, ge=1),
     page: int = Query(1),
     per_page: int = Query(20),
 ):
+    folder = ""
+    if folder_id is not None:
+        folder_item = _get_indexed_file(folder_id)
+        if not folder_item or folder_item.get("file_type") != "folder":
+            return _json({"success": False, "message": "文件夹不存在或索引已过期"}, status_code=404)
+        folder = str(folder_item.get("file_path") or "")
     return _json(_search_page(
         q=q,
         file_type=type,

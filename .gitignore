@@ -1,5 +1,7 @@
 __pycache__/
 .pytest_cache/
+.coverage
+htmlcov/
 *.py[cod]
 *.db
 *.db-wal
@@ -39,6 +41,7 @@ data/*.png
 data/uploads/*
 !data/uploads/.gitkeep
 .venv/
+.ci-venv/
 venv/
 *.egg-info/
 dist/

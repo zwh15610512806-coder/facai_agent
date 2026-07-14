@@ -649,6 +649,19 @@ def _run_workbook_import(workbook_path: str, filename: str, workbook_sha256: str
             )
 
 
+def _run_workbook_import_task(payload: dict) -> None:
+    _run_workbook_import(
+        str(payload["workbook_path"]),
+        str(payload["filename"]),
+        str(payload["workbook_sha256"]),
+        payload.get("job_id"),
+    )
+
+
+from services.task_queue import register_task_handler
+register_task_handler("workbook_import", _run_workbook_import_task)
+
+
 def _resolve_viral_script_category(db: Session, category: str = "", product_name: str = "") -> str:
     auto_category = category or ""
     if product_name and not auto_category:
@@ -823,7 +836,6 @@ def _run_local_txt_scan(source_dir: str, category: str, video_type: str, tags: s
 
 
 # ========== 脚本模板管理 ==========
-@router.get("/", response_model=List[ScriptTemplateOut])
 def list_templates(
     video_type: Optional[str] = Query(None, description="视频类型筛选"),
     db: Session = Depends(get_db),
@@ -835,7 +847,6 @@ def list_templates(
     return query.order_by(ScriptTemplate.id).all()
 
 
-@router.get("/types", response_model=List[str])
 def list_video_types(db: Session = Depends(get_db)):
     """获取所有视频类型"""
     types = db.query(ScriptTemplate.video_type).distinct().order_by(
@@ -844,7 +855,6 @@ def list_video_types(db: Session = Depends(get_db)):
     return [t[0] for t in types]
 
 
-@router.get("/{template_id}", response_model=ScriptTemplateOut)
 def get_template(template_id: int, db: Session = Depends(get_db)):
     """获取模板详情"""
     template = db.query(ScriptTemplate).filter(
@@ -855,7 +865,6 @@ def get_template(template_id: int, db: Session = Depends(get_db)):
     return template
 
 
-@router.post("/", response_model=ScriptTemplateOut)
 def create_template(data: ScriptTemplateCreate, db: Session = Depends(get_db)):
     """创建脚本模板"""
     template = ScriptTemplate(**data.model_dump())
@@ -865,7 +874,6 @@ def create_template(data: ScriptTemplateCreate, db: Session = Depends(get_db)):
     return template
 
 
-@router.delete("/{template_id}")
 def delete_template(template_id: int, db: Session = Depends(get_db)):
     """删除脚本模板"""
     template = db.query(ScriptTemplate).filter(
@@ -879,7 +887,6 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
 
 
 # ========== 爆款脚本库 ==========
-@router.get("/viral/list", response_model=ViralScriptPageOut)
 def list_viral_scripts(
     category: Optional[str] = Query(None, description="品类筛选"),
     video_type: Optional[str] = Query(None, description="视频类型筛选"),
@@ -926,7 +933,6 @@ def list_viral_scripts(
 
 # ========== RAG: 语义搜索 + 索引管理 ==========
 
-@router.get("/viral/search")
 def semantic_search_scripts(
     q: str = Query(..., description="自然语言搜索查询"),
     limit: int = Query(10, ge=1, le=50),
@@ -984,7 +990,6 @@ def semantic_search_scripts(
         )
 
 
-@router.post("/reindex")
 def reindex_scripts(db: Session = Depends(get_db)):
     """批量重建所有脚本的向量索引"""
     try:
@@ -1006,7 +1011,6 @@ def reindex_scripts(db: Session = Depends(get_db)):
         )
 
 
-@router.post("/viral/scan-local-txt")
 def start_local_txt_scan(
     category: str = Form(""),
     video_type: str = Form(""),
@@ -1050,7 +1054,6 @@ def start_local_txt_scan(
     return ApiResponse(message="本地脚本扫描已启动", data=_local_txt_scan_snapshot())
 
 
-@router.get("/viral/scan-local-txt/status")
 def local_txt_scan_status():
     """Return the latest local TXT script scan status."""
     return ApiResponse(message="ok", data=_local_txt_scan_snapshot())
@@ -1810,7 +1813,6 @@ def _qianchuan_auto_match_snapshot() -> dict:
         return dict(_qianchuan_auto_match_state)
 
 
-@router.post("/qianchuan/bindings/auto-match")
 def auto_match_qianchuan_bindings(payload: dict | None = None, db: Session = Depends(get_db)):
     """Plan or apply full Qianchuan material bindings from imported performance rows."""
     payload = payload or {}
@@ -1894,7 +1896,6 @@ def auto_match_qianchuan_bindings(payload: dict | None = None, db: Session = Dep
         raise
 
 
-@router.get("/qianchuan/bindings/auto-match/status")
 def qianchuan_auto_match_status():
     """Return the latest full Qianchuan auto-match status."""
     snapshot = _qianchuan_auto_match_snapshot()
@@ -1903,7 +1904,6 @@ def qianchuan_auto_match_status():
     return ApiResponse(message="ok", data=snapshot)
 
 
-@router.post("/qianchuan/bindings/rematch-workbook")
 def rematch_workbook_qianchuan_bindings(payload: dict | None = None, db: Session = Depends(get_db)):
     """Rebuild Qianchuan bindings for Excel-imported scripts using next-day material dates."""
     payload = payload or {}
@@ -1942,7 +1942,6 @@ def rematch_workbook_qianchuan_bindings(payload: dict | None = None, db: Session
     return ApiResponse(message="Excel 脚本千川绑定重匹配完成", data=result)
 
 
-@router.post("/qianchuan/import")
 async def import_qianchuan_performance(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -1969,7 +1968,10 @@ async def import_qianchuan_performance(
         })
 
     try:
-        parsed = parse_qianchuan_workbook(content, filename)
+        from services.bounded_executor import WorkQueueFull, run_blocking
+        parsed = await run_blocking(parse_qianchuan_workbook, content, filename)
+    except WorkQueueFull as exc:
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -2046,7 +2048,6 @@ async def import_qianchuan_performance(
     })
 
 
-@router.get("/viral/{script_id}/performance")
 def get_viral_script_performance(script_id: int, db: Session = Depends(get_db)):
     script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
     if not script:
@@ -2054,7 +2055,6 @@ def get_viral_script_performance(script_id: int, db: Session = Depends(get_db)):
     return ApiResponse(message="ok", data=_qianchuan_performance_payload(script, db))
 
 
-@router.post("/viral/{script_id}/performance/bind")
 def bind_viral_script_performance(script_id: int, payload: dict, db: Session = Depends(get_db)):
     script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
     if not script:
@@ -2090,7 +2090,6 @@ def bind_viral_script_performance(script_id: int, payload: dict, db: Session = D
     })
 
 
-@router.delete("/viral/{script_id}/performance/bind/{binding_id}")
 def unbind_viral_script_performance(script_id: int, binding_id: int, db: Session = Depends(get_db)):
     script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
     if not script:
@@ -2107,7 +2106,6 @@ def unbind_viral_script_performance(script_id: int, binding_id: int, db: Session
     return ApiResponse(message="已解绑素材表现", data=_qianchuan_performance_payload(script, db))
 
 
-@router.post("/viral/import-workbook")
 async def import_viral_workbook(file: UploadFile = File(...)):
     """Import Facai Excel scripts and cake reference images into the viral script library."""
     filename = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
@@ -2122,6 +2120,18 @@ async def import_viral_workbook(file: UploadFile = File(...)):
             return ApiResponse(message="Excel 脚本导入正在运行", data=_workbook_import_snapshot())
 
     content = await read_upload_bytes(file, max_bytes=SCRIPT_WORKBOOK_IMPORT_MAX_SIZE)
+    try:
+        from services.bounded_executor import WorkQueueFull, run_blocking
+        from services.upload_validation import (
+            LARGE_WORKBOOK_POLICY,
+            UploadValidationError,
+            validate_upload,
+        )
+        await run_blocking(validate_upload, filename, content, LARGE_WORKBOOK_POLICY)
+    except WorkQueueFull as exc:
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
+    except UploadValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     workbook_sha256 = hashlib.sha256(content).hexdigest()
     WORKBOOK_IMPORT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     upload_path = WORKBOOK_IMPORT_UPLOAD_DIR / f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{workbook_sha256[:12]}{suffix}"
@@ -2152,23 +2162,31 @@ async def import_viral_workbook(file: UploadFile = File(...)):
             "job_id": job_id,
         })
 
-    thread = threading.Thread(
-        target=_run_workbook_import,
-        args=(str(upload_path), filename, workbook_sha256, job_id),
-        name="facai-script-workbook-import",
-        daemon=True,
-    )
-    thread.start()
+    from services.task_queue import enqueue_task, task_worker_status
+    task_payload = {
+        "workbook_path": str(upload_path),
+        "filename": filename,
+        "workbook_sha256": workbook_sha256,
+        "job_id": job_id,
+    }
+    if task_worker_status()["alive"]:
+        enqueue_task("workbook_import", task_payload, max_attempts=3)
+    else:
+        # Router-only test/dev apps do not run the main lifespan worker.
+        threading.Thread(
+            target=_run_workbook_import_task,
+            args=(task_payload,),
+            name="facai-script-workbook-import-fallback",
+            daemon=True,
+        ).start()
     return ApiResponse(message="Excel 脚本导入已启动", data=_workbook_import_snapshot())
 
 
-@router.get("/viral/import-workbook/status")
 def workbook_import_status():
     """Return the latest Excel script workbook import status."""
     return ApiResponse(message="ok", data=_workbook_import_snapshot())
 
 
-@router.get("/viral/{script_id}/cake-images/{image_name}")
 def get_viral_script_cake_image(script_id: int, image_name: str, db: Session = Depends(get_db)):
     """Serve a cake reference image owned by a viral script."""
     script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
@@ -2192,7 +2210,6 @@ def get_viral_script_cake_image(script_id: int, image_name: str, db: Session = D
     return FileResponse(str(target), media_type=media_type, filename=target.name)
 
 
-@router.get("/viral/{script_id}", response_model=ViralScriptOut)
 def get_viral_script(script_id: int, db: Session = Depends(get_db)):
     """获取爆款脚本详情"""
     script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
@@ -2201,7 +2218,6 @@ def get_viral_script(script_id: int, db: Session = Depends(get_db)):
     return script
 
 
-@router.post("/viral/{script_id}/toggle-high")
 def toggle_high_viral(script_id: int, db: Session = Depends(get_db)):
     """切换爆款脚本的高成交标记"""
     script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
@@ -2222,7 +2238,6 @@ def toggle_high_viral(script_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.delete("/viral/{script_id}")
 def delete_viral_script(script_id: int, db: Session = Depends(get_db)):
     """删除爆款脚本"""
     script = db.query(ViralScript).filter(ViralScript.id == script_id).first()
@@ -2236,7 +2251,6 @@ def delete_viral_script(script_id: int, db: Session = Depends(get_db)):
     return ApiResponse(message="已删除", data={"index_sync_status": index_sync_status})
 
 
-@router.post("/viral/upload")
 async def upload_viral_script(
     title: str = Form(""),
     category: str = Form(""),
@@ -2284,7 +2298,6 @@ async def upload_viral_script(
     )
 
 
-@router.post("/viral/upload-txt-batch")
 async def upload_viral_txt_batch(
     files: List[UploadFile] = File(...),
     category: str = Form("", max_length=100),
@@ -2400,3 +2413,16 @@ def _delete_script_index(doc_id: str):
         return "synced" if status == "succeeded" else "pending"
     finally:
         db.close()
+
+
+# Composite compatibility router. Route declarations live in focused domain
+# modules, while existing callers continue importing routers.templates.router.
+from routers import template_local_scan as _local_scan_routes
+from routers import template_qianchuan as _qianchuan_routes
+from routers import template_script_library as _script_library_routes
+from routers import template_workbook_import as _workbook_routes
+
+router.include_router(_workbook_routes.router)
+router.include_router(_local_scan_routes.router)
+router.include_router(_qianchuan_routes.router)
+router.include_router(_script_library_routes.router)

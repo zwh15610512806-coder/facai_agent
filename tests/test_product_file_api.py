@@ -102,7 +102,10 @@ class ProductFileApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()["data"]
-        saved_path = Path(data["file_path"])
+        self.assertNotIn("file_path", data)
+        self.assertEqual(data["download_url"], f"/api/products/{product.id}/download")
+        self.db.expire_all()
+        saved_path = Path(self.db.get(Product, product.id).info_file)
         product_dir = Path(self.tmp.name).resolve()
         self.assertEqual(os.path.commonpath([str(product_dir), str(saved_path.resolve())]), str(product_dir))
         self.assertNotIn("..", saved_path.name)

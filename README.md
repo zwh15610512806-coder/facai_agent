@@ -45,10 +45,10 @@
 
 ## 本地运行
 
-先安装依赖：
+首次安装或依赖锁更新后，创建并校验项目专用虚拟环境：
 
-```bash
-pip install -r requirements.txt
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap-venv.ps1
 ```
 
 从 `.env.example` 复制创建 `.env`，真实密钥只写入本地 `.env`，不要提交到 Git：
@@ -69,20 +69,26 @@ DATABASE_URL=sqlite:///./data/script_agent.db
 CHROMA_PERSIST_DIR=./data/chroma_db
 ```
 
-更换 embedding 模型或从旧索引迁移后，需要显式重建产品和脚本 Chroma collection，避免旧向量与新向量混用：
+初始化应用内角色口令（不会在终端打印口令，口令只写入已被 Git 忽略的 `.env`）：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\bootstrap_auth.py
+```
+
+`FACAI_ADMIN_TOKEN`、`FACAI_OPERATOR_TOKEN`、`FACAI_VIEWER_TOKEN` 分别对应管理员、操作员和只读角色。除静态资源、登录和 `/healthz` 外，匿名请求默认拒绝；脚本调用可通过 `X-Facai-Session-Token` 请求头传入对应角色口令。
+
+口令疑似泄露时运行 `.\.venv\Scripts\python.exe scripts\bootstrap_auth.py --rotate`，然后重启服务；该命令会使已有会话失效，并且仍不会把新口令打印到终端。
+
+更换 embedding 模型或从旧索引迁移后，需要由管理员显式重建产品和脚本 Chroma collection，避免旧向量与新向量混用：
 
 ```bash
-curl -X POST http://localhost:8001/api/products/reindex
-curl -X POST http://localhost:8001/api/templates/reindex
+curl -H "X-Facai-Session-Token: <FACAI_ADMIN_TOKEN>" -X POST http://localhost:8001/api/products/reindex
+curl -H "X-Facai-Session-Token: <FACAI_ADMIN_TOKEN>" -X POST http://localhost:8001/api/templates/reindex
 ```
 
 如果重建失败，请优先检查 `ARK_API_KEY`、`ARK_BASE_URL`、`EMBEDDING_MODEL_NAME` 和火山方舟 endpoint 权限。`EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL` 只在需要为向量服务单独配置凭据时使用。
 
-当前版本不启用内置管理员口令登录，能访问服务地址的局域网用户可以直接打开 `/app/*` 和调用 `/api/*`。如果服务要离开可信局域网，请先用防火墙、VPN 或反向代理统一加访问控制。
-
-```env
-FACAI_AUTH_ENABLED=0
-```
+`/healthz` 只代表进程存活，供看门狗使用；受保护的 `/readyz` 会分别报告数据库、搜索索引新鲜度、向量队列、后台 worker 和磁盘空间。依赖退化不会触发进程重启。
 
 ## 公司内网上线检查
 
@@ -90,9 +96,9 @@ FACAI_AUTH_ENABLED=0
 
 - 只在可信公司网段开放服务地址，不要把 `8001` 直接暴露到公网。
 - Windows 防火墙入站规则只放行公司办公网段；如果跨网段访问，优先走 VPN 或统一网关。
-- 当前版本不恢复应用登录或接口鉴权，内网隔离就是主要访问边界。
+- 保持 `FACAI_AUTH_ENABLED=1`，并为三个角色使用互不相同的高熵口令；LAN 绑定在鉴权关闭或缺少管理员口令时会失败关闭。
 - 共享盘/本地资料扫描会索引当前服务账号可读的文件，确认共享目录权限不会暴露不应被检索的资料。
-- 上线前备份 `.env`、`data/script_agent.db`、`data/chroma_db/`、`data/product_files/`、`data/uploads/` 和关键 `资料/` 目录。
+- SQLite 每日备份会执行完整恢复演练并按保留策略清理；将 `FACAI_BACKUP_OFFSITE_DIR` 配置为独立磁盘或受控 UNC 共享，并另外备份 `.env`、`data/chroma_db/`、`data/product_files/`、`data/uploads/` 和关键 `资料/` 目录。
 - Excel 导入只支持 `.xlsx`；旧 `.xls` 请先转换为 `.xlsx` 再上传。
 
 AI 配置里的自定义 Base URL 默认只允许已知供应商域名。确实需要新增供应商网关时，再显式加入允许列表：
@@ -101,10 +107,10 @@ AI 配置里的自定义 Base URL 默认只允许已知供应商域名。确实�
 AI_BASE_URL_ALLOWLIST=api.deepseek.com,dashscope.aliyuncs.com,api.minimax.io,open.bigmodel.cn
 ```
 
-启动服务：
+启动服务（启动入口会拒绝全局 Python 或与 `requirements.lock` 不一致的环境）：
 
-```bash
-python main.py
+```powershell
+run.bat
 ```
 
 默认访问地址：
@@ -189,7 +195,7 @@ python import_materials.py --dry-run
 运行全部测试：
 
 ```bash
-python -m unittest discover -s tests -v
+$env:FACAI_AUTH_ENABLED="0"; python -m unittest discover -s tests -v
 ```
 
 当前测试覆盖产品导入、价格同步、产品详情、页面结构、搜索逻辑、脚本改写和高成交筛选等关键行为。

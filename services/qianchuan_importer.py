@@ -48,10 +48,20 @@ _NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 
 def parse_qianchuan_workbook(content: bytes, filename: str = "") -> QianchuanParsedWorkbook:
+    from services.upload_validation import (
+        QIANCHUAN_WORKBOOK_POLICY,
+        UploadValidationError,
+        validate_upload,
+    )
+
     if not content:
         raise ValueError("文件为空")
     if not zipfile.is_zipfile(BytesIO(content)):
         raise ValueError("暂只支持千川导出的 .xlsx 文件")
+    try:
+        validate_upload(filename or "qianchuan.xlsx", content, QIANCHUAN_WORKBOOK_POLICY)
+    except UploadValidationError as exc:
+        raise ValueError(str(exc)) from exc
 
     workbook_sheets = _read_xlsx_sheets(content)
     if not workbook_sheets:
