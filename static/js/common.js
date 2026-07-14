@@ -1,4 +1,10 @@
 (function () {
+  var TOOL_LINKS = [
+    {label: '数据导入', href: '/app/import', icon: 'upload'},
+    {label: 'AI配置', href: '/app/ai-config', icon: 'settings'},
+    {label: 'API接入', href: '/app/api-connections', icon: 'plug-zap'}
+  ];
+
   function escHtml(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
       return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[ch];
@@ -169,26 +175,113 @@
     });
   }
 
+  function isCurrentTool(item, pathname) {
+    pathname = String(pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
+    return pathname === item.href || pathname.indexOf(item.href + '/') === 0;
+  }
+
+  function currentToolLinks() {
+    var pathname = window.location && window.location.pathname;
+    return TOOL_LINKS.filter(function (item) {
+      return !isCurrentTool(item, pathname);
+    });
+  }
+
+  function createToolLink(item, className) {
+    var link = document.createElement('a');
+    link.className = className;
+    link.href = item.href;
+
+    var icon = document.createElement('i');
+    icon.setAttribute('data-lucide', item.icon);
+    icon.setAttribute('aria-hidden', 'true');
+    link.appendChild(icon);
+
+    var label = document.createElement('span');
+    label.textContent = item.label;
+    link.appendChild(label);
+    return link;
+  }
+
   function ensureMobileUtilityNavLinks() {
     var nav = document.querySelector('.nav-links');
     if (!nav || nav.querySelector('.nav-mobile-utility')) return;
-    [
-      {href:'/app/import', label:'数据导入'},
-      {href:'/app/ai-config', label:'AI配置'}
-    ].forEach(function (item) {
-      var link = document.createElement('a');
-      link.className = 'nav-link nav-mobile-utility';
-      link.href = item.href;
-      link.textContent = item.label;
-      nav.appendChild(link);
+    TOOL_LINKS.forEach(function (item) {
+      if (!isCurrentTool(item, window.location && window.location.pathname)) {
+        nav.appendChild(createToolLink(item, 'nav-link nav-mobile-utility'));
+      }
     });
+  }
+
+  function initToolNavigation() {
+    if (!document.body || document.querySelector('.facai-tools-launcher')) return;
+
+    var launcher = document.createElement('div');
+    launcher.className = 'facai-tools-launcher';
+
+    var toggle = document.createElement('button');
+    toggle.id = 'facaiToolsToggle';
+    toggle.className = 'facai-tools-toggle';
+    toggle.type = 'button';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', 'facaiToolsMenu');
+    toggle.setAttribute('aria-label', '打开工具入口');
+    var toggleIcon = document.createElement('i');
+    toggleIcon.setAttribute('data-lucide', 'wrench');
+    toggleIcon.setAttribute('aria-hidden', 'true');
+    toggle.appendChild(toggleIcon);
+    var toggleLabel = document.createElement('span');
+    toggleLabel.textContent = '工具';
+    toggle.appendChild(toggleLabel);
+
+    var menu = document.createElement('nav');
+    menu.id = 'facaiToolsMenu';
+    menu.className = 'facai-tools-menu';
+    menu.setAttribute('aria-label', '工具入口');
+    menu.hidden = true;
+    currentToolLinks().forEach(function (item) {
+      menu.appendChild(createToolLink(item, 'facai-tools-link'));
+    });
+
+    launcher.appendChild(menu);
+    launcher.appendChild(toggle);
+    document.body.appendChild(launcher);
+
+    function setOpen(open, restoreFocus) {
+      menu.hidden = !open;
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.setAttribute('aria-label', open ? '关闭工具入口' : '打开工具入口');
+      document.body.classList.toggle('facai-tools-open', open);
+      if (!open && restoreFocus) toggle.focus();
+    }
+
+    toggle.addEventListener('click', function () {
+      setOpen(toggle.getAttribute('aria-expanded') !== 'true', false);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') {
+        event.preventDefault();
+        setOpen(false, true);
+      }
+    });
+    document.addEventListener('click', function (event) {
+      if (toggle.getAttribute('aria-expanded') === 'true' && !launcher.contains(event.target)) {
+        setOpen(false, false);
+      }
+    });
+    window.addEventListener('pagehide', function () {
+      document.body.classList.remove('facai-tools-open');
+    });
+    if (window.lucide) window.lucide.createIcons();
   }
 
   if (document.readyState === "loading") {
     document.addEventListener('DOMContentLoaded', ensureMobileUtilityNavLinks);
+    document.addEventListener('DOMContentLoaded', initToolNavigation);
     document.addEventListener('DOMContentLoaded', scrollActiveNavIntoView);
   } else {
     ensureMobileUtilityNavLinks();
+    initToolNavigation();
     setTimeout(scrollActiveNavIntoView, 0);
   }
 
@@ -202,6 +295,11 @@
     withBusyButton: withBusyButton,
     fetchWithTimeout: fetchWithTimeout,
     renderPager: renderPager,
+    toolLinks: Object.freeze(TOOL_LINKS.map(function (item) {
+      return Object.freeze({label: item.label, href: item.href, icon: item.icon});
+    })),
+    isCurrentTool: isCurrentTool,
+    initToolNavigation: initToolNavigation,
     ensureMobileUtilityNavLinks: ensureMobileUtilityNavLinks,
     scrollActiveNavIntoView: scrollActiveNavIntoView
   };

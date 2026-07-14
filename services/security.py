@@ -170,6 +170,34 @@ def token_from_request(request: Request) -> tuple[str, str]:
     return request.cookies.get(AUTH_COOKIE_NAME, "").strip(), "cookie"
 
 
+def request_actor_digest(request: Request) -> str:
+    """Return a stable, irreversible owner key for the active system credential."""
+    principal = principal_from_request(request)
+    key = _session_signing_key()
+    if principal is not None and key is not None:
+        role_credential = next(
+            (
+                token
+                for role, token in configured_role_tokens()
+                if role == principal.role
+            ),
+            None,
+        )
+        if role_credential:
+            message = (
+                f"facai-operations-v1:{principal.role}:{role_credential}"
+            ).encode("utf-8")
+            return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+    principal = principal or getattr(request.state, "principal", None)
+    fallback = (
+        f"facai-operations-v1:disabled:"
+        f"{getattr(principal, 'role', 'anonymous')}:"
+        f"{getattr(principal, 'name', 'anonymous')}"
+    )
+    return hashlib.sha256(fallback.encode("utf-8")).hexdigest()
+
+
 def principal_from_request(request: Request) -> Principal | None:
     token, source = token_from_request(request)
     if source == "cookie":
@@ -203,6 +231,11 @@ def is_public_path(path: str) -> bool:
         return True
     if path.startswith("/static/"):
         return True
+    if re.fullmatch(
+        r"/integrations/(?:oauth/callback|events)/(?:qianchuan|doudian|taobao|pdd)",
+        path.rstrip("/"),
+    ):
+        return True
     return path in {"/api/auth/login", "/api/auth/logout", "/api/auth/status"}
 
 
@@ -218,6 +251,12 @@ def required_roles(method: str, path: str) -> frozenset[str]:
     method = method.upper()
     normalized = path.rstrip("/") or "/"
 
+    if normalized.startswith("/api/integrations"):
+        return frozenset({"admin", "operator", "viewer"})
+    if normalized.startswith("/api/operations/exports"):
+        return frozenset({"admin", "operator"})
+    if re.fullmatch(r"/api/operations/products/\d+/link", normalized):
+        return frozenset({"admin", "operator"})
     if normalized.startswith("/api/ai-config"):
         return frozenset({"admin"})
     if method == "DELETE":

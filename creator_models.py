@@ -65,6 +65,7 @@ class Creator(Base):
             "platform_uid_normalized",
             unique=True,
             sqlite_where=text("platform_uid_normalized IS NOT NULL"),
+            postgresql_where=text("platform_uid_normalized IS NOT NULL"),
         ),
         Index(
             "uq_creators_douyin_handle",
@@ -72,6 +73,7 @@ class Creator(Base):
             "douyin_handle_normalized",
             unique=True,
             sqlite_where=text("douyin_handle_normalized IS NOT NULL"),
+            postgresql_where=text("douyin_handle_normalized IS NOT NULL"),
         ),
         Index("ix_creators_stage_owner_archived", "stage", "owner_id", "archived_at"),
     )
@@ -213,6 +215,7 @@ class CreatorCollaboration(Base):
             "external_record_id",
             unique=True,
             sqlite_where=text("external_record_id IS NOT NULL"),
+            postgresql_where=text("external_record_id IS NOT NULL"),
         ),
         Index(
             "ix_creator_collaborations_creator_date_status",
@@ -329,6 +332,7 @@ class CreatorImportBatch(Base):
             "file_sha256",
             unique=True,
             sqlite_where=text("status = 'committed'"),
+            postgresql_where=text("status = 'committed'"),
         ),
     )
 

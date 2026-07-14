@@ -109,7 +109,7 @@ class InspirationStreamingApiTests(unittest.TestCase):
         self.assertIn("/app/import", common)
         self.assertIn("/app/ai-config", common)
         self.assertIn(".nav-mobile-utility", css)
-        self.assertIn(".ai-config-fab,.data-import-fab { display: none", css)
+        self.assertIn(".facai-tools-launcher { display: none", css)
 
     def test_closing_consumer_closes_provider_stream_and_records_cancelled(self):
         from services.ai_service import AIService

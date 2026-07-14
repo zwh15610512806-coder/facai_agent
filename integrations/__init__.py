@@ -1,0 +1,1 @@
+"""Shared ecommerce integration contracts."""

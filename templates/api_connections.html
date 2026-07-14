@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>电商 API 接入中心 · 法采新媒体运营 Agent</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=nav-20260714-operations">
+  <link rel="stylesheet" href="/static/css/api-connections.css?v=20260714-split">
+  <script src="/static/vendor/lucide.min.js"></script>
+  <script src="/static/js/common.js?v=tools-20260713"></script>
+</head>
+<body>
+  <nav class="nav" aria-label="API 接入中心主导航">
+    <div class="nav-inner">
+      <div class="nav-brand-group">
+        <a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+      </div>
+      <div class="nav-links">
+        <a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/creators" class="nav-link">达人工作</a><a href="/app/operations" class="nav-link">运营数据中台</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a>
+      </div>
+    </div>
+  </nav>
+
+  <main id="integrationCenter" class="integration-center" data-credential-ready="{{ 'true' if credential_ready else 'false' }}">
+    <header class="integration-page-header">
+      <div><h1>电商 API 接入中心</h1><p>只管理店铺连接、平台授权、启停、清除与同步任务。</p></div>
+      <div class="integration-header-actions">
+        <button id="integrationRefresh" class="btn btn-soft btn-sm" type="button"><i data-lucide="refresh-cw" aria-hidden="true"></i>刷新</button>
+        <button id="integrationLogout" class="btn btn-soft btn-sm" type="button"><i data-lucide="log-out" aria-hidden="true"></i>退出管理</button>
+      </div>
+    </header>
+
+    <div class="integration-scope-banner" role="status">
+      <i data-lucide="construction" aria-hidden="true"></i>
+      <div><strong>功能框架已就绪，连接器尚未配置</strong><span>巨量千川、抖店、淘宝店、拼多多店当前均保持“待配置/未接入”，不会伪造连接或业务数据。</span></div>
+    </div>
+    <div id="integrationSecurityBanner" class="integration-config-alert" role="alert" {% if credential_ready %}hidden{% endif %}>
+      <i data-lucide="shield-alert" aria-hidden="true"></i>
+      <div><strong>连接器尚未配置</strong><span>安全凭据、PostgreSQL 或归档目录尚未全部就绪；当前可查看功能结构和历史连接，写入操作保持关闭。</span></div>
+    </div>
+
+    <section id="connectionManagement" class="integration-panel" role="region" aria-labelledby="connectionManagementTitle" tabindex="0" aria-busy="false">
+      <div class="integration-panel-heading">
+        <div><h2 id="connectionManagementTitle">平台应用与连接</h2><p>只有官方连接器完成验收后，授权和同步按钮才会启用。</p></div>
+        <span class="integration-count">4 个平台</span>
+      </div>
+      <div id="connectionPanelStatus" class="integration-inline-status" role="status" aria-live="polite">正在读取平台状态…</div>
+      <div id="providerConnectionList" class="provider-connection-list">
+        {% for provider, name, detail in [
+          ('qianchuan', '巨量千川', '广告账户、投放消耗与归因数据'),
+          ('doudian', '抖店', '店铺、商品、订单、退款与履约数据'),
+          ('taobao', '淘宝店', '店铺经营、商品、订单与结算数据'),
+          ('pdd', '拼多多店', '店铺经营、商品、订单与售后数据')
+        ] %}
+        <article class="provider-connection-row provider-config-card" data-provider="{{ provider }}" data-connector-ready="false">
+          <div class="provider-card-summary">
+            <div class="provider-mark provider-mark-{{ provider }}" aria-hidden="true">{{ name[0] }}</div>
+            <div class="provider-identity"><h3>{{ name }}</h3><p>{{ detail }}</p></div>
+            <div class="provider-state"><span class="provider-state-dot"></span><span class="provider-config-state">待配置</span></div>
+          </div>
+          <form class="provider-config-form" data-provider-config="{{ provider }}">
+            <label>App ID<input name="app_id" autocomplete="off" placeholder="尚未配置"></label>
+            <label>App Secret<input name="app_secret" type="password" autocomplete="new-password" placeholder="仅保存时填写"></label>
+            <div class="provider-secret"><span>已保存 Secret</span><strong class="provider-secret-mask">未配置</strong></div>
+            <div class="provider-capability"><span>连接器能力</span><strong>待资料验收</strong></div>
+            <div class="provider-config-actions">
+              <button class="btn btn-soft btn-sm" type="submit" data-provider-save>保存配置</button>
+              <button class="btn btn-pri btn-sm provider-connect" type="button" data-provider-authorize disabled title="连接器未配置">授权连接</button>
+            </div>
+          </form>
+        </article>
+        {% endfor %}
+      </div>
+      <div class="integration-subsection-heading"><div><h3>已授权连接</h3><p>展示授权范围、到期时间、连接状态与同步能力。</p></div></div>
+      <div id="connectionList" class="integration-connection-list" aria-live="polite"></div>
+    </section>
+
+    <section id="failedSyncRuns" class="integration-panel integration-secondary-panel" role="region" aria-labelledby="failedSyncRunsTitle" tabindex="0" aria-busy="false">
+      <div class="integration-panel-heading"><div><h2 id="failedSyncRunsTitle">最近失败任务</h2><p>仅显示失败或部分成功的同步任务，可由接入管理员重新提交。</p></div></div>
+      <div class="integration-panel-state" data-failed-state role="status" aria-live="polite">等待读取失败任务。</div>
+      <div class="integration-table-wrap" data-failed-wrap role="region" aria-label="最近失败同步任务，可横向滚动" tabindex="0" hidden>
+        <table><caption>最近失败同步任务</caption><thead><tr><th scope="col">任务 ID</th><th scope="col">连接</th><th scope="col">资源</th><th scope="col">状态</th><th scope="col">错误摘要</th><th scope="col">时间窗口</th><th scope="col">操作</th></tr></thead><tbody data-failed-body></tbody></table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="purgeConnectionDialog" class="integration-dialog integration-danger-dialog" aria-labelledby="purgeConnectionDialogTitle">
+    <form method="dialog" data-purge-form>
+      <div class="integration-dialog-header"><div><h2 id="purgeConnectionDialogTitle">永久清除连接数据</h2><p>此操作会删除该连接的业务数据、同步记录与归档，且不可恢复。</p></div><button class="integration-dialog-close" type="button" data-dialog-close aria-label="关闭">×</button></div>
+      <input name="connection_id" type="hidden">
+      <p class="integration-confirm-copy">请输入管理员密码，并完整输入 <strong data-purge-display-name></strong>。</p>
+      <label>管理员密码<input name="password" type="password" autocomplete="current-password" required></label>
+      <label>确认连接名称<input name="confirmation" type="text" autocomplete="off" required></label>
+      <div class="integration-dialog-status" role="status" aria-live="polite" data-purge-status></div>
+      <div class="integration-dialog-actions"><button class="btn btn-soft" type="button" data-dialog-close>取消</button><button class="btn integration-danger-button" type="submit" data-purge-submit disabled>永久清除</button></div>
+    </form>
+  </dialog>
+
+  <script src="/static/js/api-connections.js?v=20260714-split"></script>
+</body>
+</html>

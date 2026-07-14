@@ -6,6 +6,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendCommonJsTests(unittest.TestCase):
+    TOOL_TEMPLATES = [
+        "index.html",
+        "rewrite.html",
+        "products.html",
+        "creators.html",
+        "import.html",
+        "templates.html",
+        "history.html",
+        "search.html",
+        "inspiration.html",
+        "ai_config.html",
+    ]
+
     def test_common_js_exposes_shared_helpers(self):
         common = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8")
 
@@ -28,10 +41,38 @@ class FrontendCommonJsTests(unittest.TestCase):
         self.assertIn("JSON.stringify(value)", common)
         self.assertIn("return formatApiErrorMessage(data.detail || data.message || data, fallback)", common)
 
-    def test_optimized_pages_include_common_js(self):
-        for name in ["templates.html", "history.html", "import.html", "products.html", "search.html", "inspiration.html", "ai_config.html"]:
+    def test_all_business_pages_include_the_tools_common_js(self):
+        for name in self.TOOL_TEMPLATES:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
-            self.assertIn('/static/js/common.js?v=20260710-hardening', page, name)
+            self.assertIn('/static/js/common.js?v=tools-20260713', page, name)
+            self.assertNotIn('data-import-fab', page, name)
+            self.assertNotIn('ai-config-fab', page, name)
+
+    def test_common_js_is_the_single_tools_navigation_source(self):
+        common = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8")
+
+        self.assertIn("var TOOL_LINKS = [", common)
+        self.assertIn("{label: '数据导入', href: '/app/import', icon: 'upload'}", common)
+        self.assertIn("{label: 'AI配置', href: '/app/ai-config', icon: 'settings'}", common)
+        self.assertIn("{label: 'API接入', href: '/app/api-connections', icon: 'plug-zap'}", common)
+        self.assertIn("facai-tools-launcher", common)
+        self.assertIn("facaiToolsToggle", common)
+        self.assertIn("facaiToolsMenu", common)
+        self.assertIn("aria-expanded", common)
+        self.assertIn("aria-controls", common)
+        self.assertIn("aria-label", common)
+        self.assertIn("event.key === 'Escape'", common)
+        self.assertIn("toggle.focus()", common)
+        self.assertIn("facai-tools-open", common)
+        self.assertIn("Object.freeze", common)
+        self.assertIn("initToolNavigation", common)
+
+    def test_mobile_tools_links_are_built_from_the_same_array(self):
+        common = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8")
+
+        self.assertIn("TOOL_LINKS.forEach", common)
+        self.assertIn("nav-mobile-utility", common)
+        self.assertIn("isCurrentTool", common)
 
     def test_large_page_assets_are_external_and_syntax_checked(self):
         assets = {

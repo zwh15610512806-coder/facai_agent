@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import sys
 import tempfile
@@ -16,6 +17,12 @@ TEMP_DIR = tempfile.TemporaryDirectory(prefix="facai-e2e-")
 ROOT = Path(TEMP_DIR.name)
 SEARCH_ROOT = ROOT / "search-root"
 SEARCH_ROOT.mkdir(parents=True, exist_ok=True)
+INTEGRATION_ARCHIVE_ROOT = ROOT / "integration-archive"
+INTEGRATION_ARCHIVE_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def _base64url(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 os.environ.update({
     "FACAI_AUTH_ENABLED": "0",
@@ -36,7 +43,21 @@ os.environ.update({
     "GLM_API_KEY": "",
     "QWEN_API_KEY": "",
     "EMBEDDING_API_KEY": "",
+    "FACAI_INTEGRATIONS_SESSION_SECRET": _base64url(bytes(range(32))),
+    "FACAI_INTEGRATIONS_MASTER_KEY": _base64url(bytes(range(32, 64))),
+    "FACAI_INTEGRATIONS_INTERNAL_BASE_URL": "http://127.0.0.1:8765",
+    "FACAI_INTEGRATIONS_PUBLIC_BASE_URL": "https://callbacks.test.invalid",
+    "FACAI_INTEGRATION_ARCHIVE_DIR": str(INTEGRATION_ARCHIVE_ROOT),
+    "FACAI_INTEGRATIONS_TRUSTED_PROXY_CIDRS": "",
+    "FACAI_INTEGRATION_WORKER_ENABLED": "0",
 })
+
+from integrations.admin_auth import hash_admin_password
+
+os.environ["FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH"] = hash_admin_password(
+    "e2e-integration-admin",
+    salt=b"facai-e2e-salt!!",
+)
 
 
 def main() -> None:

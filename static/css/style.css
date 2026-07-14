@@ -146,10 +146,13 @@ h3 { font-size: 1.1rem; font-weight: 700; }
 .nav-link.on { background: var(--facai); color: #ffffff; font-weight: 700; }
 .nav-link.on:hover { background: var(--facai-hover); color: #ffffff; }
 .nav-mobile-utility { display: none; }
-.ai-config-fab,.data-import-fab {
-  position: fixed; right: 28px; z-index: 90;
+.nav-mobile-utility svg,.nav-mobile-utility i { width: 15px; height: 15px; }
+.facai-tools-launcher {
+  position: fixed; right: 28px; bottom: 28px; z-index: 190;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+}
+.facai-tools-toggle,.facai-tools-link {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 46px; padding: 0 16px;
   border: 1px solid rgba(126, 146, 54, .24);
   border-radius: var(--r-pill);
   background: rgba(255,255,255,.96); color: var(--facai);
@@ -159,27 +162,47 @@ h3 { font-size: 1.1rem; font-weight: 700; }
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   transition: transform var(--fast) var(--ease), background var(--fast) var(--ease), color var(--fast) var(--ease), border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
-.ai-config-fab { bottom: 28px; }
-.data-import-fab { bottom: 88px; }
-.ai-config-fab:hover,.data-import-fab:hover {
+.facai-tools-toggle {
+  min-height: 48px; padding: 0 18px; cursor: pointer;
+}
+.facai-tools-toggle:hover,.facai-tools-toggle[aria-expanded="true"],.facai-tools-link:hover {
   transform: translateY(-2px);
   background: var(--facai); color: #ffffff; border-color: var(--facai);
   box-shadow: var(--s-4);
 }
-.ai-config-fab svg,.ai-config-fab i,.data-import-fab svg,.data-import-fab i { width: 17px; height: 17px; stroke-width: 2.3; }
+.facai-tools-toggle:focus-visible,.facai-tools-link:focus-visible {
+  outline: 3px solid var(--facai-subtle); outline-offset: 3px;
+}
+.facai-tools-toggle svg,.facai-tools-toggle i,.facai-tools-link svg,.facai-tools-link i { width: 17px; height: 17px; stroke-width: 2.3; }
+.facai-tools-menu {
+  min-width: 174px; padding: 8px;
+  border: 1px solid var(--border); border-radius: var(--r);
+  background: rgba(255,255,255,.98); box-shadow: var(--s-4);
+  transform-origin: bottom right; animation: fadeUp .18s var(--ease-out) both;
+}
+.facai-tools-menu[hidden] { display: none; }
+.facai-tools-link {
+  justify-content: flex-start; width: 100%; min-height: 42px; padding: 0 12px;
+  border-color: transparent; border-radius: var(--r-sm); box-shadow: none;
+  background: transparent; color: var(--text-2); font-size: 13px;
+}
+.facai-tools-link + .facai-tools-link { margin-top: 4px; }
+body.facai-tools-open .scroll-top-btn { visibility: hidden; pointer-events: none; }
 
-@media (min-width: 769px) and (max-width: 1439px) {
+@media (min-width: 769px) and (max-width: 1599px) {
   .nav-inner {
-    padding: 0 28px;
+    padding: 0 24px;
+    gap: 14px;
     grid-template-columns: auto minmax(0, 1fr);
   }
-  .nav-brand-group { max-width: 420px; }
-  .nav-brand { max-width: 300px; }
+  .nav-brand-group { max-width: 320px; }
+  .nav-brand { max-width: 260px; }
   .nav-brand span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .nav-links {
     width: 100%; justify-content: center; overflow-x: auto;
     scroll-padding-inline: 16px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
+  .nav-link { padding: 8px 10px; font-size: 14px; }
   .nav-links::-webkit-scrollbar { display: none; }
 }
 
@@ -719,9 +742,7 @@ textarea.input { resize: vertical; min-height: 110px; }
   .float-bar > span { flex: 1 1 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .float-bar .btn { flex: 1 1 118px; min-width: 0; }
   .scroll-top-btn { right: 14px; bottom: max(18px, calc(18px + env(safe-area-inset-bottom))); }
-  .ai-config-fab,.data-import-fab { display: none; }
-  .ai-config-fab { bottom: max(72px, calc(72px + env(safe-area-inset-bottom))); }
-  .data-import-fab { bottom: max(126px, calc(126px + env(safe-area-inset-bottom))); }
+  .facai-tools-launcher { display: none; }
 }
 
 /* =================================================================

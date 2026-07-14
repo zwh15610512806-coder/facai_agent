@@ -35,7 +35,14 @@ def main() -> int:
     assert_startup_security("0.0.0.0")
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=args.port, workers=1)
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=args.port,
+        workers=1,
+        proxy_headers=False,
+        forwarded_allow_ips="",
+    )
     return 0
 
 

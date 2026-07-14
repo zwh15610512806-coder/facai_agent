@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from config import ALLOWED_HOSTS, ALLOWED_ORIGINS, APP_DESCRIPTION, APP_TITLE, APP_VERSION
-from database import init_db
+from database import engine, init_db
 from routers import (
     ai_config,
     auth,
@@ -25,7 +25,9 @@ from routers import (
     reference_scripts,
     scripts,
     search_local,
+    integrations as integration_routes,
 )
+from sqlalchemy import text
 from routers import templates as tpl_routes
 from services.access_control import (
     record_request_audit,
@@ -118,6 +120,10 @@ app.include_router(ai_config.router, prefix="/api/ai-config", tags=["ai-config"]
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(search_local.router, prefix="/api/search-proxy", tags=["search"])
 app.include_router(creators.router, prefix="/api/creators", tags=["creators"])
+app.include_router(integration_routes.session_router)
+app.include_router(integration_routes.admin_router)
+app.include_router(integration_routes.operations_router)
+app.include_router(integration_routes.public_router)
 
 def _apply_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -137,12 +143,173 @@ def _origin_is_allowed(request: Request, origin: str) -> bool:
     if not parsed.scheme or not parsed.netloc or parsed.path not in {"", "/"}:
         return False
     normalized = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
-    current = f"{request.url.scheme.lower()}://{request.headers.get('host', '').lower()}"
+    request_host = request.headers.get("host", "").lower()
     configured = {value.rstrip("/").lower() for value in ALLOWED_ORIGINS}
+    if request.scope.get("path", "").startswith("/api/integrations/"):
+        from integrations.admin_auth import (
+            LoginContextConfigurationError,
+            resolve_login_request_context,
+        )
+        from integrations.settings import (
+            TRUSTED_PROXY_CIDRS_ENV,
+            load_integration_settings,
+        )
+
+        settings = load_integration_settings()
+        if TRUSTED_PROXY_CIDRS_ENV in settings.errors:
+            return parsed.netloc.lower() == request_host or normalized in configured
+        try:
+            context = resolve_login_request_context(
+                request,
+                settings.trusted_proxy_networks,
+            )
+        except LoginContextConfigurationError:
+            return parsed.netloc.lower() == request_host or normalized in configured
+        current = f"{context.effective_scheme}://{request_host}"
+    else:
+        current = f"{request.url.scheme.lower()}://{request_host}"
     return normalized == current or normalized in configured
 
 
+def _canonical_hostname(hostname: str) -> tuple[str, str]:
+    normalized = hostname.lower().rstrip(".")
+    try:
+        return "ip", ipaddress.ip_address(normalized).compressed
+    except ValueError:
+        return "dns", normalized
+
+
+def _origin_authority(
+    origin: str,
+) -> tuple[tuple[str, str], int, int, bool] | None:
+    try:
+        parsed = urlsplit(origin)
+        hostname = parsed.hostname
+        explicit_port = parsed.port is not None
+        default_port = 443 if parsed.scheme.lower() == "https" else 80
+        port = parsed.port or default_port
+    except (TypeError, ValueError):
+        return None
+    if not hostname or parsed.scheme.lower() not in {"http", "https"}:
+        return None
+    return _canonical_hostname(hostname), port, default_port, explicit_port
+
+
+def _host_matches_origin(host_header: str, origin: str) -> bool:
+    expected = _origin_authority(origin)
+    if expected is None:
+        return False
+    expected_host, expected_port, expected_default_port, expected_explicit_port = expected
+    try:
+        parsed = urlsplit(f"//{host_header}")
+        hostname = parsed.hostname
+        supplied_port = parsed.port
+    except ValueError:
+        return False
+    if (
+        not hostname
+        or parsed.netloc.endswith(":")
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        return False
+    if supplied_port is None:
+        if expected_explicit_port and expected_port != expected_default_port:
+            return False
+        supplied_port = expected_default_port
+    return _canonical_hostname(hostname) == expected_host and supplied_port == expected_port
+
+
+def _configured_integration_origin(host_header: str) -> str | None:
+    from integrations.settings import (
+        INTERNAL_BASE_URL_ENV,
+        PUBLIC_BASE_URL_ENV,
+        load_integration_settings,
+    )
+
+    settings = load_integration_settings()
+    for kind, origin in (
+        (
+            "public",
+            settings.public_base_url
+            if PUBLIC_BASE_URL_ENV not in settings.errors
+            else None,
+        ),
+        (
+            "internal",
+            settings.internal_base_url
+            if INTERNAL_BASE_URL_ENV not in settings.errors
+            else None,
+        ),
+    ):
+        if origin is not None and _host_matches_origin(host_header, origin):
+            return kind
+    return None
+
+
+def _host_uses_configured_integration_hostname(host_header: str) -> bool:
+    from integrations.settings import (
+        INTERNAL_BASE_URL_ENV,
+        PUBLIC_BASE_URL_ENV,
+        load_integration_settings,
+    )
+
+    try:
+        hostname = urlsplit(f"//{host_header}").hostname
+    except ValueError:
+        return False
+    if not hostname:
+        return False
+    candidate = _canonical_hostname(hostname)
+    settings = load_integration_settings()
+    for origin, error_key in (
+        (settings.public_base_url, PUBLIC_BASE_URL_ENV),
+        (settings.internal_base_url, INTERNAL_BASE_URL_ENV),
+    ):
+        if error_key in settings.errors:
+            continue
+        if origin is None:
+            continue
+        expected = _origin_authority(origin)
+        if expected is not None and candidate == expected[0]:
+            return True
+    return False
+
+
+def _public_callback_path_is_allowed(request: Request) -> bool:
+    path = request.scope.get("path", "")
+    raw_path = request.scope.get("raw_path")
+    if not isinstance(path, str):
+        return False
+    if not isinstance(raw_path, bytes):
+        raw_path = path.encode("utf-8", errors="surrogatepass")
+    if b"%" in raw_path or b"\\" in raw_path or b"//" in raw_path:
+        return False
+    providers = {"qianchuan", "doudian", "taobao", "pdd"}
+    parts = path.split("/")
+    if (
+        request.method == "GET"
+        and len(parts) == 5
+        and parts[1:4] == ["integrations", "oauth", "callback"]
+        and parts[4] in providers
+    ):
+        return True
+    return (
+        request.method in {"GET", "POST"}
+        and len(parts) == 4
+        and parts[1:3] == ["integrations", "events"]
+        and parts[3] in providers
+    )
+
+
 def _host_is_allowed(host_header: str) -> bool:
+    if _configured_integration_origin(host_header) is not None:
+        return True
+    if _host_uses_configured_integration_hostname(host_header):
+        return False
     try:
         hostname = urlsplit(f"//{host_header}").hostname
     except ValueError:
@@ -163,6 +330,13 @@ def _host_is_allowed(host_header: str) -> bool:
 async def protect_api_and_app_requests(request: Request, call_next):
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
+    integration_origin = _configured_integration_origin(
+        request.headers.get("host", "")
+    )
+    if integration_origin == "public" and not _public_callback_path_is_allowed(request):
+        return _apply_security_headers(
+            JSONResponse({"detail": "Not Found"}, status_code=404)
+        )
     if not _host_is_allowed(request.headers.get("host", "")):
         return _apply_security_headers(
             JSONResponse({"detail": "Request host is not allowed"}, status_code=400)
@@ -319,6 +493,82 @@ def search_page(request: Request): return templates.TemplateResponse(request, "s
 def inspiration_page(): return RedirectResponse(url="/app", status_code=303)
 @app.get("/app/ai-config")
 def ai_config_page(request: Request): return templates.TemplateResponse(request, "ai_config.html", {"request": request})
+
+
+def _integration_page_next(value: str | None) -> str:
+    fallback = "/app/api-connections"
+    if not isinstance(value, str) or not value or len(value) > 2048:
+        return fallback
+    if "\\" in value or any(ord(character) <= 0x20 or ord(character) == 0x7F for character in value):
+        return fallback
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return fallback
+    if parsed.scheme or parsed.netloc or parsed.fragment:
+        return fallback
+    if parsed.path != fallback or parsed.query:
+        return fallback
+    return parsed.path
+
+
+@app.get("/app/api-connections/login")
+def api_connections_login_page(request: Request):
+    from integrations.settings import load_integration_settings
+
+    settings = load_integration_settings()
+    next_path = _integration_page_next(request.query_params.get("next"))
+    return templates.TemplateResponse(
+        request,
+        "api_connections_login.html",
+        {
+            "request": request,
+            "login_ready": settings.login_ready,
+            "next_path": next_path,
+        },
+    )
+
+
+_OPERATIONS_TABS = frozenset(
+    {"overview", "orders", "products", "refunds", "ads", "sync-runs"}
+)
+
+
+@app.get("/app/api-connections")
+def api_connections_page(request: Request, tab: str | None = None):
+    if tab in _OPERATIONS_TABS:
+        return RedirectResponse(url=f"/app/operations?tab={tab}", status_code=303)
+    from integrations.admin_auth import integration_admin_session_or_none
+    from integrations.settings import load_integration_settings
+
+    settings = load_integration_settings()
+    claims = integration_admin_session_or_none(request, settings=settings)
+    if claims is None:
+        return RedirectResponse(
+            url=(
+                "/app/api-connections/login?next="
+                + quote("/app/api-connections", safe="")
+            ),
+            status_code=303,
+        )
+    return templates.TemplateResponse(
+        request,
+        "api_connections.html",
+        {
+            "request": request,
+            "credential_ready": settings.credential_ready,
+        },
+    )
+
+
+@app.get("/app/operations")
+def operations_page(request: Request, tab: str | None = None):
+    active_tab = tab if tab in _OPERATIONS_TABS else "overview"
+    return templates.TemplateResponse(
+        request,
+        "operations.html",
+        {"request": request, "active_tab": active_tab},
+    )
 if __name__ == "__main__":
     import uvicorn
 
@@ -328,4 +578,10 @@ if __name__ == "__main__":
     assert_verified_runtime()
     bind_host = "0.0.0.0"
     assert_startup_security(bind_host)
-    uvicorn.run(app, host=bind_host, port=8001)
+    uvicorn.run(
+        app,
+        host=bind_host,
+        port=8001,
+        proxy_headers=False,
+        forwarded_allow_ips="",
+    )

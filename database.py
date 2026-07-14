@@ -7,22 +7,16 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, event, inspect, text
+from alembic.config import Config
+from sqlalchemy import MetaData, create_engine, event, inspect, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from config import DATABASE_URL
 
-# 确保数据目录存在
-os.makedirs(os.path.dirname(DATABASE_URL.replace("sqlite:///", "")), exist_ok=True)
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
-
-@event.listens_for(engine, "connect")
 def _configure_sqlite_connection(dbapi_connection, _connection_record):
     """Apply integrity and contention settings to every SQLite connection."""
-    if engine.dialect.name != "sqlite":
-        return
     cursor = dbapi_connection.cursor()
     try:
         cursor.execute("PRAGMA foreign_keys=ON")
@@ -30,8 +24,48 @@ def _configure_sqlite_connection(dbapi_connection, _connection_record):
         cursor.execute("PRAGMA journal_mode=WAL")
     finally:
         cursor.close()
+
+
+def create_database_engine(url: str):
+    parsed_url = make_url(url)
+    is_sqlite = parsed_url.get_backend_name() == "sqlite"
+    options: dict[str, object] = {
+        "hide_parameters": True,
+        "pool_pre_ping": True,
+    }
+    if is_sqlite:
+        options["connect_args"] = {"check_same_thread": False}
+    bind = create_engine(url, **options)
+    if is_sqlite:
+        event.listen(bind, "connect", _configure_sqlite_connection)
+    return bind
+
+
+def _ensure_sqlite_parent(url: str) -> None:
+    parsed_url = make_url(url)
+    if parsed_url.get_backend_name() != "sqlite":
+        return
+    raw_path = parsed_url.database
+    if not raw_path or raw_path == ":memory:":
+        return
+    Path(raw_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+
+
+_ensure_sqlite_parent(DATABASE_URL)
+engine = create_database_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+alembic_config = Config(str(Path(__file__).with_name("alembic.ini")))
+
+
+def core_sqlite_metadata() -> MetaData:
+    """Return application metadata without PostgreSQL-only integration tables."""
+    metadata = MetaData()
+    for table in Base.metadata.sorted_tables:
+        if table.name.startswith(("integration_", "commerce_")):
+            continue
+        table.to_metadata(metadata)
+    return metadata
 
 
 _CREATOR_INTEGRITY_TRIGGERS = {
@@ -91,6 +125,10 @@ _CREATOR_INTEGRITY_TRIGGERS = {
     """,
 }
 
+_INTEGRATION_CONNECTION_PROVIDER_UNIQUE = (
+    "uq_integration_connections_id_provider"
+)
+
 
 def _normalize_trigger_sql(value: str | None) -> str:
     normalized = re.sub(r"\s+", "", value or "").lower()
@@ -113,12 +151,52 @@ def get_db():
         db.close()
 
 
+def assert_schema_current(bind) -> None:
+    """Fail startup unless the database revision matches the Alembic head."""
+    from alembic.script import ScriptDirectory
+
+    remediation = "Run `alembic upgrade head` before starting the application."
+    try:
+        expected_head = ScriptDirectory.from_config(alembic_config).get_current_head()
+        with bind.connect() as connection:
+            current_head = connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one_or_none()
+    except Exception as exc:
+        raise RuntimeError(f"Unable to verify the database schema revision. {remediation}") from exc
+
+    if not expected_head or current_head != expected_head:
+        raise RuntimeError(
+            "Database schema revision "
+            f"{current_head or '<none>'} does not match Alembic head "
+            f"{expected_head or '<none>'}. {remediation}"
+        )
+
+
 def init_db():
-    """Bring the database to the versioned Alembic head and initialize settings."""
-    import creator_models  # noqa: F401 - 注册达人商务域模型
-    import models  # noqa: F401 - 确保模型类被注册到 Base.metadata
-    _run_schema_migrations()
+    """Bring the active database to its supported schema and initialize settings."""
+    import models  # 确保模型类被注册到 Base.metadata
+    import creator_models  # 注册达人商务域模型
+    import integration_models  # 注册电商集成控制域模型
+    import commerce_models  # 预留电商业务域模型注册
+
+    if engine.dialect.name != "sqlite":
+        assert_schema_current(engine)
+        return
+
+    migration_backup = _run_schema_migrations(
+        drift_check=lambda: _schema_migration_required(include_integration=False)
+    )
+    if _schema_migration_required() and migration_backup is None:
+        _backup_sqlite_database()
+    _ensure_integration_connection_provider_unique()
+    Base.metadata.create_all(bind=engine)
+    _ensure_creator_indexes()
+    _ensure_compatible_columns()
+    _ensure_creator_integrity_triggers()
+
     from services.ai_config import ensure_interface_settings
+
     with SessionLocal() as session:
         ensure_interface_settings(session)
 
@@ -133,32 +211,37 @@ def _alembic_config():
     return config
 
 
-def _run_schema_migrations() -> None:
+def _run_schema_migrations(*, drift_check=None) -> Path | None:
     """Upgrade to Alembic head, restoring the pre-upgrade SQLite backup on failure."""
     from alembic import command
     from alembic.migration import MigrationContext
     from alembic.script import ScriptDirectory
 
+    if drift_check is None:
+        drift_check = _schema_migration_required
+
+    database_path = _sqlite_database_path()
+    existed_before = bool(
+        database_path and database_path.exists() and database_path.stat().st_size
+    )
     config = _alembic_config()
     expected_head = ScriptDirectory.from_config(config).get_current_head()
     with engine.connect() as connection:
         current_revision = MigrationContext.configure(connection).get_current_revision()
     if current_revision == expected_head:
-        if _schema_migration_required():
+        if drift_check():
             raise RuntimeError(
                 "Database schema drift detected at the current Alembic revision; "
                 "run an explicit repair migration before startup."
             )
-        return
+        return None
 
-    database_path = _sqlite_database_path()
-    existed_before = bool(database_path and database_path.exists() and database_path.stat().st_size)
     backup_path = _backup_sqlite_database() if existed_before else None
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
             command.upgrade(config, "head")
-        if _schema_migration_required():
+        if drift_check():
             raise RuntimeError(
                 "Database schema drift detected after Alembic upgrade; restore the last "
                 "verified backup and run the explicit schema repair migration."
@@ -173,6 +256,7 @@ def _run_schema_migrations() -> None:
                 if candidate.exists():
                     candidate.unlink()
         raise
+    return backup_path
 
 
 def _sqlite_database_path() -> Path | None:
@@ -202,7 +286,27 @@ def _creator_import_committed_index_valid(inspector) -> bool:
     return False
 
 
-def _schema_migration_required() -> bool:
+def _integration_connection_provider_unique_valid(inspector) -> bool:
+    """Return whether SQLite has the exact parent key required by commerce FKs."""
+    table_names = set(inspector.get_table_names())
+    if "integration_connections" not in table_names:
+        return False
+    expected_columns = ["id", "provider"]
+    for constraint in inspector.get_unique_constraints("integration_connections"):
+        if list(constraint.get("column_names") or []) == expected_columns:
+            return True
+    for index in inspector.get_indexes("integration_connections"):
+        sqlite_where = (index.get("dialect_options") or {}).get("sqlite_where")
+        if (
+            bool(index.get("unique"))
+            and sqlite_where is None
+            and list(index.get("column_names") or []) == expected_columns
+        ):
+            return True
+    return False
+
+
+def _schema_migration_required(*, include_integration: bool = True) -> bool:
     path = _sqlite_database_path()
     if path is None or not path.exists() or path.stat().st_size == 0:
         return False
@@ -225,6 +329,11 @@ def _schema_migration_required() -> bool:
         "creator_import_batches",
     }
     if not required_tables.issubset(existing_tables):
+        return True
+    if include_integration and (
+        "integration_connections" in existing_tables
+        and not _integration_connection_provider_unique_valid(inspector)
+    ):
         return True
     sample_order_columns = {column["name"] for column in inspector.get_columns("creator_sample_orders")}
     if "request_fingerprint" not in sample_order_columns:
@@ -250,6 +359,35 @@ def _schema_migration_required() -> bool:
             )
         }
     return not _creator_integrity_triggers_valid(trigger_sql)
+
+
+def _ensure_integration_connection_provider_unique() -> None:
+    """Repair the composite parent key before SQLite creates commerce children."""
+    if engine.dialect.name != "sqlite":
+        return
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "integration_connections" not in table_names:
+        return
+    if _integration_connection_provider_unique_valid(inspector):
+        return
+
+    existing_names = {
+        item.get("name")
+        for item in inspector.get_indexes("integration_connections")
+    }
+    if _INTEGRATION_CONNECTION_PROVIDER_UNIQUE in existing_names:
+        raise RuntimeError(
+            "SQLite index uq_integration_connections_id_provider exists with "
+            "an incompatible definition; repair it before starting the application."
+        )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                'CREATE UNIQUE INDEX "uq_integration_connections_id_provider" '
+                'ON "integration_connections" ("id", "provider")'
+            )
+        )
 
 
 def _backup_sqlite_database() -> Path | None:

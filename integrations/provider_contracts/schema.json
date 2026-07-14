@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:facai:integrations:provider-contract-evidence:v1",
+  "title": "Facai ecommerce provider contract evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider",
+    "status",
+    "official_hosts",
+    "application_type",
+    "operations"
+  ],
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": ["qianchuan", "doudian", "taobao", "pdd"]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "verification_required",
+        "public_docs_verified",
+        "approved_app_verified"
+      ]
+    },
+    "official_hosts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 253,
+        "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$"
+      }
+    },
+    "application_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"
+    },
+    "operations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    }
+  },
+  "$defs": {
+    "name_list": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "official_url",
+        "http_method",
+        "gateway_or_path",
+        "required_scopes",
+        "window_limit",
+        "pagination",
+        "external_ids",
+        "rate_limit",
+        "verified_at",
+        "verification_source"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        },
+        "official_url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048,
+          "pattern": "^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/[^?#\\s]*$"
+        },
+        "http_method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+        "gateway_or_path": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1024,
+          "pattern": "^/[^?#\\s]+$"
+        },
+        "required_scopes": {
+          "$ref": "#/$defs/name_list"
+        },
+        "window_limit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "pagination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["request", "response"],
+          "properties": {
+            "request": {
+              "$ref": "#/$defs/name_list"
+            },
+            "response": {
+              "$ref": "#/$defs/name_list"
+            }
+          }
+        },
+        "external_ids": {
+          "$ref": "#/$defs/name_list"
+        },
+        "rate_limit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date"
+        },
+        "verification_source": {
+          "type": "string",
+          "enum": ["public_official_doc", "approved_app_console"]
+        }
+      }
+    }
+  }
+}

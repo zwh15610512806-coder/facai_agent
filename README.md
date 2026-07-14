@@ -195,7 +195,7 @@ python import_materials.py --dry-run
 运行全部测试：
 
 ```bash
-$env:FACAI_AUTH_ENABLED="0"; python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v
 ```
 
 当前测试覆盖产品导入、价格同步、产品详情、页面结构、搜索逻辑、脚本改写和高成交筛选等关键行为。

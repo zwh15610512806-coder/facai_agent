@@ -2,6 +2,8 @@
 import os
 from dotenv import load_dotenv
 
+from integrations.settings import load_integration_settings
+
 load_dotenv()
 
 # 数据库配置

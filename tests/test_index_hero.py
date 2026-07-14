@@ -20,12 +20,13 @@ class IndexHeroTests(unittest.TestCase):
         self.assertNotIn(".hero-copy", self.page)
 
     def test_generate_page_content_starts_without_intro_banner(self):
-        self.assertIn('href="/app/import"', self.page)
+        self.assertIn('/static/js/common.js?v=tools-20260713', self.page)
         self.assertNotIn('class="nav-import-btn"', self.page)
-        self.assertIn('class="data-import-fab"', self.page)
+        self.assertNotIn('class="data-import-fab"', self.page)
+        self.assertNotIn('class="ai-config-fab"', self.page)
         self.assertRegex(
             self.page,
-            r'</nav>\s*<a class="data-import-fab" href="/app/import"[^>]*>.*?</a>\s*<a class="ai-config-fab" href="/app/ai-config"[^>]*>.*?</a>\s*<style>\s*\.generate-main',
+            r'</nav>\s*<style>\s*\.generate-main',
         )
         self.assertNotRegex(
             self.page,

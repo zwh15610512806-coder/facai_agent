@@ -92,7 +92,7 @@ body{overflow:hidden}
 .source-chip{display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface);color:var(--text-2);padding:3px 8px;font-size:12px;font-weight:800;line-height:1.4;text-decoration:none}
 .source-chip:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
 .thinking{color:var(--text-3)}
-.inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px 152px 12px 12px;background:rgba(255,255,255,.96)}
+.inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px var(--facai-tools-reserve,128px) 12px 12px;background:rgba(255,255,255,.96)}
 .composer-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
 .tool-button{height:32px;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface);color:var(--text-2);padding:0 10px;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:850;cursor:pointer}
 .tool-button:hover{border-color:var(--facai);color:var(--facai);background:var(--facai-ghost)}
@@ -136,7 +136,6 @@ body{overflow:hidden}
   .inspiration-thread{padding:16px 12px 10px}
   .chat-bubble{max-width:92%}
   .composer-form{gap:6px}
-  .inspiration-composer{padding:12px 12px calc(184px + env(safe-area-inset-bottom))}
   .inspiration-composer{padding:9px 8px calc(9px + env(safe-area-inset-bottom))}
   .inspiration-input{min-height:44px;max-height:210px}
   .icon-button{width:40px;height:40px}

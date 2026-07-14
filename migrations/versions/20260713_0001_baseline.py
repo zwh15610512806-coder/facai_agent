@@ -18,7 +18,7 @@ from alembic import op
 
 import creator_models  # noqa: F401
 import models  # noqa: F401
-from database import Base
+from database import core_sqlite_metadata
 
 revision: str = "20260713_0001"
 down_revision: str | Sequence[str] | None = None
@@ -170,7 +170,7 @@ def _repair_creator_indexes_and_triggers(connection: sa.Connection) -> None:
 
 def upgrade() -> None:
     connection = op.get_bind()
-    Base.metadata.create_all(bind=connection)
+    core_sqlite_metadata().create_all(bind=connection)
     _add_missing_legacy_columns(connection)
     _repair_creator_indexes_and_triggers(connection)
 

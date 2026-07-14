@@ -7,7 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 import creator_models  # noqa: F401 - registers creator tables
 import models  # noqa: F401 - registers application tables
-from database import Base
+from database import core_sqlite_metadata
 
 config = context.config
 if config.config_file_name is not None:
@@ -15,7 +15,7 @@ if config.config_file_name is not None:
     # Never disable application loggers while loading migration log settings.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-target_metadata = Base.metadata
+target_metadata = core_sqlite_metadata()
 
 
 def run_migrations_offline() -> None:

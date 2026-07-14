@@ -209,11 +209,12 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("addEventListener('input',resizeInspirationInput)", page)
         self.assertIn("resizeInspirationInput();", page)
 
-    def test_inspiration_composer_reserves_space_for_bottom_right_fabs(self):
+    def test_inspiration_composer_reserves_desktop_tools_space_only(self):
         page = read_page_source("inspiration.html")
 
-        self.assertIn(".inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px 152px 12px 12px", page)
-        self.assertIn(".inspiration-composer{padding:12px 12px calc(184px + env(safe-area-inset-bottom))}", page)
+        self.assertIn(".inspiration-composer{flex:0 0 auto;border-top:1px solid var(--border-soft);padding:12px var(--facai-tools-reserve,128px) 12px 12px", page)
+        self.assertNotIn("calc(184px + env(safe-area-inset-bottom))", page)
+        self.assertIn(".inspiration-composer{padding:9px 8px calc(9px + env(safe-area-inset-bottom))}", page)
 
     def test_inspiration_user_message_visuals_put_attachments_above_text(self):
         page = read_page_source("inspiration.html")
@@ -345,7 +346,7 @@ class InspirationNavigationTests(unittest.TestCase):
                 name,
             )
 
-    def test_data_import_is_fab_on_non_import_pages_and_not_nav_link(self):
+    def test_tools_are_injected_by_common_js_and_not_hard_coded_in_templates(self):
         pages = [
             "index.html",
             "rewrite.html",
@@ -377,13 +378,9 @@ class InspirationNavigationTests(unittest.TestCase):
             self.assertIsNotNone(nav_links, name)
             self.assertNotIn('href="/app/import"', nav_links.group("body"), name)
             self.assertNotIn(">数据导入</a>", nav_links.group("body"), name)
-            if name == "import.html":
-                self.assertNotIn('class="data-import-fab"', page, name)
-            else:
-                self.assertIn('class="data-import-fab"', page, name)
-                self.assertIn('href="/app/import"', page, name)
-                self.assertIn('data-lucide="upload"', page, name)
-                self.assertIn(">数据导入</span></a>", page, name)
+            self.assertNotIn('class="data-import-fab"', page, name)
+            self.assertNotIn('class="ai-config-fab"', page, name)
+            self.assertIn('/static/js/common.js?v=tools-20260713', page, name)
 
     def test_data_import_nav_button_uses_fresh_shared_css_version(self):
         pages = [

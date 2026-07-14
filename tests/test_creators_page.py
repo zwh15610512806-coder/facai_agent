@@ -29,6 +29,7 @@ class CreatorPageContractTests(unittest.TestCase):
         pattern = re.compile(
             r'href="/app/products"[^>]*>产品知识库</a>\s*'
             r'<a href="/app/creators"[^>]*>达人工作</a>\s*'
+            r'<a href="/app/operations"[^>]*>运营数据中台</a>\s*'
             r'<a href="/app/templates"[^>]*>脚本模板库</a>',
             re.S,
         )
@@ -43,7 +44,7 @@ class CreatorPageContractTests(unittest.TestCase):
     def test_creator_page_is_externalized_three_column_workbench(self):
         page = (ROOT / "templates" / "creators.html").read_text(encoding="utf-8-sig")
         self.assertIn('/static/css/creators.css?v=20260713-creators-v2', page)
-        self.assertIn('/static/js/common.js?v=20260710-hardening', page)
+        self.assertIn('/static/js/common.js?v=tools-20260713', page)
         self.assertIn('/static/js/creators.js?v=20260713-creators-v2', page)
         self.assertNotIn("<style", page.lower())
         self.assertNotRegex(page.lower(), r"<script(?![^>]+src=)")

@@ -1,0 +1,111 @@
+{% macro data_filters(panel, include_search=true) -%}
+<form class="integration-filter-bar" data-filter-form data-panel="{{ panel }}">
+  <label>平台<select name="provider"><option value="">全部平台</option></select></label>
+  <label>连接<select name="connection_id"><option value="">全部连接</option></select></label>
+  <label>开始日期<input name="date_from" type="date"></label>
+  <label>结束日期<input name="date_to" type="date"></label>
+  {% if panel == 'orders' %}
+  <label>状态<select name="status"><option value="">全部状态</option><option value="pending_payment">待付款</option><option value="paid">已付款</option><option value="shipped">已发货</option><option value="completed">已完成</option><option value="closed">已关闭</option><option value="unknown">未知</option></select></label>
+  {% elif panel == 'products' %}
+  <label>状态<select name="status"><option value="">全部状态</option><option value="on_sale">在售</option><option value="off_shelf">下架</option><option value="deleted">已删除</option><option value="unknown">未知</option></select></label>
+  <label>关联状态<select name="link_status"><option value="">全部</option><option value="linked">已关联</option><option value="unlinked">未关联</option></select></label>
+  {% elif panel == 'refunds' %}
+  <label>状态<select name="status"><option value="">全部状态</option><option value="requested">已申请</option><option value="processing">处理中</option><option value="approved">已同意</option><option value="rejected">已拒绝</option><option value="completed">已完成</option><option value="closed">已关闭</option><option value="unknown">未知</option></select></label>
+  {% elif panel == 'ads' %}
+  <label>实体层级<select name="entity_type"><option value="">全部层级</option><option value="account">账户</option><option value="campaign">计划</option><option value="ad_group">广告组</option><option value="creative">创意</option><option value="material">素材</option></select></label>
+  <label>粒度<select name="granularity"><option value="day">按日</option></select></label>
+  {% elif panel == 'sync-runs' %}
+  <label>状态<select name="status"><option value="">全部状态</option><option value="queued">排队中</option><option value="running">同步中</option><option value="retry_wait">等待重试</option><option value="succeeded">成功</option><option value="partial_success">部分成功</option><option value="failed">失败</option><option value="cancelled">已取消</option></select></label>
+  <label>来源<select name="source"><option value="">全部来源</option><option value="scheduled">计划</option><option value="manual">手动</option><option value="event">事件</option><option value="backfill">回溯</option><option value="retry">重试</option></select></label>
+  <label>资源<select name="resource_type"><option value="">全部资源</option><option value="shops">店铺</option><option value="products">商品</option><option value="skus">SKU</option><option value="inventory">库存</option><option value="orders">订单</option><option value="order_items">订单明细</option><option value="refunds">退款</option><option value="shipments">物流</option><option value="settlements">结算</option><option value="daily_metrics">经营日指标</option><option value="ad_accounts">广告账户</option><option value="ad_entities">广告实体</option><option value="ad_daily_metrics">广告日指标</option><option value="ad_balance_snapshots">广告余额</option><option value="ad_finance_transactions">广告财务流水</option></select></label>
+  {% endif %}
+  {% if include_search %}<label class="integration-filter-search">{% if panel == 'ads' %}广告实体搜索（不影响指标）{% else %}安全搜索{% endif %}<input name="search" type="search" placeholder="外部 ID、商品标题或 SKU"></label>{% endif %}
+  {% if panel != 'overview' %}<label>每页<select name="per_page"><option value="50">50 条</option><option value="100">100 条</option><option value="200">200 条</option></select></label>{% endif %}
+  <button class="btn btn-soft btn-sm" type="reset">重置</button>
+  {% if panel == 'orders' %}<button class="btn btn-soft btn-sm" type="button" data-export data-export-resource="orders">导出当前订单</button>
+  {% elif panel == 'products' %}<button class="btn btn-soft btn-sm" type="button" data-export data-export-resource="products">导出当前商品</button>
+  {% elif panel == 'refunds' %}<button class="btn btn-soft btn-sm" type="button" data-export data-export-resource="refunds">导出当前退款</button>
+  {% elif panel == 'ads' %}<button class="btn btn-soft btn-sm" type="button" data-export data-export-resource="ad_entities">导出广告实体</button><button class="btn btn-soft btn-sm" type="button" data-export data-export-resource="ad_daily_metrics">导出广告指标</button>
+  {% else %}<button class="btn btn-soft btn-sm" type="button" disabled title="该视图暂无安全明细导出">当前视图不可导出</button>{% endif %}
+  <a class="btn btn-soft btn-sm integration-download-link" data-export-download hidden>下载导出文件</a>
+</form>
+{%- endmacro %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>运营数据中台 · 法采新媒体运营 Agent</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=nav-20260714-operations">
+  <link rel="stylesheet" href="/static/css/api-connections.css?v=20260714-split">
+  <script src="/static/vendor/lucide.min.js"></script>
+  <script src="/static/js/common.js?v=tools-20260713"></script>
+</head>
+<body data-active-tab="{{ active_tab }}">
+  <nav class="nav" aria-label="运营数据中台主导航">
+    <div class="nav-inner">
+      <div class="nav-brand-group"><a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a></div>
+      <div class="nav-links">
+        <a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/creators" class="nav-link">达人工作</a><a href="/app/operations" class="nav-link on" aria-current="page">运营数据中台</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a>
+      </div>
+    </div>
+  </nav>
+
+  <main id="operationsCenter" class="integration-center">
+    <header class="integration-page-header">
+      <div><h1>运营数据中台</h1><p>集中查看店铺经营、商品、退款、广告及同步数据；连接授权请使用右下角“API接入”。</p></div>
+      <button id="operationsRefresh" class="btn btn-soft btn-sm" type="button"><i data-lucide="refresh-cw" aria-hidden="true"></i>刷新</button>
+    </header>
+
+    <div class="integration-tabs-wrap">
+      <div id="operationsTabs" class="integration-tabs" role="tablist" aria-label="运营数据视图">
+        <button id="tab-overview" type="button" role="tab" aria-selected="{{ 'true' if active_tab == 'overview' else 'false' }}" aria-controls="panel-overview" data-tab="overview"{% if active_tab != 'overview' %} tabindex="-1"{% endif %}>概览</button>
+        <button id="tab-orders" type="button" role="tab" aria-selected="{{ 'true' if active_tab == 'orders' else 'false' }}" aria-controls="panel-orders" data-tab="orders"{% if active_tab != 'orders' %} tabindex="-1"{% endif %}>订单</button>
+        <button id="tab-products" type="button" role="tab" aria-selected="{{ 'true' if active_tab == 'products' else 'false' }}" aria-controls="panel-products" data-tab="products"{% if active_tab != 'products' %} tabindex="-1"{% endif %}>商品</button>
+        <button id="tab-refunds" type="button" role="tab" aria-selected="{{ 'true' if active_tab == 'refunds' else 'false' }}" aria-controls="panel-refunds" data-tab="refunds"{% if active_tab != 'refunds' %} tabindex="-1"{% endif %}>退款</button>
+        <button id="tab-ads" type="button" role="tab" aria-selected="{{ 'true' if active_tab == 'ads' else 'false' }}" aria-controls="panel-ads" data-tab="ads"{% if active_tab != 'ads' %} tabindex="-1"{% endif %}>广告</button>
+        <button id="tab-sync-runs" type="button" role="tab" aria-selected="{{ 'true' if active_tab == 'sync-runs' else 'false' }}" aria-controls="panel-sync-runs" data-tab="sync-runs"{% if active_tab != 'sync-runs' %} tabindex="-1"{% endif %}>同步记录</button>
+      </div>
+    </div>
+
+    <section id="panel-overview" class="integration-panel" role="tabpanel" aria-labelledby="tab-overview" tabindex="0" aria-busy="false"{% if active_tab != 'overview' %} hidden{% endif %}>
+      <div class="integration-panel-heading"><div><h2>经营概览</h2><p>店铺实际成交和广告归因口径严格分开，不做相加。</p></div></div>
+      {{ data_filters('overview', false) }}
+      <div class="integration-kpi-grid"><article><span>实际成交</span><strong data-kpi="actual_sales">—</strong></article><article><span>订单数</span><strong data-kpi="order_count">—</strong></article><article><span>退款金额</span><strong data-kpi="refund_amount">—</strong></article><article><span>客单价</span><strong data-kpi="average_order_value">—</strong></article><article><span>广告归因成交</span><strong data-kpi="ad_attributed_sales">—</strong></article><article><span>广告消耗</span><strong data-kpi="ad_spend">—</strong></article></div>
+      <div class="integration-panel-state" data-panel-state role="status" aria-live="polite">选择筛选条件后读取数据。</div>
+      <div class="integration-table-wrap" data-table-wrap role="region" aria-label="经营概览每日趋势，可横向滚动" tabindex="0" hidden><table><caption>经营概览每日趋势</caption><thead><tr><th scope="col">日期</th><th scope="col">实际成交</th><th scope="col">订单数</th><th scope="col">广告归因成交</th><th scope="col">广告消耗</th></tr></thead><tbody data-table-body></tbody></table></div>
+    </section>
+
+    <section id="panel-orders" class="integration-panel" role="tabpanel" aria-labelledby="tab-orders" tabindex="0" aria-busy="false"{% if active_tab != 'orders' %} hidden{% endif %}>
+      <div class="integration-panel-heading"><div><h2>订单数据</h2><p>只展示安全订单标识、业务状态、金额与时间，不请求或展示买家隐私。</p></div></div>{{ data_filters('orders') }}
+      <div class="integration-panel-state" data-panel-state role="status" aria-live="polite">等待读取订单。</div><div class="integration-table-wrap" data-table-wrap role="region" aria-label="安全订单列表，可横向滚动" tabindex="0" hidden><table><caption>安全订单列表</caption><thead><tr><th scope="col">平台订单 ID</th><th scope="col">平台</th><th scope="col">状态</th><th scope="col">实付金额</th><th scope="col">业务时间</th></tr></thead><tbody data-table-body></tbody></table></div><div class="integration-pagination" data-pagination hidden><button class="btn btn-soft btn-sm" type="button" data-page="prev">上一页</button><span data-page-status></span><button class="btn btn-soft btn-sm" type="button" data-page="next">下一页</button></div>
+    </section>
+
+    <section id="panel-products" class="integration-panel" role="tabpanel" aria-labelledby="tab-products" tabindex="0" aria-busy="false"{% if active_tab != 'products' %} hidden{% endif %}>
+      <div class="integration-panel-heading"><div><h2>商品数据</h2><p>同步平台商品，并由运营员或管理员明确关联内部产品知识库。</p></div></div>{{ data_filters('products') }}
+      <div class="integration-panel-state" data-panel-state role="status" aria-live="polite">等待读取商品。</div><div class="integration-table-wrap" data-table-wrap role="region" aria-label="平台商品列表，可横向滚动" tabindex="0" hidden><table><caption>平台商品列表</caption><thead><tr><th scope="col">平台商品 ID</th><th scope="col">商品标题</th><th scope="col">状态</th><th scope="col">内部产品</th><th scope="col">操作</th></tr></thead><tbody data-table-body></tbody></table></div><div class="integration-pagination" data-pagination hidden><button class="btn btn-soft btn-sm" type="button" data-page="prev">上一页</button><span data-page-status></span><button class="btn btn-soft btn-sm" type="button" data-page="next">下一页</button></div>
+    </section>
+
+    <section id="panel-refunds" class="integration-panel" role="tabpanel" aria-labelledby="tab-refunds" tabindex="0" aria-busy="false"{% if active_tab != 'refunds' %} hidden{% endif %}>
+      <div class="integration-panel-heading"><div><h2>退款数据</h2><p>退款金额和完成时间独立统计，不暴露收件或身份信息。</p></div></div>{{ data_filters('refunds') }}
+      <div class="integration-panel-state" data-panel-state role="status" aria-live="polite">等待读取退款。</div><div class="integration-table-wrap" data-table-wrap role="region" aria-label="退款列表，可横向滚动" tabindex="0" hidden><table><caption>退款列表</caption><thead><tr><th scope="col">退款 ID</th><th scope="col">订单 ID</th><th scope="col">状态</th><th scope="col">退款金额</th><th scope="col">业务时间</th></tr></thead><tbody data-table-body></tbody></table></div><div class="integration-pagination" data-pagination hidden><button class="btn btn-soft btn-sm" type="button" data-page="prev">上一页</button><span data-page-status></span><button class="btn btn-soft btn-sm" type="button" data-page="next">下一页</button></div>
+    </section>
+
+    <section id="panel-ads" class="integration-panel" role="tabpanel" aria-labelledby="tab-ads" tabindex="0" aria-busy="false"{% if active_tab != 'ads' %} hidden{% endif %}>
+      <div class="integration-panel-heading"><div><h2>广告数据</h2><p>广告实体与指标分别读取，避免不同层级指标重复汇总。</p></div></div>{{ data_filters('ads') }}
+      <div class="integration-panel-state" data-panel-state role="status" aria-live="polite">等待读取广告数据。</div><div class="integration-table-wrap" data-ad-entities-wrap role="region" aria-label="广告实体列表，可横向滚动" tabindex="0" hidden><table><caption>广告实体</caption><thead><tr><th scope="col">实体 ID</th><th scope="col">层级</th><th scope="col">名称</th><th scope="col">状态</th></tr></thead><tbody data-ad-entities-body></tbody></table></div><p class="integration-filter-note">广告实体搜索仅筛选上方实体；下方广告指标及其导出不受搜索词影响。</p><div class="integration-table-wrap" data-ad-metrics-wrap role="region" aria-label="广告指标列表，可横向滚动" tabindex="0" hidden><table><caption>广告指标</caption><thead><tr><th scope="col">日期</th><th scope="col">实体 ID</th><th scope="col">广告消耗</th><th scope="col">广告归因成交</th><th scope="col">转化数</th></tr></thead><tbody data-ad-metrics-body></tbody></table></div><div class="integration-pagination" data-pagination hidden><button class="btn btn-soft btn-sm" type="button" data-page="prev">上一页</button><span data-page-status></span><button class="btn btn-soft btn-sm" type="button" data-page="next">下一页</button></div>
+    </section>
+
+    <section id="panel-sync-runs" class="integration-panel" role="tabpanel" aria-labelledby="tab-sync-runs" tabindex="0" aria-busy="false"{% if active_tab != 'sync-runs' %} hidden{% endif %}>
+      <div class="integration-panel-heading"><div><h2>同步记录</h2><p>只读查看任务窗口、来源、进度和脱敏错误摘要；重试和手动同步请前往 API 接入。</p></div></div>{{ data_filters('sync-runs', false) }}
+      <div class="integration-panel-state" data-panel-state role="status" aria-live="polite">等待读取同步记录。</div><div class="integration-table-wrap" data-table-wrap role="region" aria-label="同步任务列表，可横向滚动" tabindex="0" hidden><table><caption>同步任务列表</caption><thead><tr><th scope="col">任务 ID</th><th scope="col">连接</th><th scope="col">资源</th><th scope="col">来源</th><th scope="col">状态</th><th scope="col">进度</th><th scope="col">记录计数</th><th scope="col">错误摘要</th><th scope="col">时间窗口</th></tr></thead><tbody data-table-body></tbody></table></div><div class="integration-pagination" data-pagination hidden><button class="btn btn-soft btn-sm" type="button" data-page="prev">上一页</button><span data-page-status></span><button class="btn btn-soft btn-sm" type="button" data-page="next">下一页</button></div>
+    </section>
+  </main>
+
+  <dialog id="productLinkDialog" class="integration-dialog" aria-labelledby="productLinkDialogTitle">
+    <form method="dialog" data-product-link-form><div class="integration-dialog-header"><div><h2 id="productLinkDialogTitle">关联内部产品</h2><p data-product-link-name></p></div><button class="integration-dialog-close" type="button" data-dialog-close aria-label="关闭">×</button></div><input name="commerce_product_id" type="hidden"><label>搜索产品<input name="product_search" type="search" placeholder="输入内部产品名称" autocomplete="off"></label><button class="btn btn-soft btn-sm" type="button" data-product-search>搜索</button><label>选择内部产品<select name="product_id" required><option value="">请先搜索</option></select></label><div class="integration-dialog-status" role="status" aria-live="polite" data-product-dialog-status></div><div class="integration-dialog-actions"><button class="btn btn-soft" type="button" data-product-unlink hidden>解除关联</button><button class="btn btn-pri" type="submit">确认关联</button></div></form>
+  </dialog>
+
+  <script src="/static/js/operations.js?v=20260714-split"></script>
+</body>
+</html>

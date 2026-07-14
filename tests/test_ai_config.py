@@ -1344,7 +1344,7 @@ class AiConfigPageTests(unittest.TestCase):
             self.assertNotIn(">AI配置</a>", nav_links.group("body"), name)
             self.assertRegex(nav_links.group("body"), r'href="/app/search"[^>]*>检索</a>\s*$', name)
 
-    def test_non_config_pages_have_bottom_right_ai_config_button(self):
+    def test_common_tools_source_replaces_hard_coded_ai_config_buttons(self):
         non_config_pages = [
             "index.html",
             "rewrite.html",
@@ -1357,13 +1357,13 @@ class AiConfigPageTests(unittest.TestCase):
         ]
         for name in non_config_pages:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
-            self.assertIn('class="ai-config-fab"', page, name)
-            self.assertIn('href="/app/ai-config"', page, name)
-            self.assertIn('aria-label="打开 AI配置"', page, name)
-            self.assertIn('data-lucide="settings"', page, name)
+            self.assertNotIn('class="ai-config-fab"', page, name)
+            self.assertIn('/static/js/common.js?v=tools-20260713', page, name)
 
         config_page = (ROOT / "templates" / "ai_config.html").read_text(encoding="utf-8-sig")
         self.assertNotIn('class="ai-config-fab"', config_page)
+        common = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8-sig")
+        self.assertIn("{label: 'AI配置', href: '/app/ai-config', icon: 'settings'}", common)
 
 if __name__ == "__main__":
     unittest.main()

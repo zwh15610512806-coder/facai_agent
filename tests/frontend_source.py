@@ -11,6 +11,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 _PAGE_ASSETS = {
+    "api_connections.html": (
+        "static/css/api-connections.css",
+        "static/js/api-connections.js",
+    ),
+    "operations.html": (
+        "static/css/api-connections.css",
+        "static/js/operations.js",
+    ),
     "inspiration.html": ("static/css/inspiration.css", "static/js/inspiration.js"),
     "templates.html": ("static/css/templates-library.css", "static/js/templates-library.js"),
     "search.html": ("static/css/search.css", "static/js/search.js"),

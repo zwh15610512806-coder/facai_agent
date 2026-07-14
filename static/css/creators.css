@@ -556,8 +556,6 @@
 }
 
 @media (max-width: 768px) {
-  .creator-page-body .data-import-fab,
-  .creator-page-body .ai-config-fab { display: none; }
 
   .creator-mobile-header {
     display: flex;
