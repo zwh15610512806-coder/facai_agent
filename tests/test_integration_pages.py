@@ -120,7 +120,7 @@ class IntegrationPageTests(unittest.TestCase):
         self.assertIn("电商 API 接入中心", response.text)
         self.assertIn("连接器尚未配置", response.text)
         self.assertIn('id="integrationLogout"', response.text)
-        self.assertIn("/static/js/common.js?v=tools-20260713", response.text)
+        self.assertIn("/static/js/common.js?v=tools-20260714-all-pages", response.text)
         self.assertNotIn("FACAI_INTEGRATIONS_MASTER_KEY", response.text)
         self.assertNotIn("ciphertext", response.text.lower())
         self.assertNotIn("access_token", response.text.lower())

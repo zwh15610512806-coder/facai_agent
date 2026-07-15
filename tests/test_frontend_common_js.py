@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendCommonJsTests(unittest.TestCase):
+    SHARED_TOOLS_ASSET_VERSION = "tools-20260714-all-pages"
     TOOL_TEMPLATES = [
         "index.html",
         "rewrite.html",
@@ -17,6 +18,8 @@ class FrontendCommonJsTests(unittest.TestCase):
         "search.html",
         "inspiration.html",
         "ai_config.html",
+        "operations.html",
+        "api_connections.html",
     ]
 
     def test_common_js_exposes_shared_helpers(self):
@@ -44,7 +47,9 @@ class FrontendCommonJsTests(unittest.TestCase):
     def test_all_business_pages_include_the_tools_common_js(self):
         for name in self.TOOL_TEMPLATES:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
-            self.assertIn('/static/js/common.js?v=tools-20260713', page, name)
+            version = self.SHARED_TOOLS_ASSET_VERSION
+            self.assertIn(f'/static/css/style.css?v={version}', page, name)
+            self.assertIn(f'/static/js/common.js?v={version}', page, name)
             self.assertNotIn('data-import-fab', page, name)
             self.assertNotIn('ai-config-fab', page, name)
 

@@ -11,7 +11,7 @@ from tests.frontend_source import read_page_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NAV_STYLE_VERSION = "nav-20260710-hardening"
+NAV_STYLE_VERSION = "tools-20260714-all-pages"
 
 
 class InspirationPageTests(unittest.TestCase):
@@ -380,7 +380,7 @@ class InspirationNavigationTests(unittest.TestCase):
             self.assertNotIn(">数据导入</a>", nav_links.group("body"), name)
             self.assertNotIn('class="data-import-fab"', page, name)
             self.assertNotIn('class="ai-config-fab"', page, name)
-            self.assertIn('/static/js/common.js?v=tools-20260713', page, name)
+            self.assertIn('/static/js/common.js?v=tools-20260714-all-pages', page, name)
 
     def test_data_import_nav_button_uses_fresh_shared_css_version(self):
         pages = [

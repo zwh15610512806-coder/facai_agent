@@ -16,6 +16,8 @@ const MAIN_PAGES = [
   '/app/api-connections/login',
 ];
 
+const TOOL_PAGES = MAIN_PAGES.filter(path => path !== '/app/api-connections/login');
+
 function base64url(value) {
   return Buffer.from(value).toString('base64url');
 }
@@ -78,6 +80,13 @@ test('mobile AI work opens with chat visible, drawer closed and composer on scre
 
 test('tools launcher is one accessible disclosure and filters the current tool', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
+
+  for (const path of TOOL_PAGES) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.facai-tools-launcher'), `${path} should render tools`).toHaveCount(1);
+    await expect(page.locator('#facaiToolsToggle'), `${path} tools should be visible`).toBeVisible();
+  }
+
   await page.goto('/app/generate', { waitUntil: 'domcontentloaded' });
 
   await expect(page.locator('.facai-tools-launcher')).toHaveCount(1);
@@ -150,4 +159,5 @@ test('API connections login is public and a signed admin session opens the prote
   await expect(page.locator('.provider-connection-row')).toHaveCount(4);
   await expect(page.locator('#integrationLogout')).toBeVisible();
   await expect(page.getByText('功能框架已就绪，连接器尚未配置')).toBeVisible();
+  await expect(page.locator('#facaiToolsToggle')).toBeVisible();
 });
