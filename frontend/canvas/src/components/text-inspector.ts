@@ -3,6 +3,7 @@ import {
   patchTextContentWithoutReflow,
   patchTextLineHeight,
 } from "../domain/text-layout";
+import { canvasUserMessage } from "../domain/user-message";
 
 export interface TextInspectorState {
   layers: TextSnapshot[];
@@ -88,9 +89,10 @@ export function createTextInspector({ onSelect, onUpdate }: TextInspectorOptions
         contentFeedback.textContent = "";
       } catch (error) {
         content.value = selected.content;
-        contentFeedback.textContent = error instanceof Error
-          ? error.message
-          : "文字内容更新失败";
+        contentFeedback.textContent = canvasUserMessage(
+          error instanceof Error ? error.message : null,
+          "文字内容更新失败",
+        );
       }
     });
     add("内容", content);

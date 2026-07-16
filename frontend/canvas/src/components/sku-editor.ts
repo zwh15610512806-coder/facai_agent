@@ -4,6 +4,7 @@ import type {
   SaveResult,
 } from "../api/client";
 import type { SkusApi, SkuUpdatePatch } from "../api/skus";
+import { canvasUserMessage } from "../domain/user-message";
 
 export interface SkuReferenceOption {
   id: string;
@@ -235,7 +236,7 @@ export function createSkuEditor({ api, onSnapshot }: SkuEditorOptions): SkuEdito
     if (result.kind === "conflict") {
       feedback.textContent = `版本冲突（服务器版本 ${result.currentRevision}），未覆盖本地编辑`;
     } else {
-      feedback.textContent = result.message;
+      feedback.textContent = canvasUserMessage(result.message, "SKU 操作失败，请重试");
     }
     updateControlDisabledState();
   };

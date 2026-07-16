@@ -2,6 +2,7 @@ import { expect, test, vi } from "vitest";
 
 import {
   PINNED_CANVAS_FONT,
+  digestSha256,
   lineTopFromAnchor,
   loadPinnedCanvasFont,
   patchTextLineHeight,
@@ -87,4 +88,15 @@ test("font bytes are digest verified before the exact font is loaded", async () 
 
   expect(fetcher).toHaveBeenCalledWith(PINNED_CANVAS_FONT.url, { cache: "force-cache" });
   expect(order).toEqual(["digest", "register"]);
+});
+
+test("font digest falls back when the LAN HTTP origin has no Web Crypto", async () => {
+  vi.stubGlobal("crypto", undefined);
+  try {
+    await expect(digestSha256(new Uint8Array([1, 2, 3]).buffer)).resolves.toBe(
+      "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

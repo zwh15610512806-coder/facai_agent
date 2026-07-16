@@ -71,6 +71,33 @@ class CanvasStorageShareRetryTests(unittest.TestCase):
         self.assertEqual(19, sleep.call_count)
         sleep.assert_any_call(0.19)
 
+    def test_publish_retries_transient_windows_share_violations(self) -> None:
+        source_parent = storage._PinnedEntry(
+            Path("C:/canvas/tmp"), 11, (1, 1), 1, 0, 0, 0, True
+        )
+        destination_parent = storage._PinnedEntry(
+            Path("C:/canvas/generated"), 12, (1, 2), 2, 0, 0, 0, True
+        )
+        pin = storage._PinnedEntry(
+            Path("C:/canvas/tmp/result.partial"), 13, (1, 3), 3, 0, 0, 4, False,
+            parent=source_parent,
+            name="result.partial",
+        )
+
+        with (
+            patch.object(storage.os, "name", "nt"),
+            patch("services.canvas.storage.time.sleep") as sleep,
+            patch("services.canvas.storage._NtSetInformationFile", side_effect=[-1, 0]) as rename,
+            patch("services.canvas.storage._RtlNtStatusToDosError", return_value=32),
+        ):
+            storage._rename_pinned_file_no_replace(pin, destination_parent, "result.verified")
+
+        self.assertEqual(rename.call_count, 2)
+        sleep.assert_called_once_with(0.01)
+        self.assertEqual(pin.path, Path("C:/canvas/generated/result.verified"))
+        self.assertIs(pin.parent, destination_parent)
+        self.assertEqual(pin.name, "result.verified")
+
 
 if __name__ == "__main__":
     unittest.main()

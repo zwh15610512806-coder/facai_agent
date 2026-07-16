@@ -661,11 +661,13 @@ async function expectOpaqueCutoutFidelity({
 
 
 async function uploadThroughUi(page, projectId, name, buffer) {
+  const input = page.getByTestId('canvas-asset-uploader').locator('input[type="file"]');
+  await expect(input).toBeEnabled();
   const responsePromise = page.waitForResponse((response) => (
     response.request().method() === 'POST'
       && new URL(response.url()).pathname === `${projectUrl(projectId)}/assets`
   ));
-  await page.getByRole('button', { name: '上传主商品图片' }).setInputFiles({
+  await input.setInputFiles({
     name,
     mimeType: 'image/png',
     buffer,
@@ -1008,6 +1010,7 @@ test('failed cutout retries the same operation without mutating source or saved 
   });
   expect(succeeded.outputAssetId).toEqual(expect.any(String));
   await expect(page.getByTestId('canvas-cutout-status')).toHaveText('素材已就绪');
+  await page.getByRole('tab', { name: '素材' }).click();
   await expect(page.getByAltText('抠图预览')).toBeVisible();
 
   const finalSnapshot = await (await request.get(projectUrl(projectId))).json();
@@ -1401,6 +1404,7 @@ test('native EventSource reconnects with Last-Event-ID and accepts a retention-g
   await expect(page.getByTestId('canvas-cutout-status')).toHaveText('素材已就绪', {
     timeout: 20_000,
   });
+  await page.getByRole('tab', { name: '素材' }).click();
   await expect(page.getByAltText('抠图预览')).toBeVisible();
 
   const reconnectAudit = await runtimeAudit(request);

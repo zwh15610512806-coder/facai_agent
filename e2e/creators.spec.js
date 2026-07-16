@@ -51,9 +51,11 @@ test('creator BD workbench completes profile, deal, sample and export flow', asy
   const creator = await creatorResponse.json();
   const creatorCard = page.locator(`[data-creator-id="${creator.id}"]`);
   await expect(creatorCard).toContainText(`E2E烘焙达人-${suffix}`);
+  await expect(page.locator('#creatorDetailBody')).toContainText(`E2E烘焙达人-${suffix}`);
 
   await page.locator('.creator-quick-actions [data-action="new-followup"]').click();
   const followupForm = page.locator('#followupForm');
+  await expect(followupForm).toBeVisible();
   await followupForm.locator('[name="method"]').selectOption('wechat');
   await followupForm.locator('[name="content"]').fill('确认寄样并讨论直播排期');
   await followupForm.locator('[name="result"]').fill('同意寄样');
@@ -118,6 +120,10 @@ test('creator BD workbench completes profile, deal, sample and export flow', asy
   const addressResponse = await addressDone;
   expect(addressResponse.status()).toBe(201);
   const address = await addressResponse.json();
+  // The mutation response precedes the detail reload that refreshes
+  // state.selected. Wait for that committed address to reach the visible
+  // creator snapshot before opening a dialog that derives its options from it.
+  await expect(page.locator(`[data-address-id="${address.id}"]`)).toBeVisible();
 
   await page.locator('.creator-quick-actions [data-action="new-sample"]').click();
   const sampleForm = page.locator('#sampleOrderForm');

@@ -97,14 +97,16 @@ async def lifespan(app: FastAPI):
         from services.task_queue import start_task_worker
         start_task_worker()
         task_worker_started = True
-        import socket
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            lan_ip = s.getsockname()[0]
-            s.close()
-        except OSError:
-            lan_ip = ""
+        lan_ip = ""
+        if os.environ.get("FACAI_SKIP_LAN_IP_PROBE") != "1":
+            import socket
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                lan_ip = s.getsockname()[0]
+                s.close()
+            except OSError:
+                lan_ip = ""
         print(f"OK {APP_TITLE} v{APP_VERSION}")
         print("   http://localhost:8001/app")
         print(f"   http://{lan_ip}:8001/app")

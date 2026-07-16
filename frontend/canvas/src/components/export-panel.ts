@@ -8,6 +8,7 @@ import type { ResultVersion } from "../api/generations";
 import type { AssetOperation, AssetOperationProgress } from "../domain/assets";
 import type { CanvasProjectState, OutputBoard } from "../domain/types";
 import type { FlushResult } from "../controllers/autosave-controller";
+import { canvasUserMessage } from "../domain/user-message";
 
 export interface ExportPanelOptions {
   api: ExportsApi;
@@ -108,7 +109,7 @@ export function createExportPanel(options: ExportPanelOptions): ExportPanel {
       case "cancelled": return "导出任务已取消";
       case "failed":
       case "interrupted":
-        return operation.safeError?.message ?? "导出失败，请重试";
+        return canvasUserMessage(operation.safeError?.message, "导出失败，请重试");
     }
   };
 
@@ -291,7 +292,7 @@ export function createExportPanel(options: ExportPanelOptions): ExportPanel {
     if (disposed || requestEpoch !== epoch || options.getProjectId() !== projectId) return;
     if (!flushed.ok) {
       busy = false;
-      feedback = flushed.kind === "conflict" ? "项目版本有冲突，请刷新后重试" : flushed.message;
+      feedback = flushed.kind === "conflict" ? "项目版本有冲突，请刷新后重试" : canvasUserMessage(flushed.message, "项目保存失败，请重试");
       render();
       return;
     }
@@ -339,7 +340,7 @@ export function createExportPanel(options: ExportPanelOptions): ExportPanel {
     abort = null;
     busy = false;
     if (!result.ok) {
-      feedback = result.message;
+      feedback = canvasUserMessage(result.message, "导出请求失败，请重试");
       render();
       if (result.kind === "unauthorized") {
         options.onUnauthorized(() => { void submitExport(); });

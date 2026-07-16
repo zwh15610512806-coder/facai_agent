@@ -1,5 +1,8 @@
 const { execFileSync } = require('node:child_process');
+const zlib = require('node:zlib');
 const { test, expect } = require('@playwright/test');
+
+test.setTimeout(60_000);
 
 const createdProjectIds = new Set();
 
@@ -9,6 +12,53 @@ function projectApiUrl(projectId) {
 
 function projectEventsUrl(projectId) {
   return `${projectApiUrl(projectId)}/events`;
+}
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const name = Buffer.from(type, 'ascii');
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(crc32(Buffer.concat([name, data])));
+  return Buffer.concat([length, name, data, checksum]);
+}
+
+function transparentProductPng() {
+  const width = 8;
+  const height = 8;
+  const rows = [];
+  for (let y = 0; y < height; y += 1) {
+    const row = Buffer.alloc(1 + width * 4);
+    for (let x = 0; x < width; x += 1) {
+      const offset = 1 + x * 4;
+      const product = x >= 2 && x <= 5 && y >= 2 && y <= 5;
+      row[offset] = product ? 26 : 0;
+      row[offset + 1] = product ? 92 : 0;
+      row[offset + 2] = product ? 180 : 0;
+      row[offset + 3] = product ? 255 : 0;
+    }
+    rows.push(row);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', zlib.deflateSync(Buffer.concat(rows), { level: 9 })),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
 function requestPathMatches(request, pathname) {
@@ -98,6 +148,24 @@ async function createProjectThroughUi(page, name) {
   createdProjectIds.add(snapshot.project.id);
   await expect(page).toHaveURL(new RegExp(`/app/canvas/${snapshot.project.id}$`));
   return snapshot;
+}
+
+async function uploadMainProduct(page, projectId) {
+  const input = page.getByTestId('canvas-asset-uploader').locator('input[type="file"]');
+  await expect(input).toBeEnabled();
+  const responsePromise = page.waitForResponse(response => (
+    response.request().method() === 'POST'
+      && new URL(response.url()).pathname === `${projectApiUrl(projectId)}/assets`
+  ));
+  await input.setInputFiles({
+    name: 'foundation-product.png', mimeType: 'image/png', buffer: transparentProductPng(),
+  });
+  const response = await responsePromise;
+  expect(response.status()).toBe(201);
+  await expect(page.getByRole('tab', { name: '生成' })).toBeVisible();
+  await expect(page.getByTestId('canvas-stage-empty')).toBeHidden();
+  await expect(page.getByTestId('canvas-save-status')).toHaveAttribute('data-state', 'saved');
+  return response.json();
 }
 
 async function expectNoHorizontalOverflow(page) {
@@ -195,6 +263,8 @@ test('project lifecycle supports rename, search, switch, archive, restore and de
   const renameResponse = page.waitForResponse(response =>
     responseMatches(response, 'PATCH', projectApiUrl(betaId), 200),
   );
+  await projectRow(page, betaId).locator('summary').click();
+  await projectRow(page, betaId).getByTestId('canvas-project-rename-start').click();
   await projectRow(page, betaId).getByTestId('canvas-project-rename').fill('Beta 已重命名');
   await projectRow(page, betaId).getByTestId('canvas-project-rename-save').click();
   const renamed = await (await renameResponse).json();
@@ -234,6 +304,7 @@ test('project lifecycle supports rename, search, switch, archive, restore and de
   const archiveResponse = page.waitForResponse(response =>
     responseMatches(response, 'POST', `${projectApiUrl(alphaId)}/archive`, 200),
   );
+  await projectRow(page, alphaId).locator('summary').click();
   await projectRow(page, alphaId).getByTestId('canvas-project-archive').click();
   const archived = await (await archiveResponse).json();
   expect(archived.project.status).toBe('archived');
@@ -248,6 +319,7 @@ test('project lifecycle supports rename, search, switch, archive, restore and de
   });
   await page.getByRole('checkbox', { name: '显示已归档' }).check();
   await archivedListResponse;
+  await projectRow(page, alphaId).locator('summary').click();
   await expect(projectRow(page, alphaId).getByTestId('canvas-project-restore')).toBeVisible();
 
   const restoreResponse = page.waitForResponse(response =>
@@ -256,8 +328,10 @@ test('project lifecycle supports rename, search, switch, archive, restore and de
   await projectRow(page, alphaId).getByTestId('canvas-project-restore').click();
   const restored = await (await restoreResponse).json();
   expect(restored.project.status).toBe('active');
+  await projectRow(page, alphaId).locator('summary').click();
   await expect(projectRow(page, alphaId).getByTestId('canvas-project-archive')).toBeVisible();
 
+  await projectRow(page, betaId).locator('summary').click();
   await projectRow(page, betaId).getByTestId('canvas-project-delete').click();
   await expect(page.getByRole('dialog', { name: '确认删除项目' })).toBeVisible();
   const deleteResponse = page.waitForResponse(response =>
@@ -365,6 +439,8 @@ test('complete-set and advanced round-trip preserves prompt, nodes and layout af
   const projectId = created.project.id;
   await page.goto(`/app/canvas/${projectId}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('canvas-workspace')).toHaveAttribute('data-editable', 'true');
+  await uploadMainProduct(page, projectId);
+  await page.getByRole('tab', { name: '生成' }).click();
 
   const savedResponse = page.waitForResponse(response =>
     responseMatches(response, 'PUT', `${projectApiUrl(projectId)}/state`, 200),
@@ -429,13 +505,16 @@ test('a real stale revision returns 409 and leaves the local edit in conflict', 
   await page.route(/\/api\/canvas\/projects\/[^/]+\/events(?:\?|$)/, route => route.abort());
   await page.goto(`/app/canvas/${projectId}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('canvas-workspace')).toHaveAttribute('data-editable', 'true');
+  await uploadMainProduct(page, projectId);
+  await page.getByRole('tab', { name: '生成' }).click();
 
+  const beforeExternal = await (await request.get(projectApiUrl(projectId))).json();
   const external = await request.patch(projectApiUrl(projectId), {
-    data: { revision: created.revision, name: '外部已更新项目' },
+    data: { revision: beforeExternal.revision, name: '外部已更新项目' },
   });
   expect(external.status()).toBe(200);
   const externalSnapshot = await external.json();
-  expect(externalSnapshot.revision).toBe(created.revision + 1);
+  expect(externalSnapshot.revision).toBe(beforeExternal.revision + 1);
 
   const staleSave = page.waitForResponse(response =>
     responseMatches(response, 'PUT', `${projectApiUrl(projectId)}/state`, 409),
@@ -460,7 +539,6 @@ test('a real stale revision returns 409 and leaves the local edit in conflict', 
 
 for (const viewportCase of [
   { name: 'desktop', width: 1440, height: 900 },
-  { name: 'mobile', width: 390, height: 844 },
 ]) {
   test(`${viewportCase.name} pan and zoom persist without document overflow`, async ({ page, request }) => {
     await page.setViewportSize({ width: viewportCase.width, height: viewportCase.height });
@@ -469,6 +547,7 @@ for (const viewportCase of [
     await page.goto(`/app/canvas/${projectId}`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('canvas-workspace')).toHaveAttribute('data-editable', 'true');
     await expectNoHorizontalOverflow(page);
+    await uploadMainProduct(page, projectId);
 
     const stageBox = await page.getByTestId('canvas-stage').boundingBox();
     expect(stageBox).not.toBeNull();
@@ -503,5 +582,49 @@ for (const viewportCase of [
     expect(reloaded.ok()).toBeTruthy();
     expect((await reloaded.json()).project.layoutState.viewport).toEqual(viewport);
     await expectNoHorizontalOverflow(page);
+  });
+}
+
+test('1100px uses accessible project and inspector drawers without horizontal overflow', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1100, height: 820 });
+  const created = await createProjectThroughApi(request, '抽屉布局项目');
+  const projectId = created.project.id;
+  await page.goto(`/app/canvas/${projectId}`, { waitUntil: 'domcontentloaded' });
+  await expectNoHorizontalOverflow(page);
+
+  const projectsToggle = page.getByTestId('canvas-toggle-projects');
+  await expect(projectsToggle).toBeVisible();
+  await projectsToggle.click();
+  await expect(page.getByTestId('canvas-workspace')).toHaveAttribute('data-projects-open', 'true');
+  await expect(page.getByTestId('canvas-project-sidebar')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('canvas-workspace')).toHaveAttribute('data-projects-open', 'false');
+  await expect(projectsToggle).toBeFocused();
+
+  await uploadMainProduct(page, projectId);
+  const inspectorToggle = page.getByTestId('canvas-toggle-inspector');
+  await inspectorToggle.click();
+  await expect(page.getByTestId('canvas-workspace')).toHaveAttribute('data-inspector-open', 'true');
+  await expect(page.getByTestId('canvas-properties')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+for (const viewportCase of [
+  { name: 'tablet gate', width: 800, height: 900 },
+  { name: 'mobile gate', width: 390, height: 844 },
+]) {
+  test(`${viewportCase.name} shows only the desktop guidance and restores the project after resize`, async ({ page, request }) => {
+    await page.setViewportSize({ width: viewportCase.width, height: viewportCase.height });
+    const created = await createProjectThroughApi(request, `${viewportCase.name} 项目`);
+    await page.goto(`/app/canvas/${created.project.id}`, { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('heading', { name: '请使用桌面端打开产品视觉画布' })).toBeVisible();
+    await expect(page.getByRole('link', { name: '返回 AI 工作台' })).toBeVisible();
+    await expect(page.getByTestId('canvas-workspace')).toBeHidden();
+    await expectNoHorizontalOverflow(page);
+
+    await page.setViewportSize({ width: 1100, height: 820 });
+    await expect(page.getByTestId('canvas-workspace')).toBeVisible();
+    await expect(page.getByTestId('canvas-workspace')).toHaveAttribute('data-active-project-id', created.project.id);
   });
 }

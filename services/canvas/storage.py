@@ -1027,18 +1027,26 @@ def _rename_pinned_file_no_replace(
                 len(encoded_name),
             )
             io_status = _IoStatusBlock()
-            status = _NtSetInformationFile(
-                pin.handle,
-                ctypes.byref(io_status),
-                buffer,
-                buffer_size,
-                _FILE_RENAME_INFORMATION_CLASS,
-            )
-            if status < 0:
+            for attempt in range(20):
+                status = _NtSetInformationFile(
+                    pin.handle,
+                    ctypes.byref(io_status),
+                    buffer,
+                    buffer_size,
+                    _FILE_RENAME_INFORMATION_CLASS,
+                )
+                if status >= 0:
+                    break
                 error = int(_RtlNtStatusToDosError(status))
                 if error in {80, 183}:
                     _reject("canvas_storage_collision", "canvas publish name already exists")
-                raise ctypes.WinError(error)
+                if error not in {32, 33} or attempt == 19:
+                    raise ctypes.WinError(error)
+                # Defender and preview readers can briefly retain a compatible
+                # file handle after the write is flushed. Keep the publish
+                # no-replace contract, but allow that handle to drain before a
+                # durable Provider result is classified as unknown.
+                time.sleep(0.01 * (attempt + 1))
         else:  # pragma: no cover - exercised on POSIX deployments
             os.link(
                 pin.name,

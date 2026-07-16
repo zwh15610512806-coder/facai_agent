@@ -70,8 +70,7 @@ function rightRotate(value: number, amount: number): number {
   return (value >>> amount) | (value << (32 - amount));
 }
 
-function sha256Hex(text: string): string {
-  const input = new TextEncoder().encode(text);
+export function sha256HexBytes(input: Uint8Array): string {
   const bitLength = input.length * 8;
   const paddedLength = Math.ceil((input.length + 9) / 64) * 64;
   const bytes = new Uint8Array(paddedLength);
@@ -137,6 +136,10 @@ function sha256Hex(text: string): string {
     hash[7] = (hash[7] + h) >>> 0;
   }
   return Array.from(hash, (value) => value.toString(16).padStart(8, "0")).join("");
+}
+
+function sha256Hex(text: string): string {
+  return sha256HexBytes(new TextEncoder().encode(text));
 }
 
 export function compositionLayoutHash(layout: CompositionLayout): string {

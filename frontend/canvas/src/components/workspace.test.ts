@@ -255,7 +255,7 @@ test("workspace renders accessible project actions and wires toolbar, status and
       return vi.fn();
     }),
     searchProjects: vi.fn(async () => undefined),
-    createProject: vi.fn(async () => ({ ok: false as const, kind: "server" as const, message: "stop" })),
+    createProject: vi.fn(async () => ({ ok: true as const })),
     switchProject: vi.fn(async () => ({ ok: true as const })),
     renameActiveProject: vi.fn(async () => ({ ok: false as const, kind: "server" as const, message: "stop" })),
     archiveProject: vi.fn(async () => ({ ok: false as const, kind: "server" as const, message: "stop" })),
@@ -307,8 +307,10 @@ test("workspace renders accessible project actions and wires toolbar, status and
   expect(root.querySelector('[data-testid="canvas-composition-inspector"]')).not.toBeNull();
   expect(root.querySelector('[role="status"]')?.textContent).toContain("离线");
   expect(root.querySelector('[data-testid="canvas-save-status"]')?.getAttribute("data-state")).toBe("offline");
-  expect(button("模型设置").disabled).toBe(true);
+  expect(root.textContent).not.toContain("模型设置");
   expect(button("导出").disabled).toBe(true);
+  expect(root.querySelector('[data-testid="canvas-stage-empty"]')?.textContent).toContain("上传");
+  expect(root.querySelector('[role="tablist"][aria-label="画布创作步骤"]')).not.toBeNull();
 
   const search = root.querySelector<HTMLInputElement>('input[aria-label="搜索项目"]');
   if (search === null) throw new Error("missing search");
@@ -321,19 +323,21 @@ test("workspace renders accessible project actions and wires toolbar, status and
   createName.value = "New Project";
   button("新建").click();
   expect(controller.createProject).toHaveBeenCalledWith("New Project");
+  await vi.waitFor(() => expect(createName.value).toBe(""));
   button("Project B").click();
   expect(controller.switchProject).toHaveBeenCalledWith("b");
 
+  root.querySelector<HTMLButtonElement>('[data-testid="canvas-project-rename-start"]')?.click();
   const rename = root.querySelector<HTMLInputElement>('input[aria-label="重命名 Project A"]');
   if (rename === null) throw new Error("missing rename input");
   rename.value = "Renamed A";
-  button("保存名称").click();
+  button("保存").click();
   expect(controller.renameActiveProject).toHaveBeenCalledWith("Renamed A");
-  button("归档").click();
+  button("归档项目").click();
   expect(controller.archiveProject).toHaveBeenCalledWith("a");
-  button("恢复").click();
+  button("恢复项目").click();
   expect(controller.restoreProject).toHaveBeenCalledWith("b");
-  button("删除").click();
+  button("删除项目").click();
   expect(controller.requestDeleteProject).toHaveBeenCalledWith("a");
 
   state = { ...state, deleteCandidateId: "a" };

@@ -9,9 +9,12 @@ export default defineConfig({
     outDir: resolve(__dirname, "static/canvas"),
     emptyOutDir: true,
     lib: {
-      entry: resolve(__dirname, "frontend/canvas/src/main.ts"),
+      entry: {
+        canvas: resolve(__dirname, "frontend/canvas/src/main.ts"),
+        "canvas-admin": resolve(__dirname, "frontend/canvas/src/admin.ts"),
+      },
       formats: ["es"],
-      fileName: () => "canvas.js",
+      fileName: (_format, entryName) => `${entryName}.js`,
       cssFileName: "canvas",
     },
     rollupOptions: {

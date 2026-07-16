@@ -1,3 +1,5 @@
+import { canvasUserMessage } from "./user-message";
+
 /** Shared public model catalog contract mirrored from the Canvas API. */
 export type ProviderAvailability =
   | "available"
@@ -87,7 +89,7 @@ export function modelCapabilityConflicts(
   const issues: string[] = [];
   const cap = model.capabilities;
   if (!model.enabled || model.availability !== "available") {
-    issues.push(model.availabilityReason ?? "模型当前不可用");
+    issues.push(canvasUserMessage(model.availabilityReason, "模型当前不可用"));
     return issues;
   }
   const quantity = requirements.quantity;

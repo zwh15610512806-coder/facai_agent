@@ -79,7 +79,8 @@ test("file picker and drag/drop validate locally, report progress, and keep serv
   await settle();
   expect(uploadAsset).toHaveBeenCalledTimes(1);
   expect(uploader.element.textContent).toContain("上传完成");
-  expect(uploader.element.textContent).toContain("source-a / working-a / preview-a");
+  expect(uploader.element.textContent).toContain("正在检测背景并准备产品素材");
+  expect(uploader.element.textContent).not.toContain("source-a / working-a / preview-a");
   expect(onUploaded).toHaveBeenCalledWith(bundle());
 
   const dropZone = uploader.element.querySelector<HTMLElement>('[data-testid="canvas-asset-dropzone"]');

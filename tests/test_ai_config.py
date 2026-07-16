@@ -1358,12 +1358,25 @@ class AiConfigPageTests(unittest.TestCase):
         for name in non_config_pages:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
             self.assertNotIn('class="ai-config-fab"', page, name)
-            self.assertIn('/static/js/common.js?v=tools-20260714-all-pages', page, name)
+            self.assertIn('/static/js/common.js?v=canvas-usability-20260716', page, name)
 
         config_page = (ROOT / "templates" / "ai_config.html").read_text(encoding="utf-8-sig")
         self.assertNotIn('class="ai-config-fab"', config_page)
         common = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8-sig")
         self.assertIn("{label: 'AI配置', href: '/app/ai-config', icon: 'settings'}", common)
+
+    def test_ai_config_separates_text_and_image_model_management(self):
+        page = (ROOT / "templates" / "ai_config.html").read_text(encoding="utf-8-sig")
+
+        self.assertIn('id="aiConfigTextTab"', page)
+        self.assertIn('>文本／对话模型</button>', page)
+        self.assertIn('id="aiConfigImageTab"', page)
+        self.assertIn('>图像生成模型</button>', page)
+        self.assertIn('id="canvas-model-admin" data-api-base="/api/canvas"', page)
+        self.assertIn('/static/canvas/canvas-admin.js?v=canvas-usability-20260716', page)
+        self.assertIn('Seedream 5.0 Pro 与任意第三方图像模型', page)
+        self.assertIn('function setConfigTab(tab)', page)
+        self.assertNotIn('value="seedream-5.0-pro" selected', page)
 
 if __name__ == "__main__":
     unittest.main()

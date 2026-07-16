@@ -90,6 +90,20 @@ class ScriptStructureExtractionTests(unittest.TestCase):
         self.assertNotIn("镜头", "".join(beat["text"] for beat in beats))
         self.assertNotIn("成品切面", "".join(beat["text"] for beat in beats))
 
+    def test_skips_separator_lines_and_removes_unclosed_visual_suffixes(self):
+        beats = extract_script_beats(
+            "现在品牌日大促福利\n"
+            "--------------------------------------------\n"
+            "现在谁还一种一种调口味（凸出文字）啊？（特写-奶油裱花看效果（玫瑰碎+荔枝）\n"
+            "这包就是为门店日常出品准备的"
+        )
+
+        self.assertEqual(len(beats), 3)
+        self.assertEqual(beats[0]["text"], "现在品牌日大促福利")
+        self.assertEqual(beats[1]["text"], "现在谁还一种一种调口味啊？")
+        self.assertNotIn("特写", "".join(beat["text"] for beat in beats))
+        self.assertNotIn("玫瑰碎", "".join(beat["text"] for beat in beats))
+
 
 class TemplateRewriteStructureFidelityTests(unittest.TestCase):
     def _generate(self, responses, **kwargs):
@@ -185,6 +199,45 @@ class TemplateRewriteStructureFidelityTests(unittest.TestCase):
 
         self.assertEqual(len(ai.calls), 1)
         self.assertIn("先备料", result)
+
+    def test_abstract_cost_words_preserve_price_mechanism_positions(self):
+        source = make_source(
+            "之前100多到手三包\n"
+            "现在超划算的折扣买三大包\n"
+            "每包都是足量原料\n"
+            "趁活动提前安排"
+        )
+        response = (
+            "[[BEAT_1]]之前单套成本要高不少。"
+            "[[BEAT_2]]现在划算的价位就能拿下一整套。"
+            "[[BEAT_3]]每套都配齐刀叉和餐盘。"
+            "[[BEAT_4]]趁活动提前安排。"
+        )
+
+        result, ai = self._generate([response], source_script=source)
+
+        self.assertEqual(len(ai.calls), 1)
+        self.assertIn("成本", result)
+        self.assertIn("划算的价位", result)
+
+    def test_repeated_price_beats_can_be_reduced_without_moving_price(self):
+        source = make_source(
+            "全当赠品送了\n"
+            "现在超划算的折扣就能拿下\n"
+            "过了现在可能要多花几十块\n"
+            "产品本身用着很稳定"
+        )
+        response = (
+            "[[BEAT_1]]这波福利确实很实在。"
+            "[[BEAT_2]]现在几毛钱就能拿下一整套。"
+            "[[BEAT_3]]后面再找同品质的会更费预算。"
+            "[[BEAT_4]]产品本身用着也很稳定。"
+        )
+
+        result, ai = self._generate([response], source_script=source)
+
+        self.assertEqual(len(ai.calls), 1)
+        self.assertIn("几毛钱", result)
 
     def test_template_price_and_cta_cannot_override_source_without_them(self):
         first = (

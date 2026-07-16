@@ -452,12 +452,18 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
                 reference_query=source_match_query,
                 allow_product_type_fallback=(
                     reference_intent.explicit_video_type is None
+                    and not requested_video_type
                     and request.template_id is None
                 ),
                 exclude_product_query=product.name,
             )
             if not request.template_id:
-                video_type = source_script.get("video_type") or preferred_video_type
+                if reference_intent.explicit_video_type:
+                    video_type = reference_intent.explicit_video_type
+                elif requested_video_type:
+                    video_type = requested_video_type
+                else:
+                    video_type = source_script.get("video_type") or preferred_video_type
                 template = _select_rewrite_template(
                     db=db,
                     requested_video_type=video_type,

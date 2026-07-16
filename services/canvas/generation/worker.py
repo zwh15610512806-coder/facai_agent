@@ -44,6 +44,7 @@ from services.canvas.provider_schemas import (
     ProviderSubmission,
 )
 from services.canvas.providers.registry import ProviderRegistry
+from services.canvas.sqlite_writer import begin_immediate_if_sqlite
 
 
 logger = logging.getLogger(__name__)
@@ -1031,6 +1032,7 @@ class CanvasGenerationWorker:
     def _promote_completed(self, claim: ClaimedAttempt, result: AttemptExecutionResult) -> None:
         with self._db_factory() as db:
             try:
+                begin_immediate_if_sqlite(db)
                 from services.canvas.generation.results import (
                     promote_materialized_provider_result,
                     remove_verified_temporary_result,

@@ -16,9 +16,16 @@ _VISUAL_NOTE_HINTS = (
     "镜头", "画面", "分镜", "字幕", "场景", "特写", "近景", "远景", "中景",
     "俯拍", "拍摄", "拍", "展示", "切换", "推近", "拉远", "定格", "音效",
     "手部", "主播", "出镜", "产品", "包装", "成品", "切面", "用户体验",
-    "入嘴", "试吃", "夹馅", "倒出", "捧起", "抓一把", "划开", "拆包",
+    "入嘴", "试吃", "夹馅", "倒出", "捧起", "抓一把", "划开", "拆包", "文字",
 )
 _PARENTHETICAL_RE = re.compile(r"[（(]([^（）()\n]{1,180})[）)]")
+_SEPARATOR_ONLY_RE = re.compile(r"[-—_=~·.。…\s]{3,}")
+_UNCLOSED_VISUAL_SUFFIX_RE = re.compile(
+    r"[（(]\s*(?:镜头|画面|分镜|字幕|场景|特写|近景|远景|中景|俯拍|拍摄|"
+    r"展示|切换|推近|拉远|定格|音效|手部|主播|出镜|一镜到底|成品|包装|"
+    r"切面|用户体验|入嘴|试吃|夹馅|倒出|捧起|抓一把|划开|拆包|凸出文字)"
+    r"[^\n]*$"
+)
 
 
 def strip_visual_notes(text: str) -> str:
@@ -27,7 +34,7 @@ def strip_visual_notes(text: str) -> str:
     def replace(match: re.Match) -> str:
         note = match.group(1)
         if any(hint in note for hint in _VISUAL_NOTE_HINTS):
-            return " "
+            return ""
         return match.group(0)
 
     cleaned = _PARENTHETICAL_RE.sub(replace, text or "")
@@ -39,6 +46,8 @@ def strip_known_script_prefixes(text: str) -> str:
     """Remove timing/section wrappers and visual notes from one source beat."""
 
     cleaned = (text or "").strip()
+    if _SEPARATOR_ONLY_RE.fullmatch(cleaned):
+        return ""
     cleaned = re.sub(r"^\s*【[^】\n]{1,30}】\s*", "", cleaned)
     cleaned = re.sub(r"^\s*[（(][^）)\n]{1,60}[）)]\s*", "", cleaned)
     cleaned = re.sub(
@@ -48,7 +57,12 @@ def strip_known_script_prefixes(text: str) -> str:
         "",
         cleaned,
     )
-    return strip_visual_notes(cleaned)
+    cleaned = strip_visual_notes(cleaned)
+    cleaned = _UNCLOSED_VISUAL_SUFFIX_RE.sub("", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if _SEPARATOR_ONLY_RE.fullmatch(cleaned):
+        return ""
+    return cleaned
 
 
 def extract_script_beats(script: str, limit: int = 45) -> list[dict]:

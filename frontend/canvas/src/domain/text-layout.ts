@@ -1,4 +1,5 @@
 import type { TextLayerPatch, TextSnapshot } from "./types";
+import { sha256HexBytes } from "./composition";
 
 export const PINNED_CANVAS_FONT = {
   family: "Noto Sans CJK SC",
@@ -24,8 +25,14 @@ function hex(bytes: ArrayBuffer): string {
     .join("");
 }
 
-async function digestSha256(bytes: ArrayBuffer): Promise<string> {
-  return hex(await crypto.subtle.digest("SHA-256", bytes));
+export async function digestSha256(bytes: ArrayBuffer): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    return hex(await subtle.digest("SHA-256", bytes));
+  }
+
+  // crypto.subtle is unavailable for HTTP LAN origins, but the font still must be verified.
+  return sha256HexBytes(new Uint8Array(bytes));
 }
 
 async function registerFont(bytes: ArrayBuffer): Promise<void> {

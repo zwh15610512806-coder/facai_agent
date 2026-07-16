@@ -18,15 +18,17 @@ const version = {
   modelConfigVersion: 1, createdAt: "2026-07-15T00:00:00Z",
 } satisfies ResultVersion;
 
-test("result board can clear only its saved selection reference", () => {
-  const resultBoard = createResultBoard();
+test("result board compares versions and can clear only its saved selection reference", () => {
+  const resultBoard = createResultBoard((id) => `/assets/${id}`);
   const onSelect = vi.fn();
   resultBoard.update(board, [version], false, onSelect);
 
-  const select = resultBoard.element.querySelector<HTMLSelectElement>('select[aria-label="选择结果版本"]');
-  if (select === null) throw new Error("missing version selector");
-  select.value = "";
-  select.dispatchEvent(new Event("change", { bubbles: true }));
+  const versionCard = resultBoard.element.querySelector<HTMLButtonElement>('[data-asset-id="composed-a"]');
+  if (versionCard === null) throw new Error("missing version card");
+  expect(versionCard.getAttribute("aria-selected")).toBe("true");
+  expect(resultBoard.element.querySelector("img")?.getAttribute("src")).toBe("/assets/composed-preview-a");
+
+  resultBoard.element.querySelector<HTMLButtonElement>(".canvas-result-clear")?.click();
 
   expect(onSelect).toHaveBeenCalledWith(null);
 });

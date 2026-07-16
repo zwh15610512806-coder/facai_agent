@@ -38,6 +38,7 @@ from services.canvas.font_resource import (
     FONT_RESOURCE_VERSION,
     FONT_SHA256,
 )
+from services.canvas.sqlite_writer import begin_immediate_if_sqlite
 from services.canvas.schemas import Identifier, TextSnapshot
 
 
@@ -541,6 +542,7 @@ def run_compose_operation(
 
     with db_factory() as db:
         try:
+            begin_immediate_if_sqlite(db)
             current, persisted_request = _claimed_operation(
                 db,
                 operation_id=operation_id,

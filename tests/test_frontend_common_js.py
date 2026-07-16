@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -6,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendCommonJsTests(unittest.TestCase):
-    SHARED_TOOLS_ASSET_VERSION = "tools-20260714-all-pages"
+    SHARED_TOOLS_ASSET_VERSION = "canvas-usability-20260716"
     TOOL_TEMPLATES = [
         "index.html",
         "rewrite.html",
@@ -50,6 +51,7 @@ class FrontendCommonJsTests(unittest.TestCase):
             version = self.SHARED_TOOLS_ASSET_VERSION
             self.assertIn(f'/static/css/style.css?v={version}', page, name)
             self.assertIn(f'/static/js/common.js?v={version}', page, name)
+            self.assertIn('href="/app/canvas" class="nav-link', page, name)
             self.assertNotIn('data-import-fab', page, name)
             self.assertNotIn('ai-config-fab', page, name)
 
@@ -71,6 +73,14 @@ class FrontendCommonJsTests(unittest.TestCase):
         self.assertIn("facai-tools-open", common)
         self.assertIn("Object.freeze", common)
         self.assertIn("initToolNavigation", common)
+        self.assertNotIn("href: '/app/canvas'", common)
+
+    def test_canvas_is_the_primary_nav_item_immediately_after_ai_work(self):
+        canvas_link = r'<a href="/app/canvas" class="nav-link(?: on)?"(?: aria-current="page")?>产品视觉画布</a>'
+        ai_link = r'<a href="/app" class="nav-link(?: on)?"(?: aria-current="page")?>AI工作</a>'
+        for name in self.TOOL_TEMPLATES:
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+            self.assertRegex(page, ai_link + r"\s*" + canvas_link, name)
 
     def test_mobile_tools_links_are_built_from_the_same_array(self):
         common = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8")

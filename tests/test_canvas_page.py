@@ -1,9 +1,11 @@
 import json
+import os
 import re
 import tempfile
 import unittest
 from pathlib import Path
 from uuid import uuid4
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -22,6 +24,8 @@ BOOTSTRAP_PATTERN = re.compile(
 
 class CanvasPageTests(unittest.TestCase):
     def setUp(self):
+        self.auth_patcher = patch.dict(os.environ, {"FACAI_AUTH_ENABLED": "0"})
+        self.auth_patcher.start()
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmp.name) / "canvas-page.db"
         self.engine = create_engine(
@@ -44,6 +48,7 @@ class CanvasPageTests(unittest.TestCase):
         self.app.dependency_overrides.pop(get_db, None)
         self.engine.dispose()
         self.tmp.cleanup()
+        self.auth_patcher.stop()
 
     def _bootstrap(self, response):
         match = BOOTSTRAP_PATTERN.search(response.text)
@@ -59,15 +64,21 @@ class CanvasPageTests(unittest.TestCase):
         self.assertEqual(
             1,
             response.text.count(
-                '<link rel="stylesheet" href="/static/canvas/canvas.css">'
+                '<link rel="stylesheet" href="/static/canvas/canvas.css?v=canvas-usability-20260716">'
             ),
         )
         self.assertEqual(
             1,
             response.text.count(
-                '<script type="module" src="/static/canvas/canvas.js"></script>'
+                '<script type="module" src="/static/canvas/canvas.js?v=canvas-usability-20260716"></script>'
             ),
         )
+        self.assertIn('<link rel="stylesheet" href="/static/css/style.css?v=canvas-usability-20260716">', response.text)
+        self.assertIn('href="/app/canvas" class="nav-link on"', response.text)
+        self.assertIn('请使用桌面端打开产品视觉画布', response.text)
+        self.assertIn('class="canvas-page-main"', response.text)
+        self.assertNotIn('/static/js/common.js', response.text)
+        self.assertNotIn("api_key", response.text.casefold())
         self.assertNotIn("/static/js/inspiration.js", response.text)
         _raw, bootstrap = self._bootstrap(response)
         self.assertEqual(
@@ -109,6 +120,21 @@ class CanvasPageTests(unittest.TestCase):
 
         self.assertEqual(404, response.status_code, response.text)
         self.assertEqual({"detail": "Canvas project not found"}, response.json())
+
+    def test_canvas_shell_reserves_nav_height_and_blocks_narrow_editing(self):
+        styles = (
+            Path(__file__).resolve().parents[1]
+            / "frontend"
+            / "canvas"
+            / "src"
+            / "styles.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("height: calc(100dvh - 68px);", styles)
+        self.assertIn("@media (max-width: 1023px)", styles)
+        self.assertIn(".canvas-page #canvas-app", styles)
+        self.assertIn(".canvas-page .canvas-desktop-gate", styles)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
 
     def test_canvas_bootstrap_serializer_cannot_close_script_or_emit_js_separators(self):
         payload = {

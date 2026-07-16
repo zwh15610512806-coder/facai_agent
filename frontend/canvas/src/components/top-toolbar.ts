@@ -7,22 +7,40 @@ export interface TopToolbar {
   setEditable(editable: boolean): void;
 }
 
+export interface TopToolbarOptions {
+  getProjectName?(): string | null;
+  canExport?(): boolean;
+  onToggleProjects?(): void;
+  onToggleInspector?(): void;
+}
+
 export function createTopToolbar(
   store: ProjectStore,
   dispatch: (action: ProjectAction) => void,
   undo: () => void,
   redo: () => void,
   onExport?: () => void,
+  options: TopToolbarOptions = {},
 ): TopToolbar {
   let editable = false;
   const element = document.createElement("header");
   element.className = "canvas-top-toolbar";
   element.dataset.testid = "canvas-top-toolbar";
 
-  const back = document.createElement("a");
-  back.href = "/app";
-  back.className = "canvas-toolbar-back";
-  back.textContent = "返回 AI 工作";
+  const projectsToggle = document.createElement("button");
+  projectsToggle.type = "button";
+  projectsToggle.className = "canvas-drawer-toggle canvas-projects-toggle";
+  projectsToggle.dataset.testid = "canvas-toggle-projects";
+  projectsToggle.textContent = "项目";
+  projectsToggle.setAttribute("aria-label", "打开项目列表");
+  projectsToggle.addEventListener("click", () => options.onToggleProjects?.());
+
+  const title = document.createElement("div");
+  title.className = "canvas-toolbar-title";
+  const titleLabel = document.createElement("strong");
+  const titleMeta = document.createElement("span");
+  titleMeta.textContent = "产品视觉画布";
+  title.append(titleLabel, titleMeta);
 
   const modeLabel = document.createElement("label");
   modeLabel.textContent = "模式";
@@ -74,14 +92,6 @@ export function createTopToolbar(
   zoomReadout.dataset.testid = "canvas-zoom-readout";
   zoomReadout.setAttribute("aria-label", "当前缩放");
 
-  const future = (label: string, explanation: string): HTMLButtonElement => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = label;
-    button.disabled = true;
-    button.title = explanation;
-    return button;
-  };
   const exportButton = document.createElement("button");
   exportButton.type = "button";
   exportButton.textContent = "导出";
@@ -89,8 +99,17 @@ export function createTopToolbar(
   exportButton.title = "打开导出产品图选项";
   exportButton.addEventListener("click", () => { onExport?.(); });
 
+  const inspectorToggle = document.createElement("button");
+  inspectorToggle.type = "button";
+  inspectorToggle.className = "canvas-drawer-toggle canvas-inspector-toggle";
+  inspectorToggle.dataset.testid = "canvas-toggle-inspector";
+  inspectorToggle.textContent = "设置";
+  inspectorToggle.setAttribute("aria-label", "打开画布设置");
+  inspectorToggle.addEventListener("click", () => options.onToggleInspector?.());
+
   element.append(
-    back,
+    projectsToggle,
+    title,
     modeLabel,
     undoButton,
     redoButton,
@@ -98,20 +117,25 @@ export function createTopToolbar(
     zoomIn,
     zoomReset,
     zoomReadout,
-    future("模型设置", "模型设置将在生成能力接入后开放"),
     exportButton,
+    inspectorToggle,
   );
 
   const update = (): void => {
     const current = store.getState();
     mode.value = current.project.semanticState.mode;
+    titleLabel.textContent = options.getProjectName?.() ?? "未选择项目";
     mode.disabled = !editable;
     undoButton.disabled = !editable || !store.canUndo();
     redoButton.disabled = !editable || !store.canRedo();
     zoomOut.disabled = !editable;
     zoomIn.disabled = !editable;
     zoomReset.disabled = !editable;
-    exportButton.disabled = !editable || onExport === undefined;
+    const canExport = options.canExport?.() ?? onExport !== undefined;
+    exportButton.hidden = !canExport;
+    exportButton.disabled = !editable || onExport === undefined || !canExport;
+    projectsToggle.disabled = options.onToggleProjects === undefined;
+    inspectorToggle.disabled = !editable || options.onToggleInspector === undefined;
     zoomReadout.value = `${Math.round(current.project.layoutState.viewport.zoom * 100)}%`;
   };
   update();

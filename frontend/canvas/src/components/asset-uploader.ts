@@ -1,5 +1,6 @@
 import type { AssetsApi } from "../api/assets";
 import { validateAssetFile, type UploadedAssetBundle } from "../domain/assets";
+import { canvasUserMessage } from "../domain/user-message";
 
 export interface AssetUploaderOptions {
   api: AssetsApi;
@@ -10,6 +11,8 @@ export interface AssetUploader {
   element: HTMLElement;
   setProject(projectId: string | null): void;
   setDisabled(disabled: boolean): void;
+  openPicker(): void;
+  uploadFile(file: File): void;
   dispose(): void;
 }
 
@@ -95,12 +98,11 @@ export function createAssetUploader({
       }
       if (!result.ok) {
         feedback.dataset.state = result.kind;
-        feedback.textContent = result.message;
+        feedback.textContent = canvasUserMessage(result.message, "图片上传失败，请重试");
         return;
       }
       feedback.dataset.state = "complete";
-      feedback.textContent =
-        `上传完成：${result.value.source.id} / ${result.value.working.id} / ${result.value.preview.id}`;
+      feedback.textContent = "上传完成，正在检测背景并准备产品素材…";
       onUploaded(result.value);
     } catch (error) {
       if (!isAbortError(error) && uploadAbort === controller && !disposed) {
@@ -152,6 +154,12 @@ export function createAssetUploader({
         uploadAbort = null;
       }
       setInteractiveState();
+    },
+    openPicker: () => {
+      if (!input.disabled) input.click();
+    },
+    uploadFile: (file) => {
+      void upload(file);
     },
     dispose: () => {
       if (disposed) {

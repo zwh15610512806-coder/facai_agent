@@ -3,7 +3,7 @@ import type { CompositionsApi } from "../api/compositions";
 import type { CanvasGenerationProgress, CanvasProjectEvent } from "../api/events";
 import { loadAllResultVersions, type GenerationsApi } from "../api/generations";
 import type { ProjectSku, ProjectSnapshot } from "../api/client";
-import type { ProviderManagementApi, ProvidersApi } from "../api/providers";
+import type { ProvidersApi } from "../api/providers";
 import type { ExportsApi } from "../api/exports";
 import type { SkusApi } from "../api/skus";
 import type { CanvasAdapter } from "../canvas/canvas-adapter";
@@ -36,13 +36,20 @@ import { createAccessDialog } from "./access-dialog";
 import { createNodeInspector } from "./node-inspector";
 import { createNodeToolbar } from "./node-toolbar";
 import { createResultBoard } from "./result-board";
-import { createModelManager, type ModelManager } from "./model-manager";
 import { createExportPanel, type ExportPanel } from "./export-panel";
 import type { ResultVersion } from "../api/generations";
 import { createGenerationController } from "../controllers/generation-controller";
 import type { ModelProfile } from "../domain/providers";
 import { previewGenerationRequest } from "../domain/generation";
 import { compatibleEdgeKinds, createTypedEdge } from "../domain/node-ports";
+import {
+  canOpenInspectorTab,
+  defaultInspectorTab,
+  deriveCanvasWorkflowStage,
+  type CanvasInspectorTab,
+  type CanvasWorkflowSnapshot,
+} from "../domain/workflow";
+import { canvasUserMessage } from "../domain/user-message";
 
 export interface WorkspaceOptions {
   root: HTMLElement;
@@ -80,6 +87,22 @@ function preservesPropertyControls(action: ProjectAction): boolean {
   }
 }
 
+const GENERATION_STATUS_LABELS: Readonly<Record<string, string>> = {
+  queued: "排队中",
+  running: "生成中",
+  retrying: "正在重试",
+  succeeded: "已完成",
+  failed: "失败",
+  partially_failed: "部分完成",
+  cancel_requested: "正在取消",
+  cancelled: "已取消",
+  unknown: "状态待确认",
+};
+
+function generationStatusLabel(status: string): string {
+  return GENERATION_STATUS_LABELS[status] ?? "处理中";
+}
+
 function operationPhase(status: AssetOperationProgress["status"]): number {
   switch (status) {
     case "queued":
@@ -107,17 +130,6 @@ function laterOperation(
   return operationPhase(left.status) >= operationPhase(right.status) ? left : right;
 }
 
-function providerManagementApi(value: ProvidersApi | undefined): ProviderManagementApi | null {
-  if (value === undefined) return null;
-  const candidate = value as ProvidersApi & Partial<ProviderManagementApi>;
-  return typeof candidate.loadProviders === "function"
-    && typeof candidate.createProvider === "function"
-    && typeof candidate.createModelProfile === "function"
-    && typeof candidate.probeProvider === "function"
-    ? candidate as ProvidersApi & ProviderManagementApi
-    : null;
-}
-
 export function mountWorkspace({
   root,
   controller,
@@ -135,28 +147,163 @@ export function mountWorkspace({
   let customNodeOrdinal = 0;
   let editable = false;
   let preservePropertiesDom = false;
+  let assetUploader: AssetUploader | null = null;
 
   const shell = document.createElement("main");
   shell.className = "canvas-workspace";
   shell.dataset.testid = "canvas-workspace";
+  shell.dataset.projectsOpen = "false";
+  shell.dataset.inspectorOpen = "false";
+
+  let activeInspectorTab: CanvasInspectorTab = "source";
+  let exportRequested = false;
+  let lastWorkflowStage: ReturnType<typeof deriveCanvasWorkflowStage> | null = null;
+  let lastDrawerTrigger: HTMLElement | null = null;
+  const drawerBackdrop = document.createElement("button");
+  drawerBackdrop.type = "button";
+  drawerBackdrop.className = "canvas-drawer-backdrop";
+  drawerBackdrop.setAttribute("aria-label", "关闭侧栏");
+  const setProjectsOpen = (open: boolean): void => {
+    shell.dataset.projectsOpen = String(open);
+    if (open) queueMicrotask(() => sidebar.element.querySelector<HTMLElement>("button, input, summary")?.focus());
+    if (!open && lastDrawerTrigger?.isConnected) lastDrawerTrigger.focus();
+  };
+  const setInspectorOpen = (open: boolean): void => {
+    shell.dataset.inspectorOpen = String(open);
+    if (open) queueMicrotask(() => properties.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])")?.focus());
+    if (!open && lastDrawerTrigger?.isConnected) lastDrawerTrigger.focus();
+  };
+  const closeDrawers = (): void => {
+    setProjectsOpen(false);
+    setInspectorOpen(false);
+  };
+  drawerBackdrop.addEventListener("click", closeDrawers);
+  const onWorkspaceKeydown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      closeDrawers();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const activeDrawer = shell.dataset.inspectorOpen === "true"
+      ? properties
+      : shell.dataset.projectsOpen === "true"
+        ? sidebar.element
+        : null;
+    if (activeDrawer === null) return;
+    const focusable = Array.from(activeDrawer.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [href], [tabindex]:not([tabindex="-1"])',
+    )).filter((candidate) => !candidate.hidden && candidate.getAttribute("aria-hidden") !== "true");
+    if (focusable.length === 0) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  document.addEventListener("keydown", onWorkspaceKeydown);
 
   const sidebar = createProjectSidebar(controller);
   const center = document.createElement("section");
   center.className = "canvas-workspace-center";
+  center.setAttribute("aria-label", "产品视觉画布工作区");
   const stage = document.createElement("div");
   stage.className = "canvas-stage";
   stage.dataset.testid = "canvas-stage";
+  stage.setAttribute("role", "region");
+  stage.setAttribute("aria-label", "无限画布视口");
   const canvas = document.createElement("canvas");
   canvas.width = 1_600;
   canvas.height = 1_000;
   canvas.dataset.testid = "canvas-surface";
   canvas.dataset.canvasSurface = "product-canvas";
-  stage.append(canvas);
+  const stageEmpty = document.createElement("section");
+  stageEmpty.className = "canvas-stage-empty";
+  stageEmpty.dataset.testid = "canvas-stage-empty";
+  const stageEmptyIcon = document.createElement("span");
+  stageEmptyIcon.className = "canvas-stage-empty-icon";
+  stageEmptyIcon.textContent = "+";
+  stageEmptyIcon.setAttribute("aria-hidden", "true");
+  const stageEmptyTitle = document.createElement("h2");
+  const stageEmptyCopy = document.createElement("p");
+  const stageUpload = document.createElement("button");
+  stageUpload.type = "button";
+  stageUpload.className = "canvas-primary-action";
+  stageUpload.dataset.testid = "canvas-stage-upload";
+  stageUpload.textContent = "上传主商品图片";
+  stageUpload.addEventListener("click", () => assetUploader?.openPicker());
+  const stageSteps = document.createElement("ol");
+  for (const copy of ["上传并自动准备产品素材", "选择主图、SKU 图或详情图", "生成、挑选版本并导出"]) {
+    stageSteps.append(Object.assign(document.createElement("li"), { textContent: copy }));
+  }
+  stageEmpty.append(stageEmptyIcon, stageEmptyTitle, stageEmptyCopy, stageUpload, stageSteps);
+  stageEmpty.addEventListener("dragover", (event) => {
+    if (editable) event.preventDefault();
+  });
+  stageEmpty.addEventListener("drop", (event) => {
+    if (!editable) return;
+    event.preventDefault();
+    const file = event.dataTransfer?.files[0];
+    if (file !== undefined) assetUploader?.uploadFile(file);
+  });
+  stage.append(canvas, stageEmpty);
 
   const properties = document.createElement("aside");
   properties.className = "canvas-properties";
   properties.dataset.testid = "canvas-properties";
   properties.setAttribute("aria-label", "属性设置");
+  const propertiesHeader = document.createElement("header");
+  propertiesHeader.className = "canvas-properties-header";
+  const propertiesTitle = document.createElement("div");
+  propertiesTitle.innerHTML = "<strong>创作流程</strong><span>按步骤完成产品套图</span>";
+  const propertiesClose = document.createElement("button");
+  propertiesClose.type = "button";
+  propertiesClose.className = "canvas-properties-close";
+  propertiesClose.textContent = "关闭";
+  propertiesClose.setAttribute("aria-label", "关闭画布设置");
+  propertiesClose.addEventListener("click", () => setInspectorOpen(false));
+  propertiesHeader.append(propertiesTitle, propertiesClose);
+
+  const propertiesTabs = document.createElement("div");
+  propertiesTabs.className = "canvas-properties-tabs";
+  propertiesTabs.setAttribute("role", "tablist");
+  propertiesTabs.setAttribute("aria-label", "画布创作步骤");
+  const inspectorPanels = new Map<CanvasInspectorTab, HTMLElement>();
+  const inspectorButtons = new Map<CanvasInspectorTab, HTMLButtonElement>();
+  for (const [tab, label] of [
+    ["source", "素材"],
+    ["generate", "生成"],
+    ["results", "结果"],
+    ["export", "导出"],
+  ] as const) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.role = "tab";
+    button.textContent = label;
+    button.dataset.inspectorTab = tab;
+    button.id = `canvas-tab-${tab}`;
+    button.setAttribute("aria-controls", `canvas-panel-${tab}`);
+    button.addEventListener("click", () => {
+      const snapshot = workflowSnapshot();
+      if (!canOpenInspectorTab(tab, snapshot)) return;
+      activeInspectorTab = tab;
+      exportRequested = tab === "export";
+      lastWorkflowStage = deriveCanvasWorkflowStage(workflowSnapshot());
+      renderWorkflow();
+    });
+    const panel = document.createElement("div");
+    panel.className = "canvas-properties-panel";
+    panel.dataset.inspectorPanel = tab;
+    panel.id = `canvas-panel-${tab}`;
+    panel.role = "tabpanel";
+    panel.setAttribute("aria-labelledby", button.id);
+    propertiesTabs.append(button);
+    inspectorButtons.set(tab, button);
+    inspectorPanels.set(tab, panel);
+  }
   const propertiesControls = document.createElement("div");
   propertiesControls.className = "canvas-properties-controls";
 
@@ -225,8 +372,28 @@ export function mountWorkspace({
     exportsApi === undefined
       ? undefined
       : () => {
-        exportPanel?.element.scrollIntoView({ block: "start", behavior: "smooth" });
+        activeInspectorTab = "export";
+        exportRequested = true;
+        renderWorkflow();
+        lastDrawerTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setInspectorOpen(true);
       },
+    {
+      getProjectName: () => controller.getState().projects.find(
+        (project) => project.id === controller.getState().activeProjectId,
+      )?.name ?? null,
+      canExport: () => projectState().semanticState.outputBoards.some(
+        (board) => board.selectedResultAssetId !== null,
+      ),
+      onToggleProjects: () => {
+        lastDrawerTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setProjectsOpen(shell.dataset.projectsOpen !== "true");
+      },
+      onToggleInspector: () => {
+        lastDrawerTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setInspectorOpen(shell.dataset.inspectorOpen !== "true");
+      },
+    },
   );
   let activeCompositionGroupId: string | null = null;
   const compositionGroupField = document.createElement("label");
@@ -272,7 +439,6 @@ export function mountWorkspace({
   let skus: ProjectSku[] = [];
   let assetLoadAbort: AbortController | null = null;
   let lastControllerState = controller.getState();
-  let assetUploader: AssetUploader | null = null;
   let assetInspector: AssetInspector | null = null;
   let skuEditor: SkuEditor | null = null;
   let composeAbort: AbortController | null = null;
@@ -283,7 +449,19 @@ export function mountWorkspace({
   let selectedComposeBackgroundId: string | null = null;
   let lastComposeOperation: AssetOperationProgress | null = null;
   let resultVersions: ResultVersion[] = [];
-  const resultBoard = createResultBoard();
+  let latestGenerationStatus: string | null = null;
+  const resultBoard = createResultBoard(assetsApi === undefined ? undefined : (assetId) => assetsApi.previewUrl(assetId));
+  const resultBoardPickerField = document.createElement("label");
+  resultBoardPickerField.className = "canvas-result-board-picker";
+  resultBoardPickerField.textContent = "审阅画板";
+  const resultBoardPicker = document.createElement("select");
+  resultBoardPicker.setAttribute("aria-label", "选择要审阅的结果画板");
+  resultBoardPicker.dataset.testid = "canvas-result-board-picker";
+  resultBoardPickerField.append(resultBoardPicker);
+  resultBoardPicker.addEventListener("change", () => {
+    selectedComposeBoardId = resultBoardPicker.value || null;
+    renderResultBoard();
+  });
   let modelCatalog: ModelProfile[] = [];
   const generationStatus = createGenerationStatus();
   const accessDialog = createAccessDialog();
@@ -300,22 +478,27 @@ export function mountWorkspace({
       return;
     }
     const run = async (): Promise<void> => {
+      latestGenerationStatus = "submitting";
+      activeInspectorTab = "results";
+      renderWorkflow();
       generationStatus.update("正在保存并提交生成…", "working");
       const result = await generationController.submit();
+      latestGenerationStatus = result.ok ? "queued" : null;
       generationStatus.update(
-        result.ok ? `已创建生成任务 ${result.generationId}` : result.message,
+        result.ok ? `已创建生成任务 ${result.generationId}` : canvasUserMessage(result.message, "生成任务提交失败，请重试"),
         result.ok ? "success" : "error",
       );
+      renderWorkflow();
     };
     const access = await generationsApi.accessStatus();
     if (!access.ok) {
-      generationStatus.update(access.message, "error");
+      generationStatus.update(canvasUserMessage(access.message, "生成访问状态检查失败，请重试"), "error");
       return;
     }
     if (access.value.configured && access.value.locked) {
       accessDialog.open(async (token) => {
         const unlocked = await generationsApi.unlock(token);
-        if (!unlocked.ok) return unlocked.message;
+        if (!unlocked.ok) return canvasUserMessage(unlocked.message, "解锁失败，请检查访问令牌");
         void run();
         return null;
       });
@@ -343,7 +526,7 @@ export function mountWorkspace({
     }
     accessDialog.open(async (token) => {
       const unlocked = await generationsApi.unlock(token);
-      if (!unlocked.ok) return unlocked.message;
+      if (!unlocked.ok) return canvasUserMessage(unlocked.message, "解锁失败，请检查访问令牌");
       retry();
       return null;
     });
@@ -367,22 +550,6 @@ export function mountWorkspace({
       },
     });
   }
-  const managementApi = providerManagementApi(providersApi);
-  let modelManager: ModelManager | null = null;
-  if (providersApi !== undefined && managementApi !== null) {
-    modelManager = createModelManager({
-      catalogApi: providersApi,
-      managementApi,
-      onUnauthorized: requestProviderUnlock,
-      onUnconfigured: () => generationStatus.update("服务器未配置 Canvas 访问令牌，第三方模型管理已关闭", "error"),
-      onCatalog: (models) => {
-        modelCatalog = models;
-        completeSetPanel.update();
-        renderProperties();
-      },
-    });
-  }
-
   const composeControls = document.createElement("section");
   composeControls.className = "canvas-compose-controls";
   composeControls.dataset.testid = "canvas-compose-controls";
@@ -515,7 +682,7 @@ export function mountWorkspace({
       if (!result.ok) {
         composeFeedback.textContent = result.kind === "conflict"
           ? `项目版本已更新到 ${result.currentRevision}，请刷新后重试`
-          : result.message;
+          : canvasUserMessage(result.message, "合成请求失败，请重试");
         renderComposeControls();
         return;
       }
@@ -591,6 +758,7 @@ export function mountWorkspace({
     assetInspector?.update(activeProjection.asset);
     renderSkuEditor();
     renderStatus();
+    renderWorkflow();
   };
 
   const applyOperation = (operation: AssetOperationProgress): void => {
@@ -663,6 +831,7 @@ export function mountWorkspace({
     };
     assetInspector?.update(activeProjection.asset);
     renderStatus();
+    renderWorkflow();
   };
 
   if (assetsApi !== undefined) {
@@ -694,35 +863,112 @@ export function mountWorkspace({
     });
   }
 
-  properties.append(
+  const sourcePanel = inspectorPanels.get("source")!;
+  const generatePanel = inspectorPanels.get("generate")!;
+  const resultsPanel = inspectorPanels.get("results")!;
+  const exportPanelHost = inspectorPanels.get("export")!;
+  generatePanel.append(
     propertiesControls,
-    generationStatus.element,
-    accessDialog.element,
     compositionGroupField,
     compositionInspector.element,
     textInspector.element,
-    resultBoard.element,
-    ...(exportPanel === null ? [] : [exportPanel.element]),
     composeControls,
   );
+  resultsPanel.append(generationStatus.element, resultBoardPickerField, resultBoard.element);
+  if (exportPanel !== null) exportPanelHost.append(exportPanel.element);
   if (assetUploader !== null && assetInspector !== null) {
-    properties.append(assetUploader.element, assetInspector.element);
+    sourcePanel.append(assetUploader.element, assetInspector.element);
   }
   if (skuEditor !== null) {
-    properties.append(skuEditor.element);
+    sourcePanel.append(skuEditor.element);
   }
-  if (modelManager !== null) {
-    properties.append(modelManager.element);
-  }
+  properties.append(
+    propertiesHeader,
+    propertiesTabs,
+    ...inspectorPanels.values(),
+    accessDialog.element,
+  );
   center.append(toolbar.element, stage, status.element);
-  shell.append(sidebar.element, center, properties);
+  shell.append(sidebar.element, center, properties, drawerBackdrop);
   root.replaceChildren(shell);
+
+  function workflowSnapshot(): CanvasWorkflowSnapshot {
+    const hasSelectedResult = projectState().semanticState.outputBoards.some((board) => (
+      board.selectedResultAssetId !== null
+      && resultVersions.some(
+        (version) => version.boardId === board.id
+          && version.composedAssetId === board.selectedResultAssetId,
+      )
+    ));
+    return {
+      hasProject: activeProjectId !== null,
+      hasSource: activeProjection !== null,
+      processing: activeProjection?.asset.cutoutStatus === "queued"
+        || activeProjection?.asset.cutoutStatus === "running",
+      generating: latestGenerationStatus !== null
+        && !["succeeded", "failed", "partially_failed", "cancelled", "unknown"].includes(
+          latestGenerationStatus,
+        ),
+      hasResults: resultVersions.length > 0,
+      hasSelectedResult,
+      exportRequested,
+    };
+  }
+
+  function renderWorkflow(): void {
+    const snapshot = workflowSnapshot();
+    const cutoutFailed = activeProjection?.asset.cutoutStatus === "failed";
+    if (!snapshot.hasSelectedResult) exportRequested = false;
+    const stageValue = deriveCanvasWorkflowStage({ ...snapshot, exportRequested });
+    shell.dataset.workflowStage = stageValue;
+    if (stageValue !== lastWorkflowStage) {
+      activeInspectorTab = cutoutFailed ? "source" : defaultInspectorTab(stageValue);
+      lastWorkflowStage = stageValue;
+    }
+    if (cutoutFailed) activeInspectorTab = "source";
+    if (!canOpenInspectorTab(activeInspectorTab, snapshot)) {
+      activeInspectorTab = defaultInspectorTab(stageValue);
+    }
+
+    const stageLabels: Record<typeof stageValue, [string, string]> = {
+      project: ["先创建一个产品项目", "每个项目会独立保存素材、提示词、结果和导出设置。"],
+      source: ["上传主商品图片", "支持 JPG、PNG、WebP。上传后会自动检测并准备可用于生成的产品素材。"],
+      processing: ["正在准备产品素材", "系统正在检测背景并处理产品图，完成后会自动进入生成设置。"],
+      configure: ["设置要生成的产品套图", "在右侧选择主图、SKU 图或详情图，并分别设置模型与提示词。"],
+      generating: ["正在生成产品套图", "任务在后台运行，可以留在当前页面查看进度。"],
+      results: ["审阅生成结果", "从每个画板的成功版本中选择最终结果，再进入导出。"],
+      export: ["导出已选产品图", "选择画板、导出方式与格式后生成下载文件。"],
+    };
+    const [titleText, copyText] = cutoutFailed
+      ? ["产品素材处理失败", "查看失败原因并重新抠图，或明确选择使用原图矩形继续。"]
+      : stageLabels[stageValue];
+    propertiesTitle.querySelector("strong")!.textContent = titleText;
+    propertiesTitle.querySelector("span")!.textContent = copyText;
+    stageEmptyTitle.textContent = titleText;
+    stageEmptyCopy.textContent = copyText;
+    stageEmpty.hidden = snapshot.hasSource && !snapshot.processing;
+    stageEmpty.dataset.state = stageValue;
+    stageUpload.disabled = !snapshot.hasProject || snapshot.processing;
+    stageUpload.hidden = snapshot.processing;
+    stageSteps.hidden = snapshot.processing;
+
+    for (const [tab, button] of inspectorButtons) {
+      const allowed = canOpenInspectorTab(tab, snapshot);
+      button.hidden = tab !== "source" && !allowed;
+      button.disabled = !allowed;
+      button.setAttribute("aria-selected", String(activeInspectorTab === tab));
+      button.tabIndex = activeInspectorTab === tab ? 0 : -1;
+      const panel = inspectorPanels.get(tab)!;
+      panel.hidden = activeInspectorTab !== tab;
+    }
+    toolbar.update();
+  }
 
   if (providersApi !== undefined) {
     void providersApi.loadCatalog().then((result) => {
       if (disposed) return;
       if (!result.ok) {
-        generationStatus.update(result.message, "error");
+        generationStatus.update(canvasUserMessage(result.message, "图像模型目录加载失败，请重试"), "error");
         return;
       }
       modelCatalog = result.value;
@@ -815,6 +1061,22 @@ export function mountWorkspace({
 
   const renderResultBoard = (): void => {
     const boards = projectState().semanticState.outputBoards;
+    const boardLabel = (board: (typeof boards)[number]): string => {
+      const type = board.outputType === "main" ? "主图" : board.outputType === "sku" ? "SKU 图" : "详情图";
+      const ordinal = boards.filter((candidate) => (
+        candidate.outputType === board.outputType && candidate.sortOrder <= board.sortOrder
+      )).length;
+      return `${type} ${ordinal}`;
+    };
+    if (!boards.some((board) => board.id === selectedComposeBoardId)) {
+      selectedComposeBoardId = boards[0]?.id ?? null;
+    }
+    resultBoardPicker.replaceChildren(...boards.map((board) => Object.assign(
+      document.createElement("option"),
+      { value: board.id, textContent: boardLabel(board) },
+    )));
+    resultBoardPicker.value = selectedComposeBoardId ?? "";
+    resultBoardPickerField.hidden = boards.length <= 1;
     const selected = boards.find((board) => board.id === selectedComposeBoardId) ?? boards[0] ?? null;
     resultBoard.update(selected, resultVersions, !editable, (assetId) => {
       if (selected !== null) {
@@ -855,6 +1117,7 @@ export function mountWorkspace({
       });
     }
     renderResultBoard();
+    renderWorkflow();
   };
 
   const loadAssets = async (projectId: string): Promise<void> => {
@@ -902,6 +1165,7 @@ export function mountWorkspace({
       assetInspector?.update(null);
       renderSkuEditor();
       renderStatus();
+      renderWorkflow();
       return;
     }
     applyProjection(hydrated);
@@ -917,10 +1181,14 @@ export function mountWorkspace({
   };
 
   const renderGenerationProgress = (generation: CanvasGenerationProgress): void => {
-    const detail = generation.safeErrorSummary ?? generation.safeStorageBlockReason;
+    latestGenerationStatus = generation.status;
+    const rawDetail = generation.safeErrorSummary ?? generation.safeStorageBlockReason;
+    const detail = rawDetail === null
+      ? null
+      : canvasUserMessage(rawDetail, "生成失败，请检查模型配置后重试");
     const terminalFailure = new Set(["failed", "partially_failed", "cancelled", "unknown"]);
     generationStatus.update(
-      detail ?? `生成 ${generation.id}：${generation.status}（成功 ${generation.succeededItems}/${generation.totalItems}）`,
+      detail ?? `任务 ${generationStatusLabel(generation.status)}（成功 ${generation.succeededItems}/${generation.totalItems}）`,
       detail !== null
         ? "error"
         : generation.status === "succeeded"
@@ -932,6 +1200,7 @@ export function mountWorkspace({
     if (generation.succeededItems > 0 && activeProjectId !== null) {
       void loadResultVersions(activeProjectId);
     }
+    renderWorkflow();
   };
 
   const unsubscribeEvents = subscribeEvents?.((event) => {
@@ -1073,6 +1342,7 @@ export function mountWorkspace({
     renderCompositionInspector();
     renderTextInspector();
     renderComposeControls();
+    renderWorkflow();
   };
   renderStore();
   const unsubscribeStore = store.subscribe(renderStore);
@@ -1082,7 +1352,10 @@ export function mountWorkspace({
     editable = state.activeProjectId !== null;
     activeProjectId = state.activeProjectId;
     if (changedProject) {
-      modelManager?.clearSensitive();
+      latestGenerationStatus = null;
+      exportRequested = false;
+      activeInspectorTab = "source";
+      lastWorkflowStage = null;
       composeRequestEpoch += 1;
       composeBusy = false;
       activeComposeOperationId = null;
@@ -1140,6 +1413,7 @@ export function mountWorkspace({
     renderTextInspector();
     renderComposeControls();
     renderResultBoard();
+    renderWorkflow();
   };
   renderController(controller.getState());
   const unsubscribeController = controller.subscribe(renderController);
@@ -1161,7 +1435,7 @@ export function mountWorkspace({
       assetInspector?.dispose();
       skuEditor?.dispose();
       exportPanel?.dispose();
-      modelManager?.clearSensitive();
+      document.removeEventListener("keydown", onWorkspaceKeydown);
       compositionInspector.dispose();
       textInspector.dispose();
       controller.dispose();

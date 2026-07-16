@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 _PRICE_NUMBER = r"(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+)"
 _PRICE_OR_PROMOTION_COPY_RE = re.compile(
-    r"价格|原价|售价|活动价|优惠|促销|折扣|赠品|券|到手|恢复原价"
+    r"价格|价位|原价|售价|活动价|活动|大促|成本|划算|福利|优惠|促销|折扣|赠品|赠送|"
+    r"送你|再送|多花|少花|省钱|券|到手|恢复原价"
     r"|买\s*(?:\d+|[一二两三四五六七八九十几]+)\s*送\s*(?:\d+|[一二两三四五六七八九十几]+)"
     r"|满\s*(?:\d+(?:\.\d+)?|[一二两三四五六七八九十百千几]+)\s*(?:元)?\s*减\s*(?:\d+(?:\.\d+)?|[一二两三四五六七八九十百千几]+)"
     r"|几毛钱|几块钱|十来块|1开头|一杯奶茶钱|几十块|三位数|千元级"
@@ -41,7 +42,7 @@ _PRICE_OR_PROMOTION_COPY_RE = re.compile(
 )
 _CTA_COPY_RE = re.compile(
     r"左下角|小黄车|下单|拍下|直接拍|点(?:击)?下方|下方链接|链接(?:里|处)?|"
-    r"去看看|可以看看|先备(?:一份|一个|上|着)|赶紧(?:入|买|拍|囤)"
+    r"去看看|可以看看|来看看|直播间|起拍|先备(?:一份|一个|上|着)|赶紧(?:入|买|拍|囤)"
 )
 
 
@@ -1280,8 +1281,10 @@ CTA 模板：
                 reasons.append("价格待更新但改写结果仍包含价格或促销")
         elif not source_price and output_price:
             reasons.append("价格或促销出现在原脚本没有的位置")
-        elif source_price != output_price:
+        elif output_price - source_price:
             reasons.append("价格或促销位置与原脚本不一致")
+        elif source_price and not output_price:
+            reasons.append("原脚本的价格或促销机制在改写结果中完全缺失")
 
         if not source_cta and output_cta:
             reasons.append("CTA 出现在原脚本没有的位置")

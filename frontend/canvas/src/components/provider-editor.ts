@@ -1,5 +1,6 @@
 import type { ProviderManagementApi } from "../api/providers";
 import { PROVIDER_ADAPTER_CHOICES } from "../domain/providers";
+import { canvasUserMessage } from "../domain/user-message";
 
 export interface ProviderEditorOptions {
   api: Pick<ProviderManagementApi, "createProvider">;
@@ -102,11 +103,11 @@ export function createProviderEditor(options: ProviderEditorOptions): ProviderEd
         return;
       }
       if (result.kind === "unconfigured") {
-        feedback.textContent = result.message;
+        feedback.textContent = canvasUserMessage(result.message, "供应商保存失败，请重试");
         options.onUnconfigured();
         return;
       }
-      feedback.textContent = result.message;
+      feedback.textContent = canvasUserMessage(result.message, "供应商保存失败，请重试");
       if (result.kind === "validation") secret.value = "";
     }).catch(() => {
       save.disabled = false;

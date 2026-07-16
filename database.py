@@ -11,6 +11,7 @@ from alembic.config import Config
 from sqlalchemy import MetaData, create_engine, event, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.schema import CreateTable
 
 from config import DATABASE_URL
 
@@ -125,6 +126,303 @@ _CREATOR_INTEGRITY_TRIGGERS = {
     """,
 }
 
+_ITEM_PROJECT_EXPRESSION = (
+    "(SELECT generation.project_id FROM canvas_generation_items AS item "
+    "JOIN canvas_generations AS generation ON generation.id = item.generation_id "
+    "WHERE item.id = NEW.item_id)"
+)
+_GENERATION_ITEM_INTEGRITY_WHEN = """
+    NOT EXISTS (
+        SELECT 1 FROM image_model_profiles AS model
+        WHERE model.id = NEW.model_profile_id AND model.provider_id = NEW.provider_id
+    )
+    OR (NEW.latest_background_asset_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM canvas_assets AS asset
+        JOIN canvas_generations AS generation ON generation.id = NEW.generation_id
+        WHERE asset.id = NEW.latest_background_asset_id
+          AND asset.project_id = generation.project_id
+    ))
+    OR (NEW.latest_composed_asset_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM canvas_assets AS asset
+        JOIN canvas_generations AS generation ON generation.id = NEW.generation_id
+        WHERE asset.id = NEW.latest_composed_asset_id
+          AND asset.project_id = generation.project_id
+    ))
+"""
+_NEW_ITEM_GENERATION_PROJECT_EXPRESSION = (
+    "(SELECT generation.project_id FROM canvas_generations AS generation "
+    "WHERE generation.id = NEW.generation_id)"
+)
+_GENERATION_ITEM_CHILDREN_INTEGRITY_WHEN = f"""
+    EXISTS (
+        SELECT 1 FROM canvas_generation_item_inputs AS input
+        LEFT JOIN canvas_assets AS asset ON asset.id = input.asset_id
+        WHERE input.item_id = NEW.id
+          AND (asset.id IS NULL
+            OR asset.project_id <> {_NEW_ITEM_GENERATION_PROJECT_EXPRESSION})
+    )
+    OR EXISTS (
+        SELECT 1 FROM canvas_generation_attempts AS attempt
+        LEFT JOIN canvas_assets AS background ON background.id = attempt.background_asset_id
+        LEFT JOIN canvas_assets AS background_preview
+          ON background_preview.id = attempt.background_preview_asset_id
+        LEFT JOIN canvas_assets AS composed ON composed.id = attempt.composed_asset_id
+        LEFT JOIN canvas_assets AS composed_preview
+          ON composed_preview.id = attempt.composed_preview_asset_id
+        LEFT JOIN canvas_asset_operations AS operation
+          ON operation.id = attempt.compose_operation_id
+        WHERE attempt.item_id = NEW.id
+          AND (
+            (attempt.background_asset_id IS NOT NULL
+              AND (background.id IS NULL
+                OR background.project_id <> {_NEW_ITEM_GENERATION_PROJECT_EXPRESSION}))
+            OR (attempt.background_preview_asset_id IS NOT NULL
+              AND (background_preview.id IS NULL
+                OR background_preview.project_id
+                  <> {_NEW_ITEM_GENERATION_PROJECT_EXPRESSION}))
+            OR (attempt.composed_asset_id IS NOT NULL
+              AND (composed.id IS NULL
+                OR composed.project_id <> {_NEW_ITEM_GENERATION_PROJECT_EXPRESSION}))
+            OR (attempt.composed_preview_asset_id IS NOT NULL
+              AND (composed_preview.id IS NULL
+                OR composed_preview.project_id
+                  <> {_NEW_ITEM_GENERATION_PROJECT_EXPRESSION}))
+            OR (attempt.compose_operation_id IS NOT NULL
+              AND (operation.id IS NULL
+                OR operation.project_id <> {_NEW_ITEM_GENERATION_PROJECT_EXPRESSION}))
+          )
+    )
+"""
+_GENERATION_ITEM_UPDATE_INTEGRITY_WHEN = (
+    f"({_GENERATION_ITEM_INTEGRITY_WHEN}) "
+    f"OR ({_GENERATION_ITEM_CHILDREN_INTEGRITY_WHEN})"
+)
+_GENERATION_INPUT_INTEGRITY_WHEN = f"""
+    NOT EXISTS (
+        SELECT 1 FROM canvas_assets AS asset
+        WHERE asset.id = NEW.asset_id
+          AND asset.project_id = {_ITEM_PROJECT_EXPRESSION}
+    )
+"""
+_GENERATION_ATTEMPT_INTEGRITY_WHEN = f"""
+    NOT EXISTS (
+        SELECT 1 FROM image_model_profiles AS model
+        WHERE model.id = NEW.model_profile_id AND model.provider_id = NEW.provider_id
+    )
+    OR (NEW.background_asset_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM canvas_assets AS asset
+        WHERE asset.id = NEW.background_asset_id
+          AND asset.project_id = {_ITEM_PROJECT_EXPRESSION}
+    ))
+    OR (NEW.background_preview_asset_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM canvas_assets AS asset
+        WHERE asset.id = NEW.background_preview_asset_id
+          AND asset.project_id = {_ITEM_PROJECT_EXPRESSION}
+    ))
+    OR (NEW.composed_asset_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM canvas_assets AS asset
+        WHERE asset.id = NEW.composed_asset_id
+          AND asset.project_id = {_ITEM_PROJECT_EXPRESSION}
+    ))
+    OR (NEW.composed_preview_asset_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM canvas_assets AS asset
+        WHERE asset.id = NEW.composed_preview_asset_id
+          AND asset.project_id = {_ITEM_PROJECT_EXPRESSION}
+    ))
+    OR (NEW.compose_operation_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM canvas_asset_operations AS operation
+        WHERE operation.id = NEW.compose_operation_id
+          AND operation.project_id = {_ITEM_PROJECT_EXPRESSION}
+    ))
+"""
+_MODEL_PROFILE_PROVIDER_INTEGRITY_WHEN = """
+    EXISTS (
+        SELECT 1 FROM canvas_generation_items AS item
+        WHERE item.model_profile_id = NEW.id AND item.provider_id <> NEW.provider_id
+    )
+    OR EXISTS (
+        SELECT 1 FROM canvas_generation_attempts AS attempt
+        WHERE attempt.model_profile_id = NEW.id AND attempt.provider_id <> NEW.provider_id
+    )
+"""
+_GENERATION_PROJECT_INTEGRITY_WHEN = """
+    EXISTS (
+        SELECT 1 FROM canvas_generation_items AS item
+        LEFT JOIN canvas_assets AS background
+          ON background.id = item.latest_background_asset_id
+        LEFT JOIN canvas_assets AS composed
+          ON composed.id = item.latest_composed_asset_id
+        WHERE item.generation_id = NEW.id
+          AND (
+            (item.latest_background_asset_id IS NOT NULL
+              AND (background.id IS NULL OR background.project_id <> NEW.project_id))
+            OR (item.latest_composed_asset_id IS NOT NULL
+              AND (composed.id IS NULL OR composed.project_id <> NEW.project_id))
+          )
+    )
+    OR EXISTS (
+        SELECT 1 FROM canvas_generation_item_inputs AS input
+        JOIN canvas_generation_items AS item ON item.id = input.item_id
+        LEFT JOIN canvas_assets AS asset ON asset.id = input.asset_id
+        WHERE item.generation_id = NEW.id
+          AND (asset.id IS NULL OR asset.project_id <> NEW.project_id)
+    )
+    OR EXISTS (
+        SELECT 1 FROM canvas_generation_attempts AS attempt
+        JOIN canvas_generation_items AS item ON item.id = attempt.item_id
+        LEFT JOIN canvas_assets AS background ON background.id = attempt.background_asset_id
+        LEFT JOIN canvas_assets AS background_preview
+          ON background_preview.id = attempt.background_preview_asset_id
+        LEFT JOIN canvas_assets AS composed ON composed.id = attempt.composed_asset_id
+        LEFT JOIN canvas_assets AS composed_preview
+          ON composed_preview.id = attempt.composed_preview_asset_id
+        LEFT JOIN canvas_asset_operations AS operation
+          ON operation.id = attempt.compose_operation_id
+        WHERE item.generation_id = NEW.id
+          AND (
+            (attempt.background_asset_id IS NOT NULL
+              AND (background.id IS NULL OR background.project_id <> NEW.project_id))
+            OR (attempt.background_preview_asset_id IS NOT NULL
+              AND (background_preview.id IS NULL
+                OR background_preview.project_id <> NEW.project_id))
+            OR (attempt.composed_asset_id IS NOT NULL
+              AND (composed.id IS NULL OR composed.project_id <> NEW.project_id))
+            OR (attempt.composed_preview_asset_id IS NOT NULL
+              AND (composed_preview.id IS NULL
+                OR composed_preview.project_id <> NEW.project_id))
+            OR (attempt.compose_operation_id IS NOT NULL
+              AND (operation.id IS NULL OR operation.project_id <> NEW.project_id))
+          )
+    )
+"""
+_ASSET_PROJECT_INTEGRITY_WHEN = """
+    EXISTS (
+        SELECT 1 FROM canvas_generation_items AS item
+        JOIN canvas_generations AS generation ON generation.id = item.generation_id
+        WHERE (item.latest_background_asset_id = NEW.id
+          OR item.latest_composed_asset_id = NEW.id)
+          AND generation.project_id <> NEW.project_id
+    )
+    OR EXISTS (
+        SELECT 1 FROM canvas_generation_item_inputs AS input
+        JOIN canvas_generation_items AS item ON item.id = input.item_id
+        JOIN canvas_generations AS generation ON generation.id = item.generation_id
+        WHERE input.asset_id = NEW.id
+          AND generation.project_id <> NEW.project_id
+    )
+    OR EXISTS (
+        SELECT 1 FROM canvas_generation_attempts AS attempt
+        JOIN canvas_generation_items AS item ON item.id = attempt.item_id
+        JOIN canvas_generations AS generation ON generation.id = item.generation_id
+        WHERE (
+          attempt.background_asset_id = NEW.id
+          OR attempt.background_preview_asset_id = NEW.id
+          OR attempt.composed_asset_id = NEW.id
+          OR attempt.composed_preview_asset_id = NEW.id
+        )
+          AND generation.project_id <> NEW.project_id
+    )
+"""
+_OPERATION_PROJECT_INTEGRITY_WHEN = """
+    EXISTS (
+        SELECT 1 FROM canvas_generation_attempts AS attempt
+        JOIN canvas_generation_items AS item ON item.id = attempt.item_id
+        JOIN canvas_generations AS generation ON generation.id = item.generation_id
+        WHERE attempt.compose_operation_id = NEW.id
+          AND generation.project_id <> NEW.project_id
+    )
+"""
+
+
+def _canvas_integrity_trigger_ddl(
+    *, name: str, table_name: str, action: str, when_sql: str, message: str
+) -> str:
+    return (
+        f"CREATE TRIGGER IF NOT EXISTS {name} BEFORE {action} ON {table_name} "
+        f"WHEN {when_sql} BEGIN SELECT RAISE(ABORT, '{message}'); END"
+    )
+
+
+_CANVAS_GENERATION_INTEGRITY_TRIGGERS = {
+    "trg_canvas_generation_generations_integrity_update": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_generations_integrity_update",
+        table_name="canvas_generations",
+        action="UPDATE OF project_id",
+        when_sql=_GENERATION_PROJECT_INTEGRITY_WHEN,
+        message="invalid canvas generation project relation",
+    ),
+    "trg_canvas_generation_assets_integrity_update": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_assets_integrity_update",
+        table_name="canvas_assets",
+        action="UPDATE OF project_id",
+        when_sql=_ASSET_PROJECT_INTEGRITY_WHEN,
+        message="invalid canvas generation asset project relation",
+    ),
+    "trg_canvas_generation_operations_integrity_update": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_operations_integrity_update",
+        table_name="canvas_asset_operations",
+        action="UPDATE OF project_id",
+        when_sql=_OPERATION_PROJECT_INTEGRITY_WHEN,
+        message="invalid canvas generation operation project relation",
+    ),
+    "trg_canvas_generation_model_profiles_integrity_update": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_model_profiles_integrity_update",
+        table_name="image_model_profiles",
+        action="UPDATE OF provider_id",
+        when_sql=_MODEL_PROFILE_PROVIDER_INTEGRITY_WHEN,
+        message="invalid canvas generation model provider relation",
+    ),
+    "trg_canvas_generation_items_integrity_insert": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_items_integrity_insert",
+        table_name="canvas_generation_items",
+        action="INSERT",
+        when_sql=_GENERATION_ITEM_INTEGRITY_WHEN,
+        message="invalid canvas generation item relation",
+    ),
+    "trg_canvas_generation_items_integrity_update": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_items_integrity_update",
+        table_name="canvas_generation_items",
+        action=(
+            "UPDATE OF generation_id, provider_id, model_profile_id, "
+            "latest_background_asset_id, latest_composed_asset_id"
+        ),
+        when_sql=_GENERATION_ITEM_UPDATE_INTEGRITY_WHEN,
+        message="invalid canvas generation item relation",
+    ),
+    "trg_canvas_generation_inputs_integrity_insert": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_inputs_integrity_insert",
+        table_name="canvas_generation_item_inputs",
+        action="INSERT",
+        when_sql=_GENERATION_INPUT_INTEGRITY_WHEN,
+        message="invalid canvas generation input relation",
+    ),
+    "trg_canvas_generation_inputs_integrity_update": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_inputs_integrity_update",
+        table_name="canvas_generation_item_inputs",
+        action="UPDATE OF item_id, asset_id",
+        when_sql=_GENERATION_INPUT_INTEGRITY_WHEN,
+        message="invalid canvas generation input relation",
+    ),
+    "trg_canvas_generation_attempts_integrity_insert": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_attempts_integrity_insert",
+        table_name="canvas_generation_attempts",
+        action="INSERT",
+        when_sql=_GENERATION_ATTEMPT_INTEGRITY_WHEN,
+        message="invalid canvas generation attempt relation",
+    ),
+    "trg_canvas_generation_attempts_integrity_update": _canvas_integrity_trigger_ddl(
+        name="trg_canvas_generation_attempts_integrity_update",
+        table_name="canvas_generation_attempts",
+        action=(
+            "UPDATE OF item_id, provider_id, model_profile_id, background_asset_id, "
+            "background_preview_asset_id, composed_asset_id, composed_preview_asset_id, "
+            "compose_operation_id"
+        ),
+        when_sql=_GENERATION_ATTEMPT_INTEGRITY_WHEN,
+        message="invalid canvas generation attempt relation",
+    ),
+}
+
 _INTEGRATION_CONNECTION_PROVIDER_UNIQUE = (
     "uq_integration_connections_id_provider"
 )
@@ -139,6 +437,16 @@ def _creator_integrity_triggers_valid(trigger_sql: dict[str, str | None]) -> boo
     return all(
         _normalize_trigger_sql(trigger_sql.get(name)) == _normalize_trigger_sql(expected)
         for name, expected in _CREATOR_INTEGRITY_TRIGGERS.items()
+    )
+
+
+def _canvas_generation_integrity_triggers_valid(
+    trigger_sql: dict[str, str | None],
+) -> bool:
+    return all(
+        _normalize_trigger_sql(trigger_sql.get(name))
+        == _normalize_trigger_sql(expected)
+        for name, expected in _CANVAS_GENERATION_INTEGRITY_TRIGGERS.items()
     )
 
 
@@ -191,6 +499,11 @@ def init_db():
             include_canvas=False,
         )
     )
+    _upgrade_canvas_generation_layout_hash_width()
+    # Alembic creates the Canvas tables for a fresh database. Install the
+    # idempotent guards before evaluating drift so trigger-only setup does not
+    # create a misleading "pre-migration" backup for a brand-new database.
+    _ensure_canvas_generation_integrity_triggers()
     if _schema_migration_required() and migration_backup is None:
         _backup_sqlite_database()
     _ensure_integration_connection_provider_unique()
@@ -198,6 +511,7 @@ def init_db():
     _ensure_creator_indexes()
     _ensure_compatible_columns()
     _ensure_creator_integrity_triggers()
+    _ensure_canvas_generation_integrity_triggers()
 
     from services.ai_config import ensure_interface_settings
 
@@ -382,7 +696,13 @@ def _schema_migration_required(
                 text("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")
             )
         }
-    return not _creator_integrity_triggers_valid(trigger_sql)
+    return not (
+        _creator_integrity_triggers_valid(trigger_sql)
+        and (
+            not include_canvas
+            or _canvas_generation_integrity_triggers_valid(trigger_sql)
+        )
+    )
 
 
 def _ensure_integration_connection_provider_unique() -> None:
@@ -426,6 +746,116 @@ def _backup_sqlite_database() -> Path | None:
     with closing(sqlite3.connect(source_path)) as source, closing(sqlite3.connect(backup_path)) as destination:
         source.backup(destination)
     return backup_path
+
+
+def _drop_canvas_generation_integrity_triggers(connection) -> None:
+    for trigger_name in _CANVAS_GENERATION_INTEGRITY_TRIGGERS:
+        connection.exec_driver_sql(f'DROP TRIGGER IF EXISTS "{trigger_name}"')
+
+
+def _upgrade_canvas_generation_layout_hash_width() -> None:
+    """Rebuild the generation-item table when only the legacy hash width exists."""
+
+    if engine.dialect.name != "sqlite":
+        return
+    inspector = inspect(engine)
+    if "canvas_generation_items" not in inspector.get_table_names():
+        return
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns("canvas_generation_items")
+    }
+    layout_column = columns.get("layout_hash")
+    if layout_column is None:
+        return
+    reflected_type = str(layout_column["type"]).upper()
+    if reflected_type == "VARCHAR(71)" or reflected_type != "VARCHAR(64)":
+        return
+
+    import canvas_models
+
+    table = canvas_models.CanvasGenerationItem.__table__
+    temporary = "canvas_generation_items__layout_hash_rebuild"
+    create_sql = str(CreateTable(table).compile(engine)).strip()
+    create_sql = create_sql.replace(
+        "CREATE TABLE canvas_generation_items",
+        f'CREATE TABLE "{temporary}"',
+        1,
+    )
+    column_names = [column.name for column in table.columns]
+    quoted_columns = ", ".join(f'"{name}"' for name in column_names)
+
+    with engine.connect() as connection:
+        connection.commit()
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        connection.commit()
+        try:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            _drop_canvas_generation_integrity_triggers(connection)
+            connection.exec_driver_sql(f'DROP TABLE IF EXISTS "{temporary}"')
+            connection.exec_driver_sql(create_sql)
+            connection.exec_driver_sql(
+                f'INSERT INTO "{temporary}" ({quoted_columns}) '
+                f'SELECT {quoted_columns} FROM "canvas_generation_items"'
+            )
+            connection.exec_driver_sql('DROP TABLE "canvas_generation_items"')
+            connection.exec_driver_sql(
+                f'ALTER TABLE "{temporary}" RENAME TO "canvas_generation_items"'
+            )
+            connection.commit()
+        except Exception as exc:
+            connection.rollback()
+            try:
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
+                connection.exec_driver_sql(f'DROP TABLE IF EXISTS "{temporary}"')
+                connection.commit()
+            except Exception:
+                connection.rollback()
+            raise RuntimeError(
+                "Canvas generation layout-hash migration failed"
+            ) from exc
+        finally:
+            if connection.in_transaction():
+                connection.rollback()
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
+            if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != 1:
+                raise RuntimeError(
+                    "Canvas generation migration failed to restore foreign_keys"
+                )
+
+
+def _ensure_canvas_generation_integrity_triggers() -> None:
+    """Install raw-write-safe ownership and provider/model integrity guards."""
+
+    if engine.dialect.name != "sqlite":
+        return
+    required_tables = {
+        "canvas_assets",
+        "canvas_asset_operations",
+        "image_model_profiles",
+        "canvas_generations",
+        "canvas_generation_items",
+        "canvas_generation_item_inputs",
+        "canvas_generation_attempts",
+    }
+    if not required_tables.issubset(set(inspect(engine).get_table_names())):
+        return
+    with engine.begin() as connection:
+        existing = {
+            name: sql
+            for name, sql in connection.execute(
+                text(
+                    "SELECT name, sql FROM sqlite_master "
+                    "WHERE type='trigger' AND name LIKE "
+                    "'trg_canvas_generation_%_integrity_%'"
+                )
+            )
+        }
+        for name, ddl in _CANVAS_GENERATION_INTEGRITY_TRIGGERS.items():
+            if _normalize_trigger_sql(existing.get(name)) != _normalize_trigger_sql(ddl):
+                connection.execute(text(f'DROP TRIGGER IF EXISTS "{name}"'))
+                connection.execute(text(ddl))
 
 
 def _ensure_creator_indexes():

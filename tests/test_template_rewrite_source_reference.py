@@ -539,7 +539,7 @@ class TemplateRewriteSourceRouteTests(unittest.TestCase):
         self.assertIn("痛点类", caught.exception.detail)
         self.assertEqual(self.db.query(GeneratedScript).count(), 0)
 
-    def test_implicit_type_falls_back_within_product_and_syncs_structure(self):
+    def test_selected_page_type_does_not_fall_back_to_another_source_type(self):
         self.db.add_all([
             Product(name="夹心脆", category="烘焙夹心", price=26.8),
             ScriptTemplate(
@@ -557,14 +557,16 @@ class TemplateRewriteSourceRouteTests(unittest.TestCase):
         ])
         self.db.commit()
 
-        response, fake = self._generate(
-            video_type="机制类",
-            extra_requirements="用户需求：使用夹心脆的脚本模板进行生成",
-        )
+        with self.assertRaises(HTTPException) as caught:
+            self._generate(
+                video_type="机制类",
+                extra_requirements="用户需求：使用夹心脆的脚本模板进行生成",
+            )
 
-        self.assertEqual(response.video_type, "场景类")
-        self.assertEqual(response.template_name, "场景类结构模板")
-        self.assertEqual(fake.source_script["title"], "夹心脆 / 场景脚本 / 文案")
+        self.assertEqual(caught.exception.status_code, 422)
+        self.assertIn("夹心脆", caught.exception.detail)
+        self.assertIn("机制类", caught.exception.detail)
+        self.assertEqual(self.db.query(GeneratedScript).count(), 0)
 
     def test_template_id_conflicting_with_instruction_type_returns_422(self):
         with self.assertRaises(HTTPException) as caught:

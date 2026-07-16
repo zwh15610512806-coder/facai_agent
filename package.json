@@ -1,11 +1,22 @@
 {
   "scripts": {
+    "dev:canvas": "vite --config vite.canvas.config.ts",
+    "build:canvas": "vite build --config vite.canvas.config.ts",
+    "typecheck:canvas": "tsc --project tsconfig.canvas.json --noEmit",
+    "test:canvas": "vitest run --config vitest.canvas.config.ts",
+    "pretest:e2e": "npm run build:canvas",
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "fabric": "7.4.0",
     "pptxgenjs": "^4.0.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1"
+    "@playwright/test": "^1.61.1",
+    "@types/node": "24.13.3",
+    "jsdom": "29.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.1.4",
+    "vitest": "4.1.10"
   }
 }

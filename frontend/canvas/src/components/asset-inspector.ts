@@ -1,4 +1,5 @@
 import type { AssetsApi } from "../api/assets";
+import { canvasUserMessage } from "../domain/user-message";
 import type { AssetOperation, ProjectedAsset } from "../domain/assets";
 
 export interface AssetInspectorOptions {
@@ -98,7 +99,7 @@ export function createAssetInspector({
     status.dataset.testid = "canvas-cutout-status";
     status.textContent = STATUS_LABELS[current.cutoutStatus];
     if (current.error !== null) {
-      status.textContent += `：${current.error.message}`;
+      status.textContent += `：${canvasUserMessage(current.error.message, "素材处理失败，请重试")}`;
     }
 
     const actions = document.createElement("div");
@@ -123,7 +124,7 @@ export function createAssetInspector({
             onOperation(result.value);
             status.textContent = "自动抠图已重新排队";
           } else {
-            status.textContent = result.message;
+            status.textContent = canvasUserMessage(result.message, "素材处理失败，请重试");
             retry.disabled = disabled;
           }
         });

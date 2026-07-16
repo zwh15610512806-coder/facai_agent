@@ -1,6 +1,7 @@
 import type { AutosaveState } from "../controllers/autosave-controller";
 import type { RemoteSyncState } from "../controllers/project-controller";
 import type { CutoutProjectionStatus } from "../domain/assets";
+import { canvasUserMessage } from "../domain/user-message";
 
 const STATUS_LABELS: Record<AutosaveState["status"], string> = {
   dirty: "有未保存更改",
@@ -61,7 +62,7 @@ export function createStatusBar(
         remoteSync.status === "syncing" ? "正在同步远端更改…" : "远端同步失败";
       const message = document.createElement("span");
       message.className = "canvas-save-message";
-      message.textContent = remoteSync.message ?? "";
+      message.textContent = remoteSync.message === null ? "" : canvasUserMessage(remoteSync.message, "远端同步失败，请重试");
       element.replaceChildren(label, message);
       if (remoteSync.status === "failed") {
         const retry = document.createElement("button");
@@ -80,7 +81,7 @@ export function createStatusBar(
     label.textContent = STATUS_LABELS[state.status];
     const message = document.createElement("span");
     message.className = "canvas-save-message";
-    message.textContent = state.message ?? "";
+    message.textContent = state.message === null ? "" : canvasUserMessage(state.message, "保存失败，请重试");
     element.replaceChildren(label, message);
     if (state.status === "offline" || state.status === "failed") {
       const retry = document.createElement("button");

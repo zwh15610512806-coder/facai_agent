@@ -11,7 +11,7 @@ from tests.frontend_source import read_page_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NAV_STYLE_VERSION = "tools-20260714-all-pages"
+NAV_STYLE_VERSION = "canvas-usability-20260716"
 
 
 class InspirationPageTests(unittest.TestCase):
@@ -322,7 +322,7 @@ class InspirationPageTests(unittest.TestCase):
 
 
 class InspirationNavigationTests(unittest.TestCase):
-    def test_all_main_templates_show_ai_work_before_generate(self):
+    def test_all_main_templates_show_ai_work_canvas_then_generate(self):
         pages = [
             "index.html",
             "rewrite.html",
@@ -337,12 +337,18 @@ class InspirationNavigationTests(unittest.TestCase):
         for name in pages:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
             self.assertIn('href="/app"', page, name)
+            self.assertIn('href="/app/canvas"', page, name)
             self.assertIn('href="/app/generate"', page, name)
             self.assertNotIn('href="/app/seedance"', page, name)
             self.assertNotIn('>灵感</a>', page, name)
             self.assertRegex(
                 page,
-                re.compile(r'href="/app"[^>]*>AI工作</a>\s*<a href="/app/generate"[^>]*>生成脚本</a>', re.S),
+                re.compile(
+                    r'href="/app"[^>]*>AI工作</a>\s*'
+                    r'<a href="/app/canvas"[^>]*>产品视觉画布</a>\s*'
+                    r'<a href="/app/generate"[^>]*>生成脚本</a>',
+                    re.S,
+                ),
                 name,
             )
 
@@ -380,7 +386,7 @@ class InspirationNavigationTests(unittest.TestCase):
             self.assertNotIn(">数据导入</a>", nav_links.group("body"), name)
             self.assertNotIn('class="data-import-fab"', page, name)
             self.assertNotIn('class="ai-config-fab"', page, name)
-            self.assertIn('/static/js/common.js?v=tools-20260714-all-pages', page, name)
+            self.assertIn('/static/js/common.js?v=canvas-usability-20260716', page, name)
 
     def test_data_import_nav_button_uses_fresh_shared_css_version(self):
         pages = [

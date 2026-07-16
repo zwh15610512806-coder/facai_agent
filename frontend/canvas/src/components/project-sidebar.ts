@@ -2,6 +2,7 @@ import type {
   ProjectController,
   ProjectControllerState,
 } from "../controllers/project-controller";
+import { canvasUserMessage } from "../domain/user-message";
 
 export interface ProjectSidebar {
   element: HTMLElement;
@@ -24,6 +25,8 @@ function actionButton(
 }
 
 export function createProjectSidebar(controller: ProjectController): ProjectSidebar {
+  let renamingProjectId: string | null = null;
+  let latestState = controller.getState();
   const element = document.createElement("aside");
   element.className = "canvas-project-sidebar";
   element.dataset.testid = "canvas-project-sidebar";
@@ -50,7 +53,9 @@ export function createProjectSidebar(controller: ProjectController): ProjectSide
     event.preventDefault();
     const name = createInput.value.trim();
     if (name !== "") {
-      void controller.createProject(name);
+      void controller.createProject(name).then((result) => {
+        if (result.ok) createInput.value = "";
+      });
     }
   });
 
@@ -81,11 +86,12 @@ export function createProjectSidebar(controller: ProjectController): ProjectSide
   element.append(heading, createForm, search, archivedLabel, feedback, list, dialogs);
 
   const update = (state: ProjectControllerState): void => {
+    latestState = state;
     if (document.activeElement !== search) {
       search.value = state.query;
     }
     archived.checked = state.includeArchived;
-    feedback.textContent = state.loading ? "正在加载项目…" : state.error ?? "";
+    feedback.textContent = state.loading ? "正在加载项目…" : state.error === null ? "" : canvasUserMessage(state.error, "项目加载失败，请重试");
     list.replaceChildren();
     for (const project of state.projects) {
       const row = document.createElement("li");
@@ -96,36 +102,73 @@ export function createProjectSidebar(controller: ProjectController): ProjectSide
         row.classList.add("is-active");
       }
       const select = actionButton(project.name, () => {
-        void controller.switchProject(project.id);
+        if (project.id !== state.activeProjectId) void controller.switchProject(project.id);
       }, "canvas-project-switch");
       select.className = "canvas-project-select";
-      select.disabled = project.id === state.activeProjectId;
-      row.append(select);
+      if (project.id === state.activeProjectId) select.setAttribute("aria-current", "true");
+      const meta = document.createElement("span");
+      meta.className = "canvas-project-meta";
+      meta.textContent = project.status === "archived" ? "已归档" : "自动保存";
+      row.append(select, meta);
 
-      if (project.id === state.activeProjectId) {
+      if (project.id === state.activeProjectId && renamingProjectId === project.id) {
+        const renameForm = document.createElement("form");
+        renameForm.className = "canvas-project-rename-form";
         const rename = document.createElement("input");
         rename.type = "text";
         rename.value = project.name;
         rename.maxLength = 200;
         rename.setAttribute("aria-label", `重命名 ${project.name}`);
         rename.dataset.testid = "canvas-project-rename";
-        row.append(
-          rename,
-          actionButton("保存名称", () => {
+        const saveRename = actionButton("保存", () => {
             const name = rename.value.trim();
             if (name !== "") {
-              void controller.renameActiveProject(name);
+              void controller.renameActiveProject(name).then((result) => {
+                if (result.ok) {
+                  renamingProjectId = null;
+                  update(latestState);
+                }
+              });
             }
-          }, "canvas-project-rename-save"),
-        );
+          }, "canvas-project-rename-save");
+        const cancelRename = actionButton("取消", () => {
+          renamingProjectId = null;
+          update(latestState);
+        });
+        renameForm.append(rename, saveRename, cancelRename);
+        renameForm.addEventListener("submit", (event) => {
+          event.preventDefault();
+          saveRename.click();
+        });
+        row.append(renameForm);
+        queueMicrotask(() => rename.select());
       }
 
-      if (project.status === "archived") {
-        row.append(actionButton("恢复", () => void controller.restoreProject(project.id), "canvas-project-restore"));
-      } else if (project.status === "active") {
-        row.append(actionButton("归档", () => void controller.archiveProject(project.id), "canvas-project-archive"));
+      const actions = document.createElement("details");
+      actions.className = "canvas-project-menu";
+      const summary = document.createElement("summary");
+      summary.textContent = "更多";
+      summary.setAttribute("aria-label", `${project.name}项目操作`);
+      const menu = document.createElement("div");
+      menu.className = "canvas-project-menu-popover";
+      menu.setAttribute("role", "menu");
+      if (project.id === state.activeProjectId && renamingProjectId !== project.id) {
+        menu.append(actionButton("重命名", () => {
+          renamingProjectId = project.id;
+          actions.open = false;
+          update(latestState);
+        }, "canvas-project-rename-start"));
       }
-      row.append(actionButton("删除", () => controller.requestDeleteProject(project.id), "canvas-project-delete"));
+      if (project.status === "archived") {
+        menu.append(actionButton("恢复项目", () => void controller.restoreProject(project.id), "canvas-project-restore"));
+      } else if (project.status === "active") {
+        menu.append(actionButton("归档项目", () => void controller.archiveProject(project.id), "canvas-project-archive"));
+      }
+      const remove = actionButton("删除项目", () => controller.requestDeleteProject(project.id), "canvas-project-delete");
+      remove.className = "is-danger";
+      menu.append(remove);
+      actions.append(summary, menu);
+      row.append(actions);
       list.append(row);
     }
 
