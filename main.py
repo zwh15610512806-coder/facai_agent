@@ -1,5 +1,6 @@
 """短视频脚本生成 Agent - FastAPI (本地修复版)"""
 import ipaddress
+import json
 import logging
 import os
 import sys
@@ -7,14 +8,14 @@ import uuid
 from contextlib import asynccontextmanager
 from urllib.parse import quote, urlsplit
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from config import ALLOWED_HOSTS, ALLOWED_ORIGINS, APP_DESCRIPTION, APP_TITLE, APP_VERSION
-from database import engine, init_db
+from database import SessionLocal, engine, get_db, init_db
 from routers import (
     ai_config,
     auth,
@@ -29,6 +30,8 @@ from routers import (
 )
 from sqlalchemy import text
 from routers import templates as tpl_routes
+from routers.canvas import router as canvas_router
+from sqlalchemy.orm import Session
 from services.access_control import (
     record_request_audit,
     request_limit_violation,
@@ -54,56 +57,90 @@ BASE_DIR = LOCAL
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    from database import SessionLocal
-    from services.retention import apply_data_retention
+    canvas_runtime_started = False
+    vector_sync_started = False
+    task_worker_started = False
+    try:
+        init_db()
+        from services.retention import apply_data_retention
 
-    with SessionLocal() as session:
-        apply_data_retention(session)
-    from services.backup_manager import ensure_configured_daily_backup
-    try:
-        ensure_configured_daily_backup()
-    except Exception:
-        logging.getLogger("facai.backup").exception("Daily backup failed")
-    from services.job_runs import recover_interrupted_jobs
-    recover_interrupted_jobs()
-    from vector_store import init_vector_store
-    init_vector_store()
-    from services.vector_sync import start_vector_sync_worker, stop_vector_sync_worker
-    start_vector_sync_worker()
-    from services.task_queue import start_task_worker, stop_task_worker
-    start_task_worker()
-    import socket
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        lan_ip = s.getsockname()[0]
-        s.close()
-    except OSError:
-        lan_ip = ""
-    print(f"OK {APP_TITLE} v{APP_VERSION}")
-    print("   http://localhost:8001/app")
-    print(f"   http://{lan_ip}:8001/app")
-    if auth_enabled():
-        logging.getLogger("facai.security").info(
-            "Application authentication is enabled (configured=%s)", auth_configured()
-        )
-    else:
-        logging.getLogger("facai.security").warning(
-            "Application authentication is disabled; use loopback access only"
-        )
-    try:
+        try:
+            with SessionLocal() as session:
+                apply_data_retention(session)
+        except Exception:
+            logging.getLogger("facai.retention").exception("Data retention failed")
+        from services.canvas.providers.bootstrap import bootstrap_builtin_image_profiles
+        from services.canvas.projects import recover_deleting_projects
+        from services.canvas.events import prune_all_canvas_events
+        from services.canvas.runtime import start_canvas_runtime
+
+        bootstrap_builtin_image_profiles(SessionLocal)
+        recover_deleting_projects(SessionLocal)
+        try:
+            prune_all_canvas_events(SessionLocal)
+        except Exception:
+            logging.getLogger("facai.canvas").exception("Canvas event pruning failed")
+        start_canvas_runtime(app, db_factory=SessionLocal)
+        canvas_runtime_started = True
+        from services.backup_manager import ensure_configured_daily_backup
+        try:
+            ensure_configured_daily_backup()
+        except Exception:
+            logging.getLogger("facai.backup").exception("Daily backup failed")
+        from services.job_runs import recover_interrupted_jobs
+        recover_interrupted_jobs()
+        from vector_store import init_vector_store
+        init_vector_store()
+        from services.vector_sync import start_vector_sync_worker
+        start_vector_sync_worker()
+        vector_sync_started = True
+        from services.task_queue import start_task_worker
+        start_task_worker()
+        task_worker_started = True
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            lan_ip = s.getsockname()[0]
+            s.close()
+        except OSError:
+            lan_ip = ""
+        print(f"OK {APP_TITLE} v{APP_VERSION}")
+        print("   http://localhost:8001/app")
+        print(f"   http://{lan_ip}:8001/app")
+        if auth_enabled():
+            logging.getLogger("facai.security").info(
+                "Application authentication is enabled (configured=%s)", auth_configured()
+            )
+        else:
+            logging.getLogger("facai.security").warning(
+                "Application authentication is disabled; use loopback access only"
+            )
         yield
     finally:
-        stop_task_worker()
-        stop_vector_sync_worker()
+        try:
+            if task_worker_started:
+                from services.task_queue import stop_task_worker
+
+                stop_task_worker()
+        finally:
+            try:
+                if vector_sync_started:
+                    from services.vector_sync import stop_vector_sync_worker
+
+                    stop_vector_sync_worker()
+            finally:
+                if canvas_runtime_started:
+                    from services.canvas.runtime import stop_canvas_runtime
+
+                    stop_canvas_runtime(app)
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION, description=APP_DESCRIPTION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 app.add_middleware(RequestBodyLimitMiddleware)
@@ -120,10 +157,42 @@ app.include_router(ai_config.router, prefix="/api/ai-config", tags=["ai-config"]
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(search_local.router, prefix="/api/search-proxy", tags=["search"])
 app.include_router(creators.router, prefix="/api/creators", tags=["creators"])
+app.include_router(canvas_router, prefix="/api/canvas", tags=["canvas"])
 app.include_router(integration_routes.session_router)
 app.include_router(integration_routes.admin_router)
 app.include_router(integration_routes.operations_router)
 app.include_router(integration_routes.public_router)
+
+
+def _serialize_canvas_bootstrap(payload: dict[str, object]) -> str:
+    """Serialize Canvas page state without allowing an inline script escape."""
+
+    serialized = json.dumps(
+        payload,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    )
+    return (
+        serialized.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
+def _canvas_page_response(request: Request, *, project_id: str | None):
+    return templates.TemplateResponse(
+        request,
+        "canvas.html",
+        {
+            "request": request,
+            "canvas_bootstrap_json": _serialize_canvas_bootstrap(
+                {"apiBase": "/api/canvas", "projectId": project_id}
+            ),
+        },
+    )
 
 def _apply_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -471,6 +540,22 @@ def login_page(request: Request):
     return templates.TemplateResponse(request, "login.html", {"request": request})
 @app.get("/app")
 def app_page(request: Request): return templates.TemplateResponse(request, "inspiration.html", {"request": request})
+@app.get("/app/canvas")
+def canvas_page(request: Request):
+    return _canvas_page_response(request, project_id=None)
+@app.get("/app/canvas/{project_id}")
+def canvas_project_page(
+    request: Request,
+    project_id: str,
+    db: Session = Depends(get_db),
+):
+    from services.canvas import projects as canvas_project_service
+
+    try:
+        canvas_project_service.get_project_snapshot(db, project_id=project_id)
+    except canvas_project_service.CanvasProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Canvas project not found") from exc
+    return _canvas_page_response(request, project_id=project_id)
 @app.get("/app/generate")
 def generate_page(request: Request): return templates.TemplateResponse(request, "index.html", {"request": request})
 @app.get("/app/products")

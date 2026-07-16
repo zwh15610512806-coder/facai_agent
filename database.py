@@ -175,6 +175,7 @@ def assert_schema_current(bind) -> None:
 
 def init_db():
     """Bring the active database to its supported schema and initialize settings."""
+    import canvas_models  # Register Product Canvas persistence models.
     import models  # 确保模型类被注册到 Base.metadata
     import creator_models  # 注册达人商务域模型
     import integration_models  # 注册电商集成控制域模型
@@ -185,7 +186,10 @@ def init_db():
         return
 
     migration_backup = _run_schema_migrations(
-        drift_check=lambda: _schema_migration_required(include_integration=False)
+        drift_check=lambda: _schema_migration_required(
+            include_integration=False,
+            include_canvas=False,
+        )
     )
     if _schema_migration_required() and migration_backup is None:
         _backup_sqlite_database()
@@ -197,7 +201,9 @@ def init_db():
 
     from services.ai_config import ensure_interface_settings
 
-    with SessionLocal() as session:
+    # Keep initialization bound to the active engine so migration tests and
+    # maintenance tools can safely supply an isolated SQLite database.
+    with SessionLocal(bind=engine) as session:
         ensure_interface_settings(session)
 
 
@@ -306,7 +312,9 @@ def _integration_connection_provider_unique_valid(inspector) -> bool:
     return False
 
 
-def _schema_migration_required(*, include_integration: bool = True) -> bool:
+def _schema_migration_required(
+    *, include_integration: bool = True, include_canvas: bool = True
+) -> bool:
     path = _sqlite_database_path()
     if path is None or not path.exists() or path.stat().st_size == 0:
         return False
@@ -330,6 +338,22 @@ def _schema_migration_required(*, include_integration: bool = True) -> bool:
     }
     if not required_tables.issubset(existing_tables):
         return True
+    if include_canvas:
+        canvas_tables = {
+            "canvas_projects",
+            "canvas_project_skus",
+            "canvas_assets",
+            "canvas_asset_operations",
+            "canvas_events",
+            "image_provider_connections",
+            "image_model_profiles",
+            "canvas_generations",
+            "canvas_generation_items",
+            "canvas_generation_item_inputs",
+            "canvas_generation_attempts",
+        }
+        if not canvas_tables.issubset(existing_tables):
+            return True
     if include_integration and (
         "integration_connections" in existing_tables
         and not _integration_connection_provider_unique_valid(inspector)

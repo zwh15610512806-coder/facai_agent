@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "semanticState": {
+    "nodes": [
+      {
+        "id": "node-product-1",
+        "kind": "product_source",
+        "managedBy": "complete-set",
+        "skuId": null,
+        "assetId": "asset-source-1",
+        "modelProfileId": null,
+        "prompt": null,
+        "compositionGroupId": "composition-group-1",
+        "textSnapshotId": null,
+        "outputBoardId": null,
+        "parameters": {}
+      },
+      {
+        "id": "node-generation-1",
+        "kind": "model_generation",
+        "managedBy": "complete-set",
+        "skuId": null,
+        "assetId": null,
+        "modelProfileId": "model-profile-1",
+        "prompt": "clean studio scene",
+        "compositionGroupId": null,
+        "textSnapshotId": null,
+        "outputBoardId": null,
+        "parameters": {}
+      },
+      {
+        "id": "node-output-1",
+        "kind": "main_output",
+        "managedBy": "complete-set",
+        "skuId": null,
+        "assetId": null,
+        "modelProfileId": "model-profile-1",
+        "prompt": "clean studio scene",
+        "compositionGroupId": "composition-group-1",
+        "textSnapshotId": null,
+        "outputBoardId": "output-board-1",
+        "parameters": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-product-output-1",
+        "kind": "output_image",
+        "sourceNodeId": "node-generation-1",
+        "sourcePort": "output",
+        "targetNodeId": "node-output-1",
+        "targetPort": "input",
+        "skuId": null
+      }
+    ],
+    "outputBoards": [
+      {
+        "id": "output-board-1",
+        "outputNodeId": "node-output-1",
+        "outputType": "main",
+        "skuId": null,
+        "sortOrder": 0,
+        "selectedResultAssetId": "asset-result-1"
+      }
+    ],
+    "mode": "complete-set",
+    "advancedCustomized": false,
+    "completeSet": {
+      "selectedOutputTypes": [
+        "main"
+      ],
+      "outputs": [
+        {
+          "outputType": "main",
+          "skuId": null,
+          "quantity": 1,
+          "aspectRatio": "1:1",
+          "width": 1024,
+          "height": 1024,
+          "prompt": "clean studio scene",
+          "modelProfileId": "model-profile-1",
+          "modelParameters": {},
+          "referenceAssetId": "asset-source-1",
+          "compositionGroupId": "composition-group-1"
+        }
+      ]
+    },
+    "compositionGroups": [
+      {
+        "id": "composition-group-1",
+        "skuIds": [],
+        "productLayerIds": [
+          "product-layer-1"
+        ],
+        "layoutHash": "sha256:5efd4a7c6ec24de6fb15f2ade46af5288e86a41570df4503f69b2b426af48884",
+        "layout": {
+          "slot": { "x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8 },
+          "anchor": { "x": 0.5, "y": 0.5 },
+          "baseline": 0.5,
+          "relativeProductFraction": 0.75,
+          "contain": true,
+          "safeArea": { "top": 0.05, "right": 0.05, "bottom": 0.05, "left": 0.05 },
+          "rotation": 0.0
+        }
+      }
+    ]
+  },
+  "layoutState": {
+    "nodePositions": {
+      "node-product-1": {
+        "x": 0.1,
+        "y": 0.2
+      },
+      "node-output-1": {
+        "x": 0.7,
+        "y": 0.2
+      }
+    },
+    "objectTransforms": {
+      "product-layer-1": {
+        "x": 0.5,
+        "y": 0.5,
+        "scale": 0.75,
+        "rotation": 0.0
+      }
+    },
+    "viewport": {
+      "x": 0.0,
+      "y": 0.0,
+      "zoom": 1.0
+    },
+    "productLayers": [
+      {
+        "id": "product-layer-1",
+        "sourceAssetId": "asset-source-1",
+        "renderAssetId": "asset-render-1",
+        "allowOpaqueFallback": false,
+        "skuId": null,
+        "compositionGroupId": "composition-group-1",
+        "transformId": "product-layer-1",
+        "locked": true
+      }
+    ],
+    "textSnapshots": [
+      {
+        "id": "text-snapshot-1",
+        "nodeId": "node-output-1",
+        "content": "Launch",
+        "fontAssetId": null,
+        "fontFamily": "Noto Sans CJK SC",
+        "fontVersion": "sha256:2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+        "boxWidth": 0.4,
+        "lines": [
+          {
+            "text": "Launch",
+            "x": 0.0,
+            "y": 0.0,
+            "width": 0.3
+          }
+        ],
+        "fontSize": 32,
+        "color": "#0f172a",
+        "letterSpacing": 0.0,
+        "lineHeight": 1.2,
+        "align": "center",
+        "baseline": "alphabetic",
+        "zBand": "above-product",
+        "sortOrder": 0
+      }
+    ]
+  }
+}

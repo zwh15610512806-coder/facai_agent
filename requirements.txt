@@ -10,7 +10,9 @@ chromadb==0.5.23
 openai==2.36.0
 openpyxl==3.1.5
 pandas==3.0.2
-pillow==12.3.0
+Pillow==12.3.0
+onnxruntime==1.27.0
+rembg[cpu]==2.0.76
 python-dotenv==1.2.2
 httpx==0.27.2
 pdfminer.six==20260107

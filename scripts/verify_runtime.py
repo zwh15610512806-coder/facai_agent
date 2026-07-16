@@ -8,8 +8,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = (ROOT / ".venv").resolve()
-LOCK = ROOT / "requirements.lock"
+LOCKS = (ROOT / "requirements.lock", ROOT / "requirements.canvas.lock")
 LOCK_MARKER = VENV / ".facai-requirements.sha256"
+
+
+def verified_lock_digest() -> str:
+    """Hash every reviewed runtime lock in a stable, unambiguous order."""
+
+    digest = hashlib.sha256()
+    for lock in LOCKS:
+        if not lock.exists():
+            raise RuntimeError(f"Required dependency lock is missing: {lock.name}")
+        digest.update(lock.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(lock.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def assert_verified_runtime() -> None:
@@ -19,9 +33,9 @@ def assert_verified_runtime() -> None:
             f"Refusing unisolated interpreter {sys.executable}; run "
             "scripts\\bootstrap-venv.ps1 and start with .venv\\Scripts\\python.exe."
         )
-    if not LOCK.exists() or not LOCK_MARKER.exists():
+    if not all(lock.exists() for lock in LOCKS) or not LOCK_MARKER.exists():
         raise RuntimeError("The project venv has not been verified against requirements.lock")
-    expected = hashlib.sha256(LOCK.read_bytes()).hexdigest()
+    expected = verified_lock_digest()
     installed = LOCK_MARKER.read_text(encoding="ascii").strip()
     if installed != expected:
         raise RuntimeError(

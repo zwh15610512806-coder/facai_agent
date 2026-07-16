@@ -2,7 +2,8 @@
   var TOOL_LINKS = [
     {label: '数据导入', href: '/app/import', icon: 'upload'},
     {label: 'AI配置', href: '/app/ai-config', icon: 'settings'},
-    {label: 'API接入', href: '/app/api-connections', icon: 'plug-zap'}
+    {label: 'API接入', href: '/app/api-connections', icon: 'plug-zap'},
+    {label: '产品视觉画布', href: '/app/canvas', icon: 'palette'}
   ];
 
   function escHtml(value) {

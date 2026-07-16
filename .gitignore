@@ -28,7 +28,10 @@ output/
 *.pptx
 data/chroma_db/*
 data/chroma_test/*
+# Local model caches, including the rembg ONNX model directory.
 data/models/*
+# Canvas project runtime trees include uploads, temporary work, and exports.
+data/canvas_projects/*
 data/search_index.json
 data/product_files/*
 data/generated_documents/*
