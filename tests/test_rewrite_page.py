@@ -174,7 +174,7 @@ async function flush(){await new Promise(resolve=>setImmediate(resolve));await n
         self.assertLessEqual(len(payload["search"]), 6)
         self.assertEqual(payload["shortCallCount"], 0)
         self.assertEqual(len(payload["rewriteCalls"]), 1)
-        self.assertTrue(payload["rewriteCalls"][0]["include_shot_design"])
+        self.assertFalse(payload["rewriteCalls"][0]["include_shot_design"])
         self.assertEqual(payload["rewriteCalls"][0]["product_id"], 1)
         self.assertEqual(
             payload["during"],
@@ -246,13 +246,11 @@ async function flush(){await new Promise(resolve=>setImmediate(resolve));await n
         self.assertNotIn("'+m[1]+'", body)
         self.assertNotIn("'+m[2]+'", body)
 
-    def test_rewrite_page_promises_material_script_format(self):
-        self.assertIn("保留参考结构并输出为资料脚本格式", self.page)
-        self.assertIn("画面括号 + 口播文案", self.page)
-        self.assertIn("并按“画面括号 + 口播文案”的资料表脚本格式输出", self.page)
-        self.assertNotIn("可选择输出", self.page)
-        self.assertIn("已保留参考结构并按资料脚本格式输出", self.page)
-        self.assertNotIn("已保留原脚本结构", self.page)
+    def test_rewrite_page_promises_plain_spoken_copy_by_default(self):
+        self.assertIn("保留参考结构并输出纯口播文案", self.page)
+        self.assertIn("默认输出纯口播文案", self.page)
+        self.assertIn("已保留参考结构并输出纯口播文案", self.page)
+        self.assertNotIn("画面括号 + 口播文案", self.page)
 
     def test_rewrite_page_has_demand_prefill(self):
         self.assertIn("需求预填写", self.page)
@@ -261,17 +259,17 @@ async function flush(){await new Promise(resolve=>setImmediate(resolve));await n
         self.assertIn("document.getElementById('rewriteReqPreFill').value.trim()", self.page)
         self.assertIn("reqs.push('用户需求：'+preFill)", self.page)
 
-    def test_rewrite_page_keeps_shot_design_enabled_without_visible_setting(self):
+    def test_rewrite_page_keeps_plain_output_without_visible_setting(self):
         self.assertNotIn("需要设计画面", self.page)
         self.assertNotIn('id="includeShotDesign"', self.page)
         self.assertNotIn("取消勾选后只输出一段口播文案", self.page)
-        self.assertIn("var includeShotDesign=true", self.page)
+        self.assertIn("var includeShotDesign=false", self.page)
         self.assertIn("include_shot_design:includeShotDesign", self.page)
 
-    def test_rewrite_request_defaults_to_existing_shot_design_format(self):
+    def test_rewrite_request_defaults_to_plain_spoken_copy(self):
         request = ScriptRewriteRequest(original_script="老板们看过来", product_id=1)
 
-        self.assertTrue(request.include_shot_design)
+        self.assertFalse(request.include_shot_design)
 
     def test_rewriter_extracts_timestamped_reference_structure(self):
         original = """00:00 头些年我还是当记者的时候
@@ -419,6 +417,32 @@ async function flush(){await new Promise(resolve=>setImmediate(resolve));await n
         self.assertIn("老板们看过来", cleaned)
         self.assertIn("这款奶冻粉很适合门店用", cleaned)
 
+    def test_rewriter_defaults_to_plain_spoken_output(self):
+        ai = RewriteCaptureAI(
+            "00:00 （主播半身站在烘焙台前开场，手边摆放产品包装）老板们看过来。"
+            "00:03 （产品包装正面近景，手拿转动展示规格）这款奶冻粉很适合门店用。"
+        )
+        rewriter = ScriptRewriter()
+        rewriter.ai = ai
+
+        result = asyncio.run(rewriter.rewrite(
+            original_script="老板们看过来，这款材料很适合门店用。",
+            target_product={
+                "name": "奶冻粉",
+                "category": "烘焙夹心",
+                "price": 12.71,
+                "selling_points": [{"type": "稳定性", "content": "凝固稳定，不容易出水"}],
+            },
+        ))
+
+        prompt = "\n".join(message["content"] for message in ai.messages)
+        self.assertIn("当前输出模式：纯口播一段话", prompt)
+        self.assertNotIn("当前输出模式：画面括号 + 口播文案", prompt)
+        self.assertNotIn("主播半身", result)
+        self.assertNotIn("产品包装正面近景", result)
+        self.assertNotIn("00:00", result)
+        self.assertNotIn("\n", result)
+
     def test_rewrite_copy_button_has_fallback_and_error_feedback(self):
         self.assertIn("function fallbackCopyText", self.page)
         self.assertIn("function copyText", self.page)
@@ -473,6 +497,7 @@ async function flush(){await new Promise(resolve=>setImmediate(resolve));await n
     def test_redo_directly_submits_rewrite_without_returning_to_form(self):
         self.assertIn("async function submitRewrite", self.page)
         self.assertIn("submitRewrite('请在保留参考文案结构的前提下，直接生成一个不同于上一版的新版本", self.page)
+        self.assertNotIn("镜头提示", self.page)
         self.assertNotIn("document.getElementById('extraReq').value='请生成一个不同于上一版的版本'", self.page)
 
     def test_result_back_button_returns_to_single_page_form(self):

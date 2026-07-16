@@ -435,7 +435,7 @@
 <div style="margin-bottom:22px">
 <label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">需求预填写 <span style="font-weight:400;color:var(--text-3)">（选填）</span></label>
 <textarea id="reqPreFill" class="input" style="width:100%;min-height:80px;font-size:13px;resize:vertical" placeholder="填写你对脚本的具体要求、最新活动卖点、促销信息等…&#10;例如：双11期间每满200减30、新品上市首单9折、强调天然原料无添加"></textarea>
-<p style="font-size:12px;color:var(--text-3);margin-top:4px">填写的需求会自动注入到 AI 生成上下文中，让脚本更贴合当前活动</p>
+<p style="font-size:12px;color:var(--text-3);margin-top:4px">支持“选一个翻糖的机制类脚本改写”“使用白色翻糖膏的脚本模板生成”等指令；未写类型时优先当前类型，再从同产品其他类型中选择。</p>
 </div>
 
 <button id="btnGenerate" class="btn btn-pri btn-lg" disabled>生成脚本</button>
@@ -584,7 +584,7 @@ function buildRegenerateRequirement(){
 }
 function resetSeedancePrompts(msg){currentSeedancePrompts=[];document.getElementById('seedancePromptList').innerHTML='<div class="seedance-empty">'+escHtml(msg||'生成脚本后，可先编辑左侧文案，再点击「生成提示词」生成 Seedance 2.0 画面提示词。')+'</div>';}
 function resetTemplateReference(){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');panel.hidden=true;details.open=false;document.getElementById('templateReferenceName').textContent='';document.getElementById('templateReferenceSource').textContent='';document.getElementById('templateReferenceStructure').textContent='';document.getElementById('templateReferenceScript').textContent='';}
-function showTemplateReference(sourceTitle,sourceScript,sourceType,templateName){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');panel.hidden=false;details.open=false;document.getElementById('templateReferenceName').textContent=sourceTitle;document.getElementById('templateReferenceSource').textContent=sourceType==='other'?'其他脚本':'法采脚本';document.getElementById('templateReferenceStructure').textContent=templateName?'结构模板：'+templateName:'';document.getElementById('templateReferenceScript').textContent=sourceScript||'该参考脚本暂无正文。';}
+function showTemplateReference(sourceTitle,sourceScript,sourceType,templateName,sourceMatchQuery){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');var detailParts=[];panel.hidden=false;details.open=false;document.getElementById('templateReferenceName').textContent=sourceTitle;document.getElementById('templateReferenceSource').textContent=sourceType==='other'?'其他脚本':'法采脚本';if(templateName)detailParts.push('结构模板：'+templateName);if(sourceMatchQuery)detailParts.push('匹配产品：'+sourceMatchQuery);document.getElementById('templateReferenceStructure').textContent=detailParts.join(' · ');document.getElementById('templateReferenceScript').textContent=sourceScript||'该参考脚本暂无正文。';}
 function normalizeCustomVideoType(type){return String(type||'').replace(/[<>"'`\\]/g,'').trim().replace(/\s+/g,'').slice(0,20);}
 function loadCustomVideoTypes(){
  try{const raw=localStorage.getItem(CUSTOM_VIDEO_TYPES_KEY);const list=JSON.parse(raw||'[]');if(!Array.isArray(list))return [];
@@ -776,7 +776,7 @@ async function doGenerate(extra){
   document.getElementById('scriptOutput').textContent=currentScript;
   var metaExtra='';if(preFill||extra)metaExtra=' <span class="text-accent" style="font-weight:600">（'+(preFill?'含需求':'')+(preFill&&extra?'+':'')+(extra?'已优化':'')+'）</span>';
   document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(d.product_name)+'</b> &middot; 类型：<b class="text-accent">'+escHtml(d.video_type)+'</b>'+metaExtra;
-  if(d.source_script_title)showTemplateReference(d.source_script_title,d.source_script_content,d.source_script_source,d.template_name);
+  if(d.source_script_title)showTemplateReference(d.source_script_title,d.source_script_content,d.source_script_source,d.template_name,d.source_match_query);
   resetSeedancePrompts('可先直接编辑左侧生成脚本，确认后点击「生成提示词」。');
  }catch(e){currentScript='';currentScriptId=null;resetSeedancePrompts('生成失败后暂无提示词，请重新生成脚本。');document.getElementById('scriptOutput').textContent='生成失败：'+e.message}
  finally{state.generating=false;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnOptimize').disabled=false;document.getElementById('btnGenerateSeedance').disabled=false;}

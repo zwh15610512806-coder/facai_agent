@@ -1,5 +1,6 @@
 """脚本生成 API — AI 驱动的核心功能"""
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Product, ScriptTemplate, ViralScript, GeneratedScript, ReferenceScript
@@ -17,7 +18,13 @@ from services.product_detail import build_product_detail_payload
 from services.script_rewriter import ScriptRewriteGenerationError, script_rewriter
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
 from services.seedance_prompt_generator import SeedancePromptGenerationError, seedance_prompt_generator
+from services.script_reference_intent import (
+    DEFAULT_VIDEO_TYPES,
+    ReferenceSelectionIntent,
+    parse_reference_selection_intent,
+)
 from services.upload_limits import read_upload_bytes
+from services.product_markdown_importer import normalize_product_name
 from typing import List, Optional
 import random
 
@@ -63,6 +70,8 @@ def _select_rewrite_template(
     db: Session,
     requested_video_type: str,
     template_id: Optional[int],
+    *,
+    allow_type_fallback: bool = True,
 ) -> ScriptTemplate:
     if template_id:
         template = db.query(ScriptTemplate).filter(ScriptTemplate.id == template_id).first()
@@ -75,6 +84,12 @@ def _select_rewrite_template(
         candidates = db.query(ScriptTemplate).filter(
             ScriptTemplate.video_type == requested_video_type
         ).all()
+
+    if requested_video_type and not candidates and not allow_type_fallback:
+        raise HTTPException(
+            status_code=422,
+            detail=f"未找到{requested_video_type}结构模板，请先在脚本模板库创建对应模板",
+        )
 
     if not candidates:
         candidates = db.query(ScriptTemplate).all()
@@ -115,21 +130,232 @@ def _random_rewrite_source_from_queries(viral_query, reference_query) -> dict | 
     }
 
 
-def _select_rewrite_source_script(db: Session, video_type: str) -> dict:
-    same_type_source = _random_rewrite_source_from_queries(
-        db.query(ViralScript).filter(ViralScript.video_type == video_type),
-        db.query(ReferenceScript).filter(ReferenceScript.video_type == video_type),
+def _normalize_reference_query(value: str | None) -> str:
+    return " ".join((value or "").strip().split())
+
+
+def _reference_query_filter(column, reference_query: str):
+    escaped = reference_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return column.ilike(f"%{escaped}%", escape="\\")
+
+
+def _available_reference_video_types(db: Session) -> list[str]:
+    stored = [
+        value
+        for (value,) in db.query(ScriptTemplate.video_type).distinct().all()
+        if value
+    ]
+    return list(dict.fromkeys([*DEFAULT_VIDEO_TYPES, *stored]))
+
+
+def _parse_reference_selection_intent(
+    requirements: str | None,
+    video_types: Optional[List[str]] = None,
+) -> ReferenceSelectionIntent:
+    if video_types is None:
+        return parse_reference_selection_intent(requirements)
+    return parse_reference_selection_intent(requirements, video_types)
+
+
+def _extract_reference_query_from_requirements(requirements: str | None) -> tuple[str | None, str | None]:
+    intent = _parse_reference_selection_intent(requirements)
+    return intent.product_query, intent.remaining_requirements
+
+
+def _resolve_reference_product_terms(db: Session, reference_query: str) -> list[str]:
+    normalized_query = _normalize_reference_query(reference_query)
+    query_key = normalize_product_name(normalized_query)
+    if not query_key:
+        return []
+
+    products = db.query(Product).all()
+    exact_names = [
+        product.name
+        for product in products
+        if normalize_product_name(product.name) == query_key
+    ]
+    if exact_names:
+        return list(dict.fromkeys(exact_names))
+
+    family_names = [
+        product.name
+        for product in products
+        if query_key in normalize_product_name(product.name)
+        or normalize_product_name(product.name) in query_key
+    ]
+    return list(dict.fromkeys([normalized_query, *family_names]))
+
+
+def _reference_terms_filter(columns, terms: List[str]):
+    clauses = [
+        and_(column.is_not(None), _reference_query_filter(column, term))
+        for term in terms
+        for column in columns
+        if term
+    ]
+    return or_(*clauses)
+
+
+def _matching_reference_queries(
+    db: Session,
+    terms: List[str],
+    video_type: str = "",
+    *,
+    exclude_terms: Optional[List[str]] = None,
+):
+    viral_filters = [_reference_terms_filter(
+        (ViralScript.title, ViralScript.category, ViralScript.tags, ViralScript.script_content),
+        terms,
+    )]
+    reference_filters = [_reference_terms_filter(
+        (ReferenceScript.title, ReferenceScript.tags, ReferenceScript.notes, ReferenceScript.script_content),
+        terms,
+    )]
+    if video_type:
+        viral_filters.append(ViralScript.video_type == video_type)
+        reference_filters.append(ReferenceScript.video_type == video_type)
+    else:
+        viral_filters.append(and_(ViralScript.video_type.is_not(None), ViralScript.video_type != ""))
+        reference_filters.append(and_(ReferenceScript.video_type.is_not(None), ReferenceScript.video_type != ""))
+    if exclude_terms:
+        viral_filters.append(~_reference_terms_filter(
+            (ViralScript.title, ViralScript.category, ViralScript.tags, ViralScript.script_content),
+            exclude_terms,
+        ))
+        reference_filters.append(~_reference_terms_filter(
+            (ReferenceScript.title, ReferenceScript.tags, ReferenceScript.notes, ReferenceScript.script_content),
+            exclude_terms,
+        ))
+    return (
+        db.query(ViralScript).filter(*viral_filters),
+        db.query(ReferenceScript).filter(*reference_filters),
     )
+
+
+def _all_reference_queries(
+    db: Session,
+    video_type: str = "",
+    *,
+    exclude_terms: Optional[List[str]] = None,
+):
+    viral_filters = []
+    reference_filters = []
+    if video_type:
+        viral_filters.append(ViralScript.video_type == video_type)
+        reference_filters.append(ReferenceScript.video_type == video_type)
+    if exclude_terms:
+        viral_filters.append(~_reference_terms_filter(
+            (ViralScript.title, ViralScript.category, ViralScript.tags, ViralScript.script_content),
+            exclude_terms,
+        ))
+        reference_filters.append(~_reference_terms_filter(
+            (ReferenceScript.title, ReferenceScript.tags, ReferenceScript.notes, ReferenceScript.script_content),
+            exclude_terms,
+        ))
+    return (
+        db.query(ViralScript).filter(*viral_filters),
+        db.query(ReferenceScript).filter(*reference_filters),
+    )
+
+
+def _select_rewrite_source_script(
+    db: Session,
+    video_type: str,
+    *,
+    reference_query: str | None = None,
+    allow_product_type_fallback: bool = False,
+    exclude_product_query: str | None = None,
+) -> dict:
+    normalized_query = _normalize_reference_query(reference_query)
+    normalized_exclusion = _normalize_reference_query(exclude_product_query)
+    exclusion_terms = (
+        _resolve_reference_product_terms(db, normalized_exclusion)
+        if normalized_exclusion
+        else []
+    )
+    if normalized_exclusion and not exclusion_terms:
+        exclusion_terms = [normalized_exclusion]
+
+    if (
+        normalized_query
+        and normalized_exclusion
+        and normalize_product_name(normalized_query) == normalize_product_name(normalized_exclusion)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"指定参考产品“{normalized_query}”与当前生成产品相同，"
+                "请改用其他产品脚本"
+            ),
+        )
+
+    if normalized_query:
+        terms = _resolve_reference_product_terms(db, normalized_query)
+        if not terms:
+            terms = [normalized_query]
+        viral_query, reference_query_set = _matching_reference_queries(
+            db,
+            terms,
+            video_type,
+            exclude_terms=exclusion_terms,
+        )
+        same_type_source = _random_rewrite_source_from_queries(
+            viral_query,
+            reference_query_set,
+        )
+        if same_type_source:
+            return same_type_source
+        if allow_product_type_fallback:
+            viral_query, reference_query_set = _matching_reference_queries(
+                db,
+                terms,
+                exclude_terms=exclusion_terms,
+            )
+            fallback_source = _random_rewrite_source_from_queries(
+                viral_query,
+                reference_query_set,
+            )
+            if fallback_source:
+                return fallback_source
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"未找到“{normalized_query}”的{video_type}参考脚本，请先在脚本模板库导入对应脚本"
+                if video_type
+                else f"未找到“{normalized_query}”的参考脚本，请先在脚本模板库导入对应脚本"
+            ),
+        )
+
+    viral_query, reference_query_set = _all_reference_queries(
+        db,
+        video_type,
+        exclude_terms=exclusion_terms,
+    )
+    same_type_source = _random_rewrite_source_from_queries(viral_query, reference_query_set)
     if same_type_source:
         return same_type_source
 
-    fallback_source = _random_rewrite_source_from_queries(
-        db.query(ViralScript),
-        db.query(ReferenceScript),
+    viral_query, reference_query_set = _all_reference_queries(
+        db,
+        exclude_terms=exclusion_terms,
     )
+    fallback_source = _random_rewrite_source_from_queries(viral_query, reference_query_set)
     if fallback_source:
         return fallback_source
 
+    if normalized_exclusion:
+        if db.query(ViralScript).count() == 0 and db.query(ReferenceScript).count() == 0:
+            raise HTTPException(
+                status_code=404,
+                detail="具体脚本库为空，请先在脚本模板库添加法采脚本或其他脚本",
+            )
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"剔除当前产品“{normalized_exclusion}”的脚本后，没有可用参考脚本，"
+                "请先导入其他产品脚本"
+            ),
+        )
     raise HTTPException(
         status_code=404,
         detail="具体脚本库为空，请先在脚本模板库添加法采脚本或其他脚本",
@@ -188,16 +414,69 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
     video_type = requested_video_type
     template = None
     source_script = None
+    source_match_query = None
+    generation_requirements = request.extra_requirements
 
     if engine == "template":
-        template = _select_rewrite_template(
-            db=db,
-            requested_video_type=requested_video_type,
-            template_id=request.template_id,
+        reference_intent = _parse_reference_selection_intent(
+            request.extra_requirements,
+            _available_reference_video_types(db),
         )
-        if not requested_video_type or request.template_id:
+        generation_requirements = reference_intent.remaining_requirements
+        source_match_query = reference_intent.product_query
+
+        if request.template_id:
+            template = _select_rewrite_template(
+                db=db,
+                requested_video_type=requested_video_type,
+                template_id=request.template_id,
+            )
+            if (
+                reference_intent.explicit_video_type
+                and template.video_type != reference_intent.explicit_video_type
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"需求指定{reference_intent.explicit_video_type}，"
+                        f"但结构模板是{template.video_type}，请统一后重试"
+                    ),
+                )
             video_type = template.video_type
-        source_script = _select_rewrite_source_script(db, video_type)
+
+        if source_match_query:
+            preferred_video_type = reference_intent.explicit_video_type or video_type
+            source_script = _select_rewrite_source_script(
+                db,
+                preferred_video_type,
+                reference_query=source_match_query,
+                allow_product_type_fallback=(
+                    reference_intent.explicit_video_type is None
+                    and request.template_id is None
+                ),
+                exclude_product_query=product.name,
+            )
+            if not request.template_id:
+                video_type = source_script.get("video_type") or preferred_video_type
+                template = _select_rewrite_template(
+                    db=db,
+                    requested_video_type=video_type,
+                    template_id=None,
+                    allow_type_fallback=False,
+                )
+        else:
+            template = _select_rewrite_template(
+                db=db,
+                requested_video_type=requested_video_type,
+                template_id=request.template_id,
+            )
+            if not requested_video_type or request.template_id:
+                video_type = template.video_type
+            source_script = _select_rewrite_source_script(
+                db,
+                video_type,
+                exclude_product_query=product.name,
+            )
 
     if not video_type:
         if engine != "template":
@@ -244,7 +523,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
                 template=template_context,
                 source_script=source_script,
                 tone=request.tone,
-                extra_requirements=request.extra_requirements,
+                extra_requirements=generation_requirements,
                 include_shot_design=request.include_shot_design,
             )
         except ScriptGenerationError as exc:
@@ -260,7 +539,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
                 template=template_context,
                 video_type=video_type,
                 tone=request.tone,
-                extra_requirements=request.extra_requirements,
+                extra_requirements=generation_requirements,
                 reference_scripts=reference_scripts,
                 include_shot_design=request.include_shot_design,
                 recent_openings=recent_openings,
@@ -302,6 +581,7 @@ async def generate_script(request: ScriptGenerateRequest, db: Session = Depends(
         source_script_source=source_script["source"] if source_script else None,
         source_script_title=source_script["title"] if source_script else None,
         source_script_content=source_script["content"] if source_script else None,
+        source_match_query=source_match_query,
     )
 
 

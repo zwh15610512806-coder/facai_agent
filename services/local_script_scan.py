@@ -85,9 +85,13 @@ async def scan_local_txt_scripts(
                 video_type=ai_analysis.get("video_type") or video_type or "机制类",
                 title=_title_from_relative_path(relative_path),
                 script_content=script_text,
-                tags=_combine_tags(tags or "本地txt", ai_analysis.get("tags", "")),
+                tags=_combine_tags(
+                    _combine_tags(tags or "本地txt", product_name),
+                    ai_analysis.get("tags", ""),
+                ),
                 performance_data={
                     "source": "本地TXT扫描",
+                    "product_name": product_name or "",
                     "local_path": str(path),
                     "relative_path": relative_path,
                     "filename": safe_name,

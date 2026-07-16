@@ -199,7 +199,7 @@ class ScriptRewriteRequest(StrictRequestModel):
     product_id: int = Field(..., gt=0, description="目标产品ID")
     video_type: Optional[str] = Field(None, max_length=100, description="保持的视频类型")
     extra_requirements: Optional[str] = Field(None, max_length=4000, description="额外改写要求")
-    include_shot_design: bool = Field(default=True, description="是否需要设计画面和镜头说明")
+    include_shot_design: bool = Field(default=False, description="是否需要设计画面和镜头说明")
 
 
 class ScriptRewriteResponse(BaseModel):
@@ -284,6 +284,7 @@ class ScriptGenerateResponse(BaseModel):
     source_script_source: Optional[Literal["facai", "other"]] = None
     source_script_title: Optional[str] = None
     source_script_content: Optional[str] = None
+    source_match_query: Optional[str] = None
 
     class Config:
         from_attributes = True

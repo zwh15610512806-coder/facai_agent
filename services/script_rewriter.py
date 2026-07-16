@@ -2,6 +2,7 @@
 from services.ai_service import ai_service
 from services.rewrite_prompts import build_rewrite_system_prompt
 from services.script_price import abstract_script_price, sanitize_script_price_text
+from services.script_structure import extract_script_beats, strip_known_script_prefixes
 from models import ViralScript
 from sqlalchemy.orm import Session
 import re
@@ -108,52 +109,11 @@ class ScriptRewriter:
 
     def _extract_reference_beats(self, original_script: str, limit: int = 45) -> list[dict]:
         """Extract ordered beats from timestamped, line-based, or paragraph scripts."""
-        text = (original_script or "").strip()
-        if not text:
-            return []
-
-        timestamp_re = re.compile(
-            r"^\s*(?P<time>\d{1,2}[:：]\d{2}(?::\d{2})?)\s*(?:[-—~至到]\s*\d{1,2}[:：]\d{2}(?::\d{2})?)?\s*(?P<text>.+?)\s*$"
-        )
-        beats = []
-        for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            match = timestamp_re.match(line)
-            if match:
-                content = match.group("text").strip()
-                if content:
-                    beats.append({"time": match.group("time").replace("：", ":"), "text": content})
-
-        if not beats:
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
-            if len(lines) > 1:
-                beats = [{"time": "", "text": self._strip_known_prefixes(line)} for line in lines]
-            else:
-                parts = re.split(r"(?<=[。！？!?；;])\s*", text)
-                beats = [{"time": "", "text": self._strip_known_prefixes(part)} for part in parts if part.strip()]
-
-        normalized = []
-        for beat in beats:
-            content = self._strip_known_prefixes(beat["text"])
-            if content:
-                normalized.append({"time": beat.get("time", ""), "text": content})
-            if len(normalized) >= limit:
-                break
-        return normalized
+        return extract_script_beats(original_script, limit=limit)
 
     def _strip_known_prefixes(self, text: str) -> str:
         """Remove timing/section wrappers while keeping the user's expression."""
-        cleaned = text.strip()
-        cleaned = re.sub(r"^\s*【[^】\n]{1,30}】\s*", "", cleaned)
-        cleaned = re.sub(r"^\s*[（(][^）)\n]{1,30}[）)]\s*", "", cleaned)
-        cleaned = re.sub(
-            r"^\s*(?:\d{1,2}[:：]\d{2}(?::\d{2})?|\d{1,2})\s*(?:[-—~至到]\s*(?:\d{1,2}[:：]\d{2}(?::\d{2})?|\d{1,2}))?\s*[s秒]?\s*[:：-]?\s*",
-            "",
-            cleaned,
-        )
-        return cleaned.strip()
+        return strip_known_script_prefixes(text)
 
     def _build_reference_structure(self, original_script: str) -> str:
         """Build a compact ordered outline for the AI to map one-to-one."""
@@ -198,7 +158,7 @@ class ScriptRewriter:
         target_product: dict,
         video_type: str = None,
         extra_requirements: str = None,
-        include_shot_design: bool = True,
+        include_shot_design: bool = False,
         db: Session = None,
     ) -> str:
         """改写脚本"""
@@ -256,7 +216,8 @@ class ScriptRewriter:
 
         ref_block = ""
         if ref_scripts:
-            ref_block = "\n\n【同类爆款脚本参考】（学习其表达风格、画面括号和连续成稿格式）"
+            reference_style = "表达风格、画面括号和连续成稿格式" if include_shot_design else "表达风格、信息节奏和连续口播格式"
+            ref_block = f"\n\n【同类爆款脚本参考】（学习其{reference_style}）"
             for i, rs in enumerate(ref_scripts[:3], 1):
                 ref_block += f"\n\n--- 参考{i}: {rs.title} ---"
                 ref_block += f"\n{sanitize_script_price_text(rs.script_content[:700])}"

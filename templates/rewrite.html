@@ -85,7 +85,7 @@
 </div></div></nav>
 
 <main class="page-main rewrite-main">
-<header class="page-hd"><h1>脚本改写</h1><p>粘贴原始脚本，选择目标产品后直接改写，保留参考结构并输出为资料脚本格式</p></header>
+<header class="page-hd"><h1>脚本改写</h1><p>粘贴原始脚本，选择目标产品后直接改写，保留参考结构并输出纯口播文案</p></header>
 
 <!-- 同页改写表单 -->
 <section id="step1" class="card rewrite-form-card">
@@ -95,7 +95,7 @@
 <span style="font-size:12px;color:var(--text-3)" id="charCount">0 字</span>
 </div>
 <textarea id="originalScript" class="so-input" placeholder="在此粘贴要改写的脚本内容...&#10;&#10;可以从模板库复制爆款脚本，或粘贴你自己写的脚本"></textarea>
-<p style="font-size:12px;color:var(--text-3);margin-top:8px">支持时间戳脚本或整段文案，改写会沿用原文顺序和表达节奏，并按“画面括号 + 口播文案”的资料表脚本格式输出</p>
+<p style="font-size:12px;color:var(--text-3);margin-top:8px">支持时间戳脚本或整段文案，改写会沿用原文顺序和表达节奏，默认输出纯口播文案</p>
 <div style="margin-top:18px">
 <label style="display:block;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:6px">需求预填写 <span style="font-weight:400;color:var(--text-3)">（选填）</span></label>
 <textarea id="rewriteReqPreFill" class="input" style="width:100%;min-height:80px;font-size:13px;resize:vertical" placeholder="填写你对改写脚本的限制、方向、活动卖点或语气要求…&#10;例如：保留原文强对比结构、突出买二送一活动、口播更像门店老板真实分享"></textarea>
@@ -137,7 +137,7 @@
 </div>
 <div id="generatingHint" style="display:none;text-align:center;padding:48px 20px">
 <div class="spin" style="width:36px;height:36px;border-width:3px;margin:0 auto 12px"></div>
-<p style="font-size:13px;color:var(--text-2);margin:0">AI 正在按原文结构逐句改写，并整理成资料脚本格式&hellip;</p>
+<p style="font-size:13px;color:var(--text-2);margin:0">AI 正在按原文结构逐句改写为纯口播文案&hellip;</p>
 </div>
 </div>
 </div>
@@ -156,7 +156,7 @@
 <div><h4 style="font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:8px">原文</h4><div style="background:var(--bg);border-radius:var(--r);padding:16px;font-size:12px;line-height:1.7;max-height:300px;overflow-y:auto;white-space:pre-wrap" id="compareOriginal"></div></div>
 <div><h4 class="text-accent" style="font-size:12px;font-weight:600;margin-bottom:8px">改写</h4><div style="background:var(--facai-ghost);border-radius:var(--r);padding:16px;font-size:12px;line-height:1.7;max-height:300px;overflow-y:auto;white-space:pre-wrap" id="compareRewritten"></div></div>
 </div></div>
-<p style="font-size:12px;color:var(--text-3);margin-top:12px">改写后会保留参考文案的信息顺序，同时统一为资料脚本表里的连续成稿格式。点「对比原文」查看改动处。</p>
+<p style="font-size:12px;color:var(--text-3);margin-top:12px">改写后会保留参考文案的信息顺序，并输出为连续的纯口播文案。点「对比原文」查看改动处。</p>
 </div>
 </section>
 </main>
@@ -235,13 +235,13 @@ async function submitRewrite(extraOverride){
  document.getElementById('btnRedo').disabled=true;
  document.getElementById('btnGenerateSeedance').disabled=true;
  try{
-  var includeShotDesign=true;
+  var includeShotDesign=false;
   var reqs=[];var preFill=document.getElementById('rewriteReqPreFill').value.trim();if(preFill)reqs.push('用户需求：'+preFill);if(extraOverride)reqs.push(extraOverride);
   var r=await fetch('/api/scripts/rewrite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({original_script:originalScript,product_id:selectedProduct.id,extra_requirements:reqs.length?reqs.join('\n'):null,include_shot_design:includeShotDesign})});
   if(!r.ok)throw new Error((await r.json()).detail||'改写失败');
   var d=await r.json();currentRewritten=d.rewritten_script;
   document.getElementById('scriptOutput').textContent=currentRewritten;
-  document.getElementById('resultMeta').innerHTML='目标产品：<b>'+escHtml(d.product_name)+'</b> | '+(includeShotDesign?'已保留参考结构并按资料脚本格式输出':'已保留参考结构并输出纯口播文案');
+  document.getElementById('resultMeta').innerHTML='目标产品：<b>'+escHtml(d.product_name)+'</b> | 已保留参考结构并输出纯口播文案';
   document.getElementById('compareOriginal').textContent=d.original_script;
   document.getElementById('compareRewritten').textContent=d.rewritten_script;
   resetSeedancePrompts('可先直接编辑左侧改写脚本，确认后点击上方「生成提示词」。');
@@ -254,7 +254,7 @@ document.getElementById('btnToggleCompare').addEventListener('click',function(){
 document.getElementById('scriptOutput').addEventListener('input',function(){currentRewritten=getEditedScript();document.getElementById('compareRewritten').textContent=currentRewritten;resetSeedancePrompts('脚本已修改，请点击上方「生成提示词」，按当前版本重新生成 Seedance 2.0 提示词。');});
 document.getElementById('btnCopy').addEventListener('click',function(){var t=getEditedScript();if(!t||t.startsWith('改写失败'))return toast('暂无可复制内容','error');copyText(t).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('btnBackToForm').addEventListener('click',function(){document.getElementById('step1').style.display='';document.getElementById('step3').style.display='none';renderProducts(document.getElementById('productSearch').value);window.scrollTo({top:0,behavior:'smooth'});});
-document.getElementById('btnRedo').addEventListener('click',function(){var visible=getEditedScript();var last=visible?'\n上一版文案：\n'+visible:'';submitRewrite('请在保留参考文案结构的前提下，直接生成一个不同于上一版的新版本，表达方式、镜头提示和措辞要有明显区别。'+last);});
+document.getElementById('btnRedo').addEventListener('click',function(){var visible=getEditedScript();var last=visible?'\n上一版文案：\n'+visible:'';submitRewrite('请在保留参考文案结构的前提下，直接生成一个不同于上一版的新版本，表达方式和措辞要有明显区别。'+last);});
 document.getElementById('btnGenerateSeedance').addEventListener('click',function(){var script=getEditedScript();if(!script||script.startsWith('改写失败'))return toast('请先生成或编辑有效脚本','error');renderSeedancePrompts(script);toast('已按当前脚本生成提示词','success');});
 document.getElementById('btnCopySeedanceAll').addEventListener('click',function(){var prompts=currentSeedancePrompts.map(function(x,i){return '画面'+(i+1)+'：'+x.scene+'\n'+x.prompt;}).join('\n\n');if(!prompts)return toast('请先点击生成提示词','error');copyText(prompts).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('seedancePromptList').addEventListener('click',function(e){var btn=e.target.closest('.seedance-copy');if(!btn)return;var idx=Number(btn.dataset.index);var item=currentSeedancePrompts[idx];if(!item)return;copyText(item.prompt).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});

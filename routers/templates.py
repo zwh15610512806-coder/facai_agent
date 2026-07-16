@@ -2282,8 +2282,13 @@ async def upload_viral_script(
         video_type=ai_analysis.get("video_type") or video_type or "机制类",
         title=title or (product_name + "脚本" if product_name else "未命名脚本"),
         script_content=script_text,
-        tags=(tags or "") + ("," + ai_analysis.get("tags","") if ai_analysis.get("tags") else ""),
-        performance_data={"source": "手动上传", "ai_structure": ai_analysis.get("structure",""), "ai_viral_points": ai_analysis.get("viral_points","")},
+        tags=_combine_tags(_combine_tags(tags or "", product_name), ai_analysis.get("tags", "")),
+        performance_data={
+            "source": "手动上传",
+            "product_name": product_name or "",
+            "ai_structure": ai_analysis.get("structure", ""),
+            "ai_viral_points": ai_analysis.get("viral_points", ""),
+        },
     )
     db.add(viral)
     db.flush()
@@ -2345,9 +2350,10 @@ async def upload_viral_txt_batch(
                 video_type=ai_analysis.get("video_type") or video_type or "机制类",
                 title=_title_from_filename(safe_name),
                 script_content=script_text,
-                tags=(tags or "") + ("," + ai_analysis.get("tags", "") if ai_analysis.get("tags") else ""),
+                tags=_combine_tags(_combine_tags(tags or "", product_name), ai_analysis.get("tags", "")),
                 performance_data={
                     "source": "批量TXT上传",
+                    "product_name": product_name or "",
                     "filename": safe_name,
                     "ai_structure": ai_analysis.get("structure", ""),
                     "ai_viral_points": ai_analysis.get("viral_points", ""),

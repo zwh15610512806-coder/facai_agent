@@ -11,6 +11,12 @@ from services.script_opening import (
     validate_opening,
 )
 from services.script_price import abstract_script_price, sanitize_script_price_text
+from services.script_structure import (
+    extract_script_beats,
+    format_indexed_script_beats,
+    parse_indexed_rewrite,
+    strip_visual_notes,
+)
 from models import ViralScript, ReferenceScript
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -32,6 +38,10 @@ _PRICE_OR_PROMOTION_COPY_RE = re.compile(
     rf"|{_PRICE_NUMBER}\s*(?:元|块|毛|角)(?:\s*{_PRICE_NUMBER})?"
     rf"|{_PRICE_NUMBER}\s*折"
     rf"|立减\s*{_PRICE_NUMBER}"
+)
+_CTA_COPY_RE = re.compile(
+    r"左下角|小黄车|下单|拍下|直接拍|点(?:击)?下方|下方链接|链接(?:里|处)?|"
+    r"去看看|可以看看|先备(?:一份|一个|上|着)|赶紧(?:入|买|拍|囤)"
 )
 
 
@@ -1180,6 +1190,148 @@ CTA 模板：
             )
         return f"\n【本次模板专属最高优先级政策】\n{audience_policy}\n{price_policy}"
 
+    def _format_rewrite_template_guardrails(self, template: Dict) -> str:
+        return f"""结构模板：{template.get('name') or '未命名模板'}
+模板类型：{template.get('video_type') or '未填写'}
+建议时长：{template.get('duration_range') or '未填写'}
+模板描述：{self._format_template_prompt_value(template.get('description'), limit=400)}
+
+注意：该通用模板只用于确认视频类型、建议时长和合规边界。其段落结构、开头模板、CTA 模板和示例脚本都不是本次改写骨架，不得覆盖或重排具体引用脚本。"""
+
+    def _library_structure_positions(self, beats: List[Dict]) -> tuple[set[int], set[int]]:
+        price_positions = {
+            index
+            for index, beat in enumerate(beats, 1)
+            if self._contains_price_or_promotion_copy(beat.get("text", ""))
+        }
+        cta_positions = {
+            index
+            for index, beat in enumerate(beats, 1)
+            if _CTA_COPY_RE.search(beat.get("text", ""))
+        }
+        return price_positions, cta_positions
+
+    def _format_library_source_policy(
+        self,
+        beats: List[Dict],
+        *,
+        price_pending: bool,
+    ) -> str:
+        price_positions, cta_positions = self._library_structure_positions(beats)
+        source_copy = "".join(beat.get("text", "") for beat in beats)
+        audience_call = extract_normalized_leading_audience_signature(source_copy)
+
+        if price_positions and price_pending:
+            price_policy = (
+                f"- 原脚本的第 {', '.join(map(str, sorted(price_positions)))} 个表达点包含价格或促销，"
+                "但目标产品价格待更新；必须在原价格表达点的位置改写为真实价值证明，禁止编造价格、活动或赠品。"
+            )
+        elif price_positions:
+            price_policy = (
+                f"- 原脚本仅允许在第 {', '.join(map(str, sorted(price_positions)))} 个表达点保留价格或促销功能，"
+                "必须使用目标产品真实且抽象的价格表达，其他位置禁止出现价格或促销。"
+            )
+        else:
+            price_policy = "- 原脚本没有价格或促销表达，禁止通用结构模板新增价格、活动、优惠、赠品或促销段落。"
+
+        if cta_positions:
+            cta_policy = (
+                f"- 原脚本仅在第 {', '.join(map(str, sorted(cta_positions)))} 个表达点包含 CTA；"
+                "改写后 CTA 仍只能出现在这些位置，不得提前或新增。"
+            )
+        else:
+            cta_policy = "- 原脚本没有 CTA，禁止通用结构模板新增左下角、小黄车、下单或链接引导。"
+
+        if audience_call:
+            audience_policy = "- 原脚本包含开头人群召唤，可保留相同的开头功能，但必须适配目标产品受众且不得强化为空钩子。"
+        else:
+            audience_policy = "- 原脚本没有泛人群召唤，禁止新增“姐妹们”“宝子们”“家人们”“老板们看过来”等称呼开头。"
+
+        return (
+            "\n【具体引用脚本专属最高优先级政策】\n"
+            f"{price_policy}\n{cta_policy}\n{audience_policy}"
+        )
+
+    def _library_spoken_length(self, text: str) -> int:
+        spoken = strip_visual_notes(text)
+        return len(re.sub(r"\s+", "", spoken))
+
+    def _validate_library_structure(
+        self,
+        response: str,
+        source_beats: List[Dict],
+        *,
+        price_pending: bool,
+    ) -> tuple[List[str], List[str]]:
+        segments, reasons = parse_indexed_rewrite(response, len(source_beats))
+        if reasons or len(segments) != len(source_beats):
+            return segments, reasons or ["表达点序号缺失、重复或顺序错误"]
+
+        source_length = sum(self._library_spoken_length(beat.get("text", "")) for beat in source_beats)
+        output_length = sum(self._library_spoken_length(segment) for segment in segments)
+        if source_length and not (source_length * 0.65 <= output_length <= source_length * 1.4):
+            reasons.append("总口播长度不在原脚本的 65%-140% 范围内")
+
+        source_price, source_cta = self._library_structure_positions(source_beats)
+        output_beats = [{"text": strip_visual_notes(segment)} for segment in segments]
+        output_price, output_cta = self._library_structure_positions(output_beats)
+        if price_pending:
+            if output_price:
+                reasons.append("价格待更新但改写结果仍包含价格或促销")
+        elif not source_price and output_price:
+            reasons.append("价格或促销出现在原脚本没有的位置")
+        elif source_price != output_price:
+            reasons.append("价格或促销位置与原脚本不一致")
+
+        if not source_cta and output_cta:
+            reasons.append("CTA 出现在原脚本没有的位置")
+        elif source_cta != output_cta:
+            reasons.append("CTA 位置与原脚本不一致")
+
+        source_copy = "".join(beat.get("text", "") for beat in source_beats)
+        output_copy = "".join(strip_visual_notes(segment) for segment in segments)
+        source_audience = extract_normalized_leading_audience_signature(source_copy)
+        output_audience = extract_normalized_leading_audience_signature(output_copy)
+        if not source_audience and output_audience:
+            reasons.append("新增了原脚本没有的泛人群召唤")
+        elif source_audience and not output_audience:
+            reasons.append("缺少原脚本的人群召唤结构")
+        return segments, list(dict.fromkeys(reasons))
+
+    def _format_library_structure_repair_prompt(
+        self,
+        *,
+        reasons: List[str],
+        source_skeleton: str,
+        first_response: str,
+        include_shot_design: bool,
+        expected_count: int,
+    ) -> str:
+        output_rule = (
+            "每个序号后继续使用（具体画面说明）+口播文案，并让每个表达点独占一行。"
+            if include_shot_design
+            else "每个序号后只写口播文案，序号之间可以连续输出，不要添加画面说明。"
+        )
+        reason_block = "\n".join(f"- {reason}" for reason in reasons)
+        return f"""首次模板库改写未通过结构校验，请只修正一次并直接输出完整改写稿。
+
+机器校验原因：
+{reason_block}
+
+必须严格对应的原脚本结构骨架：
+{source_skeleton}
+
+首次结果：
+{first_response}
+
+修正规则：
+- 必须完整输出从 [[BEAT_1]] 到 [[BEAT_{expected_count}]] 的全部内部序号，每个序号恰好一次且顺序不变。
+- 每个表达点只改写对应原表达，不新增、删除或重排；资料不对应时换成同功能的真实卖点或证明。
+- 价格、CTA 和人群召唤只能保留在原脚本对应位置。
+- 总口播长度保持在原脚本的 65%-140%。
+- {output_rule}
+- 不要输出解释、分析、Markdown 或序号之外的前言。"""
+
     async def generate_from_library(
         self,
         product: Dict,
@@ -1198,7 +1350,10 @@ CTA 模板：
             )
         if not template:
             raise ScriptGenerationError("模板库改写缺少引用模板，请先在脚本模板库创建模板。", status_code=404)
-        if not source_script:
+        strict_source_structure = source_script is not None
+        if source_script is not None and not (source_script.get("content") or "").strip():
+            raise ScriptGenerationError("模板库改写引用脚本正文为空，请先补充脚本内容。", status_code=422)
+        if source_script is None:
             source_script = {
                 "source": "facai",
                 "title": template.get("name") or "结构模板示例",
@@ -1220,29 +1375,62 @@ CTA 模板：
             sp_texts.append(f"- [{sp.get('type', '')}] {sp.get('content', '')}")
         sp_block = "\n".join(sp_texts) if sp_texts else "（请根据产品信息提炼卖点）"
 
-        template_block = self._format_rewrite_template_block(template)
+        template_block = (
+            self._format_rewrite_template_guardrails(template)
+            if strict_source_structure
+            else self._format_rewrite_template_block(template)
+        )
         source_name = "法采脚本" if source_script.get("source") == "facai" else "其他脚本"
         source_title = self._trim_prompt_text(source_script.get("title") or "无标题脚本", limit=300)
         source_video_type = self._trim_prompt_text(source_script.get("video_type") or "未标注", limit=100)
-        source_content = self._trim_prompt_text(
-            sanitize_script_price_text(source_script.get("content") or ""),
-            limit=6000,
-        )
+        source_content_with_lines = sanitize_script_price_text(source_script.get("content") or "")[:6000]
+        source_content = self._trim_prompt_text(source_content_with_lines, limit=6000)
+        source_beats = extract_script_beats(source_content_with_lines) if strict_source_structure else []
+        if strict_source_structure and not source_beats:
+            raise ScriptGenerationError("模板库改写无法从引用脚本提取有效表达点，请先检查脚本内容。", status_code=422)
+        source_skeleton = format_indexed_script_beats(source_beats) if source_beats else ""
         source_block = (
             f"来源：{source_name}\n"
             f"标题：{source_title}\n"
             f"视频类型：{source_video_type}\n"
             f"脚本正文：\n{source_content}"
         )
+        if source_skeleton:
+            source_block += f"\n\n逐表达点主骨架（内部序号必须原样返回）：\n{source_skeleton}"
+
         allowed_audience_phrases = collect_template_audience_phrases(template)
         allows_audience_call = template_allows_audience_call(template)
-        has_price_structure = self._template_has_price_structure(template)
-        template_policy = self._format_library_template_policy(
-            allows_audience_call,
-            has_price_structure,
-        )
+        if strict_source_structure:
+            source_price_positions, _source_cta_positions = self._library_structure_positions(source_beats)
+            has_price_structure = bool(source_price_positions)
+            template_policy = self._format_library_source_policy(
+                source_beats,
+                price_pending="price" in product_pending_fields,
+            )
+        else:
+            has_price_structure = self._template_has_price_structure(template)
+            template_policy = self._format_library_template_policy(
+                allows_audience_call,
+                has_price_structure,
+            )
 
-        if include_shot_design:
+        if strict_source_structure and include_shot_design:
+            rewrite_rules = f"""1. 具体引用脚本是唯一主结构，必须逐表达点对应：第 1 个表达改写第 1 个，第 2 个改写第 2 个，直到第 {len(source_beats)} 个；除特别短的相邻表达可在同一表达点内自然衔接外，不得增删、合并序号或重排。
+2. 通用结构模板不得新增、删除或重排表达点；只用于确认视频类型、建议时长和合规边界。
+3. 每个表达点必须保留对应原文的功能、开头方式、证明位置、价格位置、CTA 位置和推进节奏，只替换商品名、品牌、卖点、规格和事实。
+4. 目标产品资料不能直接对应时，在原位置换成同功能的真实卖点或证明，不得编造数据，也不得删除这个表达点。
+5. 每个表达点必须以对应的 [[BEAT_数字]] 内部序号开头，序号必须从 1 到 {len(source_beats)} 完整、唯一且有序；每个序号后写（具体画面说明）+口播文案，并让每个表达点独占一行。
+6. 画面说明必须服务该表达点的原有功能，写清主体、景别、动作或道具，不得用通用模板另起画面段落。
+7. 禁止复制原脚本具体措辞、旧商品名、品牌、精确价格和 CTA 原句；禁止输出“改写自”、选择过程、分析解释或 Markdown。"""
+        elif strict_source_structure:
+            rewrite_rules = f"""1. 具体引用脚本是唯一主结构，必须逐表达点对应：第 1 个表达改写第 1 个，第 2 个改写第 2 个，直到第 {len(source_beats)} 个；除特别短的相邻表达可在同一表达点内自然衔接外，不得增删、合并序号或重排。
+2. 通用结构模板不得新增、删除或重排表达点；只用于确认视频类型、建议时长和合规边界。
+3. 每个表达点必须保留对应原文的功能、开头方式、证明位置、价格位置、CTA 位置和推进节奏，只替换商品名、品牌、卖点、规格和事实。
+4. 目标产品资料不能直接对应时，在原位置换成同功能的真实卖点或证明，不得编造数据，也不得删除这个表达点。
+5. 每个表达点必须以对应的 [[BEAT_数字]] 内部序号开头，序号必须从 1 到 {len(source_beats)} 完整、唯一且有序；序号后只写对应口播，不写画面说明。特别短的相邻表达可在最终口播中连成一句，但两个内部序号仍必须保留。
+6. 额外要求只能融入最合适的已有表达点，不得在结尾追加新段落。
+7. 禁止复制原脚本具体措辞、旧商品名、品牌、精确价格和 CTA 原句；禁止输出“改写自”、模板名称、时间码、段落标题、镜头说明、分析解释或 Markdown。"""
+        elif include_shot_design:
             rewrite_rules = """1. 结构模板决定段落功能和顺序；具体参考脚本只用于借鉴开头方式、痛点推进、卖点顺序、口语节奏和画面功能。
 2. 替换参考内容中的产品名、品牌、卖点和规格为目标产品内容，所有品牌名统一为“法采”。
 3. 严格保留结构模板实际包含的段落功能和顺序，不新增模板没有的功能段落。
@@ -1257,9 +1445,21 @@ CTA 模板：
 5. 最终只输出一段连续口播文案，不换行，不用列表，不用 Markdown。
 6. 口吻参考达人自然带货口播，多用顺滑连接词，让内容像一整段真实口播。"""
 
-        user_prompt = f"""你是脚本模板库改写专家。本次使用 1 条结构模板和 1 条具体参考脚本进行重新创作。
+        task_description = (
+            "本次必须以具体引用脚本作为唯一主骨架，按表达点逐条替换为目标产品内容；通用结构模板不得改变原脚本结构。"
+            if strict_source_structure
+            else "本次使用 1 条结构模板和 1 条具体参考脚本进行重新创作。"
+        )
+        task_instruction = (
+            "你的任务：在不改变具体引用脚本表达点数量、顺序和功能位置的基础上，逐条替换为目标产品的真实内容。"
+            if strict_source_structure
+            else "你的任务：服从结构模板的段落功能，根据具体参考脚本的成交推进节奏，重新创作以下目标产品的带货脚本。"
+        )
+        template_heading = "脚本类型与合规参考（非结构来源）" if strict_source_structure else "脚本模板库结构模板"
 
-你的任务：服从结构模板的段落功能，根据具体参考脚本的成交推进节奏，重新创作以下目标产品的带货脚本。
+        user_prompt = f"""你是脚本模板库改写专家。{task_description}
+
+{task_instruction}
 
 ====================================
 目标产品信息
@@ -1277,7 +1477,7 @@ CTA 模板：
 ====================================
 
 ====================================
-脚本模板库结构模板
+{template_heading}
 ====================================
 结构模板：{template.get('name') or '未命名模板'}
 {template_block}
@@ -1295,15 +1495,26 @@ CTA 模板：
         user_prompt += self._format_shot_design_requirement(include_shot_design)
 
         if extra_requirements:
-            user_prompt += f"\n\n【额外要求】{extra_requirements}"
+            extra_policy = (
+                "（必须融入最合适的已有表达点，不得追加新段落）"
+                if strict_source_structure
+                else ""
+            )
+            user_prompt += f"\n\n【额外要求】{extra_requirements}{extra_policy}"
 
         user_prompt += template_policy
         user_prompt += "\n\n请开始改写脚本："
 
+        system_prompt = self._build_library_system_prompt(include_shot_design) + template_policy
+        if strict_source_structure:
+            system_prompt += (
+                "\n- 本次长度以具体引用脚本为准，最终口播保持原稿的 65%-140%；"
+                "原稿超过500字时允许改写稿超过500字，结构完整性优先于默认500字限制。"
+            )
         messages = [
             {
                 "role": "system",
-                "content": self._build_library_system_prompt(include_shot_design) + template_policy,
+                "content": system_prompt,
             },
             {"role": "user", "content": user_prompt},
         ]
@@ -1311,7 +1522,7 @@ CTA 模板：
         try:
             response = await self._chat_with_interface(
                 messages,
-                temperature=0.75,
+                temperature=0.45,
                 interface_key="script_library_rewrite",
                 allow_fallback=False,
             )
@@ -1323,29 +1534,80 @@ CTA 模板：
                 status_code=503,
             ) from exc
 
-        if not (response or "").strip():
+        if not strict_source_structure and not (response or "").strip():
             raise ScriptGenerationError("模板库改写模型未返回有效脚本，请检查 AI 配置后重试。")
 
-        if not has_price_structure and self._contains_price_or_promotion_copy(response):
+        structured_segments: List[str] = []
+        if strict_source_structure:
+            structured_segments, structure_reasons = self._validate_library_structure(
+                response,
+                source_beats,
+                price_pending="price" in product_pending_fields,
+            )
+            if structure_reasons:
+                repair_prompt = self._format_library_structure_repair_prompt(
+                    reasons=structure_reasons,
+                    source_skeleton=source_skeleton,
+                    first_response=response,
+                    include_shot_design=include_shot_design,
+                    expected_count=len(source_beats),
+                )
+                repair_messages = [
+                    messages[0],
+                    messages[1],
+                    {"role": "assistant", "content": response},
+                    {"role": "user", "content": repair_prompt},
+                ]
+                try:
+                    response = await self._chat_with_interface(
+                        repair_messages,
+                        temperature=0.25,
+                        interface_key="script_library_rewrite",
+                        allow_fallback=False,
+                    )
+                except Exception as exc:
+                    raise ScriptGenerationError(
+                        "模板库改写结构未通过，请重新生成。",
+                        status_code=502,
+                    ) from exc
+                structured_segments, structure_reasons = self._validate_library_structure(
+                    response,
+                    source_beats,
+                    price_pending="price" in product_pending_fields,
+                )
+                if structure_reasons:
+                    raise ScriptGenerationError(
+                        "模板库改写结构未通过，请重新生成。",
+                        status_code=502,
+                    )
+        elif not has_price_structure and self._contains_price_or_promotion_copy(response):
             raise ScriptGenerationError(
                 "模板库改写结果擅自加入价格或促销信息，请重试。",
                 status_code=502,
             )
 
+        response_for_output = response
+        if strict_source_structure:
+            response_for_output = (
+                "\n".join(structured_segments)
+                if include_shot_design
+                else "".join(structured_segments)
+            )
         script = self._post_process_script_output(
-            response,
+            response_for_output,
             include_shot_design,
             remove_default_audience_opening=False,
         )
-        output_audience_phrase = extract_normalized_leading_audience_signature(script)
-        if (
-            output_audience_phrase
-            and output_audience_phrase not in allowed_audience_phrases
-        ):
-            script = strip_generic_audience_opening(script)
+        if not strict_source_structure:
+            output_audience_phrase = extract_normalized_leading_audience_signature(script)
+            if (
+                output_audience_phrase
+                and output_audience_phrase not in allowed_audience_phrases
+            ):
+                script = strip_generic_audience_opening(script)
         if not script.strip():
             raise ScriptGenerationError("模板库改写模型返回内容为空，请重试或检查 AI 配置。")
-        if not has_price_structure and self._contains_price_or_promotion_copy(script):
+        if not strict_source_structure and not has_price_structure and self._contains_price_or_promotion_copy(script):
             raise ScriptGenerationError(
                 "模板库改写结果擅自加入价格或促销信息，请重试。",
                 status_code=502,

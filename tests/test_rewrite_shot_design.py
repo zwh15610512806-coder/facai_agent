@@ -51,6 +51,31 @@ class RewriteShotDesignApiTests(unittest.TestCase):
 
         self.assertFalse(fake.include_shot_design)
 
+    def test_rewrite_endpoint_defaults_to_plain_spoken_copy(self):
+        fake = FakeRewriter()
+        scripts_router.script_rewriter = fake
+        request = ScriptRewriteRequest(
+            original_script="老板们看过来，这个产品很适合门店用。",
+            product_id=self.product.id,
+        )
+
+        asyncio.run(scripts_router.rewrite_script(request, db=self.db))
+
+        self.assertFalse(fake.include_shot_design)
+
+    def test_rewrite_endpoint_preserves_explicit_shot_design_request(self):
+        fake = FakeRewriter()
+        scripts_router.script_rewriter = fake
+        request = ScriptRewriteRequest(
+            original_script="老板们看过来，这个产品很适合门店用。",
+            product_id=self.product.id,
+            include_shot_design=True,
+        )
+
+        asyncio.run(scripts_router.rewrite_script(request, db=self.db))
+
+        self.assertTrue(fake.include_shot_design)
+
 
 if __name__ == "__main__":
     unittest.main()

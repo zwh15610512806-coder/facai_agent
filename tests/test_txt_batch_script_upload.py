@@ -162,6 +162,46 @@ class TxtBatchScriptUploadTests(unittest.TestCase):
         self.assertIn("First imported script", scripts[0].script_content)
         self.assertEqual(scripts[0].performance_data["source"], "批量TXT上传")
 
+    def test_single_upload_persists_selected_product_name_metadata(self):
+        self.db.add(Product(name="白色翻糖膏", category="烘焙装饰", price=17.41))
+        self.db.commit()
+
+        response = self.client.post(
+            "/api/templates/viral/upload",
+            data={
+                "product_name": "白色翻糖膏",
+                "title": "自定义标题不含产品名",
+                "content": "这是一条长度足够的白色翻糖膏脚本文案，用于验证产品来源元数据能够稳定保存。",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        script = self.db.query(ViralScript).one()
+        self.assertIn("白色翻糖膏", script.tags)
+        self.assertEqual(script.performance_data["product_name"], "白色翻糖膏")
+
+    def test_batch_upload_persists_selected_product_name_metadata(self):
+        self.db.add(Product(name="彩色翻糖膏", category="烘焙装饰", price=19.8))
+        self.db.commit()
+
+        response = self.client.post(
+            "/api/templates/viral/upload-txt-batch",
+            data={"product_name": "彩色翻糖膏", "video_type": "机制类"},
+            files=[(
+                "files",
+                (
+                    "generic-title.txt",
+                    "This imported script has enough content and intentionally omits the product from its file name.",
+                    "text/plain",
+                ),
+            )],
+        )
+
+        self.assertEqual(response.status_code, 200)
+        script = self.db.query(ViralScript).one()
+        self.assertIn("彩色翻糖膏", script.tags)
+        self.assertEqual(script.performance_data["product_name"], "彩色翻糖膏")
+
     def test_batch_upload_rejects_files_over_configured_limit(self):
         had_limit = hasattr(templates_router, "MAX_UPLOAD_SIZE")
         original_limit = getattr(templates_router, "MAX_UPLOAD_SIZE", None)
