@@ -1,29 +1,4 @@
 const { test, expect } = require('@playwright/test');
-const crypto = require('crypto');
-
-function base64url(value) {
-  return Buffer.from(value).toString('base64url');
-}
-
-function e2eAdminSession() {
-  const iat = Math.floor(Date.now() / 1000);
-  const claims = { exp: iat + 8 * 60 * 60, iat, sid: base64url(Buffer.alloc(32, 9)), v: 1 };
-  const payload = base64url(Buffer.from(JSON.stringify(claims), 'ascii'));
-  const signature = crypto.createHmac('sha256', Buffer.from(Array.from({ length: 32 }, (_, i) => i)))
-    .update(payload, 'ascii')
-    .digest('base64url');
-  return `${payload}.${signature}`;
-}
-
-async function authenticateIntegration(page) {
-  await page.context().addCookies([{
-    name: 'facai_integrations_session',
-    value: e2eAdminSession(),
-    url: 'http://127.0.0.1:8765',
-    httpOnly: true,
-    sameSite: 'Lax',
-  }]);
-}
 
 const providerPayload = {
   providers: [
@@ -89,7 +64,6 @@ async function mockOperationsApis(page, options = {}) {
 }
 
 test('connection management is a standalone admin page with failed-task retry', async ({ page }) => {
-  await authenticateIntegration(page);
   await mockConnectionApis(page);
   let retried = false;
   await page.route('**/api/integrations/sync-runs/91/retry', async route => {
@@ -108,13 +82,13 @@ test('connection management is a standalone admin page with failed-task retry', 
   expect(retried).toBe(true);
 });
 
-test('connection management redirects API 401 to the integration login only', async ({ page }) => {
-  await authenticateIntegration(page);
+test('connection management reports an API rejection without redirecting to login', async ({ page }) => {
   await page.route('**/api/integrations/providers', route => route.fulfill({ status: 401, json: { detail: 'expired' } }));
   await page.route(/\/api\/integrations\/connections(?:\?.*)?$/, route => route.fulfill({ json: { connections: [] } }));
   await page.route(/\/api\/integrations\/sync-runs(?:\?.*)?$/, route => route.fulfill({ json: { items: [] } }));
   await page.goto('/app/api-connections');
-  await expect(page).toHaveURL(/\/app\/api-connections\/login\?next=/);
+  await expect(page).toHaveURL(/\/app\/api-connections$/);
+  await expect(page.locator('#connectionPanelStatus')).toContainText('expired');
 });
 
 test('operations exposes six keyboard tabs and never renders connection controls', async ({ page }) => {
@@ -139,7 +113,6 @@ test('invalid and legacy data tabs resolve to the operations page', async ({ pag
   await page.goto('/app/operations?tab=not-real');
   await expect(page.getByRole('tab', { name: '概览' })).toHaveAttribute('aria-selected', 'true');
 
-  await authenticateIntegration(page);
   await page.goto('/app/api-connections?tab=ads');
   await expect(page).toHaveURL(/\/app\/operations\?tab=ads$/);
   await expect(page.getByRole('tab', { name: '广告' })).toHaveAttribute('aria-selected', 'true');

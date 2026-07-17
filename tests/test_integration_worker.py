@@ -62,15 +62,12 @@ WORKER_TABLES = (
 
 def _ready_settings(archive_dir: Path, *, concurrency: int = 4) -> IntegrationSettings:
     return IntegrationSettings(
-        admin_password_hash="argon2id-test-hash",
-        session_secret=b"s" * 32,
         master_key=b"m" * 32,
         internal_base_url="http://127.0.0.1:8765",
         public_base_url="https://callbacks.test.invalid",
         archive_dir=archive_dir,
         trusted_proxy_networks=(),
         worker_concurrency=concurrency,
-        login_ready=True,
         credential_ready=True,
         errors=(),
     )
@@ -131,15 +128,12 @@ class WorkerConfigurationTests(unittest.TestCase):
                 )
 
             incomplete = IntegrationSettings(
-                admin_password_hash=None,
-                session_secret=None,
                 master_key=None,
                 internal_base_url=None,
                 public_base_url=None,
                 archive_dir=None,
                 trusted_proxy_networks=(),
                 worker_concurrency=4,
-                login_ready=False,
                 credential_ready=False,
                 errors=("FACAI_INTEGRATIONS_MASTER_KEY",),
             )

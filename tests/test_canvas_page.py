@@ -1,5 +1,4 @@
 import json
-import os
 import re
 import tempfile
 import unittest
@@ -24,8 +23,6 @@ BOOTSTRAP_PATTERN = re.compile(
 
 class CanvasPageTests(unittest.TestCase):
     def setUp(self):
-        self.auth_patcher = patch.dict(os.environ, {"FACAI_AUTH_ENABLED": "0"})
-        self.auth_patcher.start()
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmp.name) / "canvas-page.db"
         self.engine = create_engine(
@@ -48,7 +45,6 @@ class CanvasPageTests(unittest.TestCase):
         self.app.dependency_overrides.pop(get_db, None)
         self.engine.dispose()
         self.tmp.cleanup()
-        self.auth_patcher.stop()
 
     def _bootstrap(self, response):
         match = BOOTSTRAP_PATTERN.search(response.text)
@@ -64,20 +60,23 @@ class CanvasPageTests(unittest.TestCase):
         self.assertEqual(
             1,
             response.text.count(
-                '<link rel="stylesheet" href="/static/canvas/canvas.css?v=canvas-usability-20260716">'
+                '<link rel="stylesheet" href="/static/canvas/canvas.css?v=canvas-workbench-20260716">'
             ),
         )
         self.assertEqual(
             1,
             response.text.count(
-                '<script type="module" src="/static/canvas/canvas.js?v=canvas-usability-20260716"></script>'
+                '<script type="module" src="/static/canvas/canvas.js?v=canvas-workbench-20260716"></script>'
             ),
         )
-        self.assertIn('<link rel="stylesheet" href="/static/css/style.css?v=canvas-usability-20260716">', response.text)
+        self.assertIn('<link rel="stylesheet" href="/static/css/style.css?v=canvas-workbench-20260716">', response.text)
         self.assertIn('href="/app/canvas" class="nav-link on"', response.text)
         self.assertIn('请使用桌面端打开产品视觉画布', response.text)
         self.assertIn('class="canvas-page-main"', response.text)
-        self.assertNotIn('/static/js/common.js', response.text)
+        self.assertIn(
+            '<script src="/static/js/common.js?v=canvas-workbench-20260716"></script>',
+            response.text,
+        )
         self.assertNotIn("api_key", response.text.casefold())
         self.assertNotIn("/static/js/inspiration.js", response.text)
         _raw, bootstrap = self._bootstrap(response)
@@ -135,6 +134,9 @@ class CanvasPageTests(unittest.TestCase):
         self.assertIn(".canvas-page #canvas-app", styles)
         self.assertIn(".canvas-page .canvas-desktop-gate", styles)
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
+        self.assertIn(".canvas-page .facai-tools-launcher", styles)
+        self.assertIn("right: calc(368px + 28px);", styles)
+        self.assertIn("bottom: 54px;", styles)
 
     def test_canvas_bootstrap_serializer_cannot_close_script_or_emit_js_separators(self):
         payload = {

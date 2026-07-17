@@ -26,7 +26,6 @@ load_project_environment(ROOT)
 
 from scripts.verify_runtime import assert_verified_runtime  # noqa: E402
 from services.runtime_logging import configure_runtime_logging  # noqa: E402
-from services.security import assert_startup_security  # noqa: E402
 
 configure_runtime_logging(LOG_DIR / "facai-agent-watchdog.log")
 LOGGER = logging.getLogger("facai.watchdog")
@@ -106,7 +105,6 @@ def _clear_worker_pid(pid: int) -> None:
 
 def start_server(port: int) -> subprocess.Popen:
     bind_host = "0.0.0.0"
-    assert_startup_security(bind_host)
     LOG_DIR.mkdir(exist_ok=True)
     command = [
         sys.executable,

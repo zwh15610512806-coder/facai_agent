@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from database import get_db
 from routers.canvas.operations import operation_json
 from services.canvas import operations, projects, storage
-from services.canvas.access import require_canvas_paid_access
 from services.canvas.composition import CompositionValidationError
 from services.canvas.compose_operations import CanvasComposeRequestError
 from services.canvas.export_schemas import CanvasExportCreate
@@ -71,7 +70,6 @@ def _domain_error(exc: Exception) -> JSONResponse:
 @router.post(
     "/projects/{project_id}/exports",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def post_export(
     project_id: str,

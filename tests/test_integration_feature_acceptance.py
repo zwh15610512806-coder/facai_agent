@@ -31,7 +31,7 @@ from integration_models import (
     IntegrationSecurityAudit,
 )
 from integrations.audit import write_security_audit
-from integrations.admin_auth import AdminSessionClaims, require_integration_admin
+from integrations.actor import IntegrationActor, current_integration_actor
 from integrations.exports import (
     ExportRequestConflict,
     ExportWriteError,
@@ -76,8 +76,6 @@ UTC = timezone.utc
 class IntegrationFeaturePostgresAcceptanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.original_auth_enabled = os.environ.get("FACAI_AUTH_ENABLED")
-        os.environ["FACAI_AUTH_ENABLED"] = "0"
         cls.database_url = _require_disposable_postgres_url()
         cls.engine = database.create_database_engine(cls.database_url)
         cls.Session = sessionmaker(bind=cls.engine, expire_on_commit=False)
@@ -89,10 +87,6 @@ class IntegrationFeaturePostgresAcceptanceTests(unittest.TestCase):
             Base.metadata.drop_all(cls.engine, checkfirst=True)
         finally:
             cls.engine.dispose()
-            if cls.original_auth_enabled is None:
-                os.environ.pop("FACAI_AUTH_ENABLED", None)
-            else:
-                os.environ["FACAI_AUTH_ENABLED"] = cls.original_auth_enabled
 
     def setUp(self):
         Base.metadata.drop_all(self.engine, checkfirst=True)
@@ -501,11 +495,7 @@ class IntegrationFeaturePostgresAcceptanceTests(unittest.TestCase):
             self.assertEqual((expired, retry), (0, 0))
 
     def test_real_routes_poll_download_audit_and_leave_expiry_for_file_first_cleanup(self):
-        claims = AdminSessionClaims(
-            sid="route-acceptance-session",
-            iat=self.now,
-            exp=self.now + timedelta(hours=8),
-        )
+        claims = IntegrationActor("route-acceptance-session")
 
         def override_db():
             db = self.Session()
@@ -515,7 +505,7 @@ class IntegrationFeaturePostgresAcceptanceTests(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[get_db] = override_db
-        app.dependency_overrides[require_integration_admin] = lambda: claims
+        app.dependency_overrides[current_integration_actor] = lambda: claims
         client = TestClient(app)
         try:
             orders = client.get(
@@ -1006,11 +996,7 @@ class IntegrationFeaturePostgresAcceptanceTests(unittest.TestCase):
                     CommerceProduct.connection_id == self.order_connection_id
                 )
             )
-        claims = AdminSessionClaims(
-            sid="product-link-session",
-            iat=self.now,
-            exp=self.now + timedelta(hours=8),
-        )
+        claims = IntegrationActor("product-link-session")
 
         def override_db():
             db = self.Session()
@@ -1020,7 +1006,7 @@ class IntegrationFeaturePostgresAcceptanceTests(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[get_db] = override_db
-        app.dependency_overrides[require_integration_admin] = lambda: claims
+        app.dependency_overrides[current_integration_actor] = lambda: claims
         client = TestClient(app)
         try:
             linked = client.put(

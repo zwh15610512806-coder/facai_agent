@@ -2,7 +2,7 @@ const MESSAGE_MAP: ReadonlyArray<readonly [RegExp, string]> = [
   [/network|fetch|connection|offline/i, "网络连接失败，请检查网络后重试"],
   [/timeout|timed out/i, "请求超时，请稍后重试"],
   [/credential|api[ -]?key|secret/i, "尚未配置服务器端模型凭据"],
-  [/unauthori[sz]ed|forbidden|access token|locked/i, "访问凭证无效或已过期，请重新解锁"],
+  [/unauthori[sz]ed|forbidden/i, "请求被服务拒绝，请刷新页面后重试"],
   [/not found|404/i, "请求的资源不存在，请刷新后重试"],
   [/conflict|revision/i, "项目版本有冲突，请刷新后重试"],
   [/storage|capacity|disk|space/i, "存储空间不足，请清理空间后重试"],

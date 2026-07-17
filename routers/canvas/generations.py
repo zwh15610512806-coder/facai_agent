@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from canvas_models import CanvasGenerationItem
 from database import get_db
-from services.canvas.access import require_canvas_paid_access
 from services.canvas.generation.repository import (
     CanvasGenerationActiveConflict,
     CanvasGenerationIdempotencyConflict,
@@ -109,7 +108,6 @@ def _domain_error(exc: Exception) -> JSONResponse:
 @router.post(
     "/projects/{project_id}/generations",
     response_model=GenerationDetail,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def post_generation(
     project_id: str,
@@ -147,7 +145,6 @@ def get_generation(generation_id: str, db: Session = Depends(get_db)):
 @router.post(
     "/generations/{generation_id}/cancel",
     response_model=GenerationDetail,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def cancel_generation(generation_id: str, db: Session = Depends(get_db)):
     try:
@@ -162,7 +159,6 @@ def cancel_generation(generation_id: str, db: Session = Depends(get_db)):
 @router.post(
     "/generation-items/{item_id}/retry",
     response_model=GenerationDetail,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def retry_generation_item_route(item_id: str, db: Session = Depends(get_db)):
     try:
@@ -181,7 +177,6 @@ def retry_generation_item_route(item_id: str, db: Session = Depends(get_db)):
 @router.post(
     "/generation-items/{item_id}/resolve-unknown",
     response_model=GenerationDetail,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def resolve_unknown_generation_item(
     item_id: str,

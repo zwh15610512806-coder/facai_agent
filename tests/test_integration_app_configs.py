@@ -18,24 +18,17 @@ from sqlalchemy.orm import Session as SqlAlchemySession
 from sqlalchemy.orm import sessionmaker
 
 from database import Base, create_database_engine, get_db
-from integrations.admin_auth import (
-    INTEGRATION_ADMIN_COOKIE,
-    hash_admin_password,
-    issue_admin_session,
-)
 from integrations.app_configs import upsert_provider_app_config
 from integrations.audit import write_security_audit
 from integrations.crypto import CredentialPurpose, decrypt_credential
 from integrations.db_safety import assert_disposable_postgres
 from integrations.schemas import AppConfigUpdate, AppConfigView
 from integrations.settings import (
-    ADMIN_PASSWORD_HASH_ENV,
     ARCHIVE_DIR_ENV,
     DATABASE_URL_ENV,
     INTERNAL_BASE_URL_ENV,
     MASTER_KEY_ENV,
     PUBLIC_BASE_URL_ENV,
-    SESSION_SECRET_ENV,
     TRUSTED_PROXY_CIDRS_ENV,
     WORKER_CONCURRENCY_ENV,
     load_integration_settings,
@@ -45,7 +38,6 @@ from integration_models import IntegrationAppConfig, IntegrationSecurityAudit
 from main import app
 
 
-SESSION_SECRET = b"task-eight-session-secret-material" * 2
 MASTER_KEY = b"m" * 32
 APP_CONFIG_TABLES = (
     IntegrationSecurityAudit.__table__,
@@ -140,13 +132,7 @@ class IntegrationAppConfigEndpointTests(unittest.TestCase):
         )
         cls.engine = create_database_engine(cls.database_url)
         cls.Session = sessionmaker(bind=cls.engine, expire_on_commit=False)
-        cls.password_hash = hash_admin_password(
-            "task-eight-admin-password",
-            salt=b"8" * 16,
-        )
         cls.environment = {
-            ADMIN_PASSWORD_HASH_ENV: cls.password_hash,
-            SESSION_SECRET_ENV: _base64url(SESSION_SECRET),
             MASTER_KEY_ENV: _base64url(MASTER_KEY),
             INTERNAL_BASE_URL_ENV: "https://internal.integration.test",
             PUBLIC_BASE_URL_ENV: "https://public.integration.test",
@@ -223,7 +209,7 @@ class IntegrationAppConfigEndpointTests(unittest.TestCase):
                 session.close()
 
         app.dependency_overrides[get_db] = override_db
-        self.session_cookie = issue_admin_session(session_secret=SESSION_SECRET)
+        self.session_cookie = "obsolete-session-cookie"
 
     def tearDown(self):
         app.dependency_overrides.pop(get_db, None)
@@ -237,8 +223,7 @@ class IntegrationAppConfigEndpointTests(unittest.TestCase):
             client=("198.51.100.88", 50000),
             raise_server_exceptions=False,
         )
-        if authenticated:
-            client.cookies.set(INTEGRATION_ADMIN_COOKIE, self.session_cookie)
+        del authenticated
         try:
             yield client
         finally:
@@ -264,8 +249,8 @@ class IntegrationAppConfigEndpointTests(unittest.TestCase):
             json=payload,
         )
 
-    def test_provider_endpoints_require_admin_session_with_json_401(self):
-        secret = "unauthenticated-secret-must-not-echo"
+    def test_provider_endpoints_are_open_without_an_admin_session(self):
+        secret = "passwordless-secret-must-not-echo"
         with self._client(authenticated=False) as client:
             listed = client.get("/api/integrations/providers")
             updated = self._put(
@@ -274,16 +259,9 @@ class IntegrationAppConfigEndpointTests(unittest.TestCase):
                 {"app_id": "merchant-app", "app_secret": secret},
             )
 
-        for response in (listed, updated):
-            self.assertEqual(response.status_code, 401, response.text)
-            self.assertTrue(
-                response.headers["content-type"].startswith("application/json")
-            )
-            self.assertEqual(
-                response.json(),
-                {"detail": "Integration administrator session required"},
-            )
-            self.assertNotIn(secret, response.text)
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertNotIn(secret, updated.text)
 
     def test_provider_list_separates_documented_configured_and_live_stages(self):
         with self._client(authenticated=True) as client:
@@ -789,8 +767,6 @@ class IntegrationAppConfigEndpointTests(unittest.TestCase):
         self.assertEqual(listed.json(), expected)
         self.assertEqual(updated.json(), expected)
         rendered = listed.text + updated.text
-        self.assertNotIn(self.password_hash, rendered)
-        self.assertNotIn(_base64url(SESSION_SECRET), rendered)
         self.assertNotIn(_base64url(MASTER_KEY), rendered)
         self.assertNotIn(invalid_master_value, rendered)
         self.assertNotIn("readiness-secret-value", rendered)

@@ -241,7 +241,6 @@ _EVENT_RULES: dict[str, dict[str, Any]] = {
                 "connector_unavailable",
                 "provider_app_not_configured",
                 "invalid_return_path",
-                "password_invalid",
                 "confirmation_mismatch",
                 "sync_run_not_found",
                 "sync_run_not_retryable",

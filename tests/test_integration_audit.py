@@ -160,9 +160,9 @@ class IntegrationSecurityAuditTests(unittest.TestCase):
             target_type="integration_command",
             target_id="purge_connection:42",
             summary_code="integration_mutation_rejected",
-            details={"operation": "purge_connection", "reason": "password_invalid"},
+            details={"operation": "purge_connection", "reason": "confirmation_mismatch"},
         )
-        self.assertEqual(audit.details["reason"], "password_invalid")
+        self.assertEqual(audit.details["reason"], "confirmation_mismatch")
 
         with self.assertRaises(ValueError):
             write_security_audit(

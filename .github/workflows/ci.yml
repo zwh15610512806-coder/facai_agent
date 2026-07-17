@@ -12,7 +12,6 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     env:
-      FACAI_AUTH_ENABLED: "0"
       PYTHONUTF8: "1"
 
     steps:

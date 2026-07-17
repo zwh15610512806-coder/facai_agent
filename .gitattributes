@@ -1,2 +1,2 @@
-frontend/canvas/public/fonts/OFL.txt -text
-static/canvas/fonts/OFL.txt -text
+frontend/canvas/public/fonts/OFL.txt text eol=lf
+static/canvas/fonts/OFL.txt text eol=lf

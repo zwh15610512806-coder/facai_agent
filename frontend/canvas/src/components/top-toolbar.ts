@@ -54,6 +54,9 @@ export function createTopToolbar(
     }
   });
   modeLabel.append(mode);
+  const modeGroup = document.createElement("div");
+  modeGroup.className = "canvas-toolbar-group canvas-toolbar-mode-group";
+  modeGroup.append(modeLabel);
 
   const undoButton = document.createElement("button");
   undoButton.type = "button";
@@ -65,6 +68,10 @@ export function createTopToolbar(
   redoButton.textContent = "重做";
   redoButton.dataset.testid = "canvas-redo";
   redoButton.addEventListener("click", redo);
+  const historyGroup = document.createElement("div");
+  historyGroup.className = "canvas-toolbar-group canvas-toolbar-history-group";
+  historyGroup.setAttribute("aria-label", "历史操作");
+  historyGroup.append(undoButton, redoButton);
 
   const viewportAction = (viewport: CanvasViewport): void => {
     dispatch({ type: "viewport/set", viewport });
@@ -91,6 +98,10 @@ export function createTopToolbar(
   const zoomReadout = document.createElement("output");
   zoomReadout.dataset.testid = "canvas-zoom-readout";
   zoomReadout.setAttribute("aria-label", "当前缩放");
+  const zoomGroup = document.createElement("div");
+  zoomGroup.className = "canvas-toolbar-group canvas-toolbar-zoom-group";
+  zoomGroup.setAttribute("aria-label", "画布缩放");
+  zoomGroup.append(zoomOut, zoomIn, zoomReset, zoomReadout);
 
   const exportButton = document.createElement("button");
   exportButton.type = "button";
@@ -106,19 +117,17 @@ export function createTopToolbar(
   inspectorToggle.textContent = "设置";
   inspectorToggle.setAttribute("aria-label", "打开画布设置");
   inspectorToggle.addEventListener("click", () => options.onToggleInspector?.());
+  const actionGroup = document.createElement("div");
+  actionGroup.className = "canvas-toolbar-group canvas-toolbar-action-group";
+  actionGroup.append(exportButton, inspectorToggle);
 
   element.append(
     projectsToggle,
     title,
-    modeLabel,
-    undoButton,
-    redoButton,
-    zoomOut,
-    zoomIn,
-    zoomReset,
-    zoomReadout,
-    exportButton,
-    inspectorToggle,
+    modeGroup,
+    historyGroup,
+    zoomGroup,
+    actionGroup,
   );
 
   const update = (): void => {

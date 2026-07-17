@@ -265,12 +265,10 @@ class IntegrationSecretGeneratorTests(unittest.TestCase):
         module = self._load_module()
         output = io.StringIO()
         errors = io.StringIO()
-        password = "test-password-must-not-appear"
-        generated = (b"m" * 32, b"s" * 48, b"z" * 16)
+        generated = b"m" * 32
 
         with (
-            patch.object(module.getpass, "getpass", return_value=password),
-            patch.object(module.secrets, "token_bytes", side_effect=generated),
+            patch.object(module.secrets, "token_bytes", return_value=generated),
             patch("builtins.open", side_effect=AssertionError("generator must not write files")),
             patch("pathlib.Path.open", side_effect=AssertionError("generator must not open files")),
             patch("pathlib.Path.write_text", side_effect=AssertionError("generator must not write files")),
@@ -282,36 +280,12 @@ class IntegrationSecretGeneratorTests(unittest.TestCase):
 
         rendered = output.getvalue()
         lines = rendered.strip().splitlines()
-        self.assertEqual(len(lines), 3)
+        self.assertEqual(len(lines), 1)
         self.assertEqual(
             lines[0],
-            f"FACAI_INTEGRATIONS_MASTER_KEY={_encode(generated[0])}",
+            f"FACAI_INTEGRATIONS_MASTER_KEY={_encode(generated)}",
         )
-        self.assertEqual(
-            lines[1],
-            f"FACAI_INTEGRATIONS_SESSION_SECRET={_encode(generated[1])}",
-        )
-        self.assertRegex(
-            lines[2],
-            r"^FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH=\$scrypt\$n=32768,r=8,p=1\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$",
-        )
-        self.assertNotIn(password, rendered)
         self.assertEqual(errors.getvalue(), "")
-
-        encoded_hash = lines[2].split("=", 1)[1]
-        _, algorithm, parameters, salt_encoded, digest_encoded = encoded_hash.split("$")
-        self.assertEqual(algorithm, "scrypt")
-        self.assertEqual(parameters, "n=32768,r=8,p=1")
-        expected_digest = hashlib.scrypt(
-            password.encode("utf-8"),
-            salt=_decode(salt_encoded),
-            n=32768,
-            r=8,
-            p=1,
-            dklen=64,
-            maxmem=134_217_728,
-        )
-        self.assertEqual(_decode(digest_encoded), expected_digest)
 
 
 if __name__ == "__main__":

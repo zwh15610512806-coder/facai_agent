@@ -3,10 +3,11 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import sys
 import uuid
 from contextlib import asynccontextmanager
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,6 @@ from config import ALLOWED_HOSTS, ALLOWED_ORIGINS, APP_DESCRIPTION, APP_TITLE, A
 from database import SessionLocal, engine, get_db, init_db
 from routers import (
     ai_config,
-    auth,
     creators,
     import_data,
     inspiration,
@@ -41,12 +41,7 @@ from services.request_context import request_actor
 from services.request_hardening import RequestBodyLimitMiddleware
 from services.security import (
     Principal,
-    auth_configured,
-    auth_enabled,
-    is_public_path,
-    principal_from_request,
-    request_uses_cookie_auth,
-    role_is_allowed,
+    principal_for_request,
 )
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -110,14 +105,9 @@ async def lifespan(app: FastAPI):
         print(f"OK {APP_TITLE} v{APP_VERSION}")
         print("   http://localhost:8001/app")
         print(f"   http://{lan_ip}:8001/app")
-        if auth_enabled():
-            logging.getLogger("facai.security").info(
-                "Application authentication is enabled (configured=%s)", auth_configured()
-            )
-        else:
-            logging.getLogger("facai.security").warning(
-                "Application authentication is disabled; use loopback access only"
-            )
+        logging.getLogger("facai.security").warning(
+            "Passwordless trusted-intranet access is active; every reachable client has full access"
+        )
         yield
     finally:
         try:
@@ -156,11 +146,9 @@ app.include_router(import_data.router, prefix="/api/import", tags=["import"])
 app.include_router(reference_scripts.router, prefix="/api/reference", tags=["reference"])
 app.include_router(inspiration.router, prefix="/api/inspiration", tags=["inspiration"])
 app.include_router(ai_config.router, prefix="/api/ai-config", tags=["ai-config"])
-app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(search_local.router, prefix="/api/search-proxy", tags=["search"])
 app.include_router(creators.router, prefix="/api/creators", tags=["creators"])
 app.include_router(canvas_router, prefix="/api/canvas", tags=["canvas"])
-app.include_router(integration_routes.session_router)
 app.include_router(integration_routes.admin_router)
 app.include_router(integration_routes.operations_router)
 app.include_router(integration_routes.public_router)
@@ -217,9 +205,9 @@ def _origin_is_allowed(request: Request, origin: str) -> bool:
     request_host = request.headers.get("host", "").lower()
     configured = {value.rstrip("/").lower() for value in ALLOWED_ORIGINS}
     if request.scope.get("path", "").startswith("/api/integrations/"):
-        from integrations.admin_auth import (
-            LoginContextConfigurationError,
-            resolve_login_request_context,
+        from integrations.request_context import (
+            RequestContextConfigurationError,
+            resolve_request_context,
         )
         from integrations.settings import (
             TRUSTED_PROXY_CIDRS_ENV,
@@ -230,11 +218,11 @@ def _origin_is_allowed(request: Request, origin: str) -> bool:
         if TRUSTED_PROXY_CIDRS_ENV in settings.errors:
             return parsed.netloc.lower() == request_host or normalized in configured
         try:
-            context = resolve_login_request_context(
+            context = resolve_request_context(
                 request,
                 settings.trusted_proxy_networks,
             )
-        except LoginContextConfigurationError:
+        except RequestContextConfigurationError:
             return parsed.netloc.lower() == request_host or normalized in configured
         current = f"{context.effective_scheme}://{request_host}"
     else:
@@ -426,32 +414,9 @@ async def protect_api_and_app_requests(request: Request, call_next):
                     JSONResponse({"detail": "Request origin is not allowed"}, status_code=403)
                 )
 
-    if not is_public_path(path):
-        if auth_enabled():
-            principal = principal_from_request(request)
-            if principal is None:
-                return _apply_security_headers(_auth_failure(request))
-            if not role_is_allowed(principal.role, request.method, path):
-                allowed_roles = sorted(
-                    role for role in {"admin", "operator", "viewer"}
-                    if role_is_allowed(role, request.method, path)
-                )
-                return _apply_security_headers(
-                    JSONResponse(
-                        {"detail": "Insufficient permission", "required_roles": allowed_roles},
-                        status_code=403,
-                    )
-                )
-            if (
-                request.method in {"POST", "PUT", "PATCH", "DELETE"}
-                and request_uses_cookie_auth(request)
-                and not _csrf_evidence_is_valid(request)
-            ):
-                return _apply_security_headers(
-                    JSONResponse({"detail": "CSRF validation failed"}, status_code=403)
-                )
-        else:
-            principal = Principal(name="local-bypass", role="admin", auth_source="disabled")
+    principal = None
+    if not _request_is_public_utility(path):
+        principal = principal_for_request(request)
         request.state.principal = principal
         try:
             violation = request_limit_violation(
@@ -491,7 +456,7 @@ def _record_audit_safely(
     status_code: int,
     request_id: str,
 ) -> None:
-    if principal.auth_source == "disabled" or not should_audit(request.method, request.url.path):
+    if not should_audit(request.method, request.url.path):
         return
     try:
         record_request_audit(
@@ -508,21 +473,16 @@ def _record_audit_safely(
         )
 
 
-def _csrf_evidence_is_valid(request: Request) -> bool:
-    if request.headers.get("x-facai-csrf", "").strip() == "1":
-        return True
-    origin = request.headers.get("origin", "").strip()
-    return bool(origin and _origin_is_allowed(request, origin))
-
-
-def _auth_failure(request: Request):
-    path = request.scope.get("path", "")
-    if path.startswith("/api/"):
-        return JSONResponse({"detail": "Authentication required"}, status_code=401)
-    next_url = path + (("?" + request.url.query) if request.url.query else "")
-    return RedirectResponse(
-        url="/app/login?next=" + quote(next_url, safe=""),
-        status_code=303,
+def _request_is_public_utility(path: str) -> bool:
+    normalized = path.rstrip("/")
+    return (
+        path in {"/", "/healthz", "/readyz"}
+        or path.startswith("/static/")
+        or re.fullmatch(
+            r"/integrations/(?:oauth/callback|events)/(?:qianchuan|doudian|taobao|pdd)",
+            normalized,
+        )
+        is not None
     )
 
 
@@ -538,8 +498,8 @@ def readyz():
     payload, status_code = build_readiness_report()
     return JSONResponse(payload, status_code=status_code)
 @app.get("/app/login")
-def login_page(request: Request):
-    return templates.TemplateResponse(request, "login.html", {"request": request})
+def login_page():
+    return RedirectResponse(url="/app", status_code=303)
 @app.get("/app")
 def app_page(request: Request): return templates.TemplateResponse(request, "inspiration.html", {"request": request})
 @app.get("/app/canvas")
@@ -582,38 +542,9 @@ def inspiration_page(): return RedirectResponse(url="/app", status_code=303)
 def ai_config_page(request: Request): return templates.TemplateResponse(request, "ai_config.html", {"request": request})
 
 
-def _integration_page_next(value: str | None) -> str:
-    fallback = "/app/api-connections"
-    if not isinstance(value, str) or not value or len(value) > 2048:
-        return fallback
-    if "\\" in value or any(ord(character) <= 0x20 or ord(character) == 0x7F for character in value):
-        return fallback
-    try:
-        parsed = urlsplit(value)
-    except ValueError:
-        return fallback
-    if parsed.scheme or parsed.netloc or parsed.fragment:
-        return fallback
-    if parsed.path != fallback or parsed.query:
-        return fallback
-    return parsed.path
-
-
 @app.get("/app/api-connections/login")
-def api_connections_login_page(request: Request):
-    from integrations.settings import load_integration_settings
-
-    settings = load_integration_settings()
-    next_path = _integration_page_next(request.query_params.get("next"))
-    return templates.TemplateResponse(
-        request,
-        "api_connections_login.html",
-        {
-            "request": request,
-            "login_ready": settings.login_ready,
-            "next_path": next_path,
-        },
-    )
+def api_connections_login_page():
+    return RedirectResponse(url="/app/api-connections", status_code=303)
 
 
 _OPERATIONS_TABS = frozenset(
@@ -625,19 +556,9 @@ _OPERATIONS_TABS = frozenset(
 def api_connections_page(request: Request, tab: str | None = None):
     if tab in _OPERATIONS_TABS:
         return RedirectResponse(url=f"/app/operations?tab={tab}", status_code=303)
-    from integrations.admin_auth import integration_admin_session_or_none
     from integrations.settings import load_integration_settings
 
     settings = load_integration_settings()
-    claims = integration_admin_session_or_none(request, settings=settings)
-    if claims is None:
-        return RedirectResponse(
-            url=(
-                "/app/api-connections/login?next="
-                + quote("/app/api-connections", safe="")
-            ),
-            status_code=303,
-        )
     return templates.TemplateResponse(
         request,
         "api_connections.html",
@@ -660,11 +581,8 @@ if __name__ == "__main__":
     import uvicorn
 
     from scripts.verify_runtime import assert_verified_runtime
-    from services.security import assert_startup_security
-
     assert_verified_runtime()
     bind_host = "0.0.0.0"
-    assert_startup_security(bind_host)
     uvicorn.run(
         app,
         host=bind_host,

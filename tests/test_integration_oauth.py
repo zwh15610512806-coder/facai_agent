@@ -22,11 +22,6 @@ from integration_models import (
     IntegrationOAuthState,
     IntegrationSecurityAudit,
 )
-from integrations.admin_auth import (
-    INTEGRATION_ADMIN_COOKIE,
-    hash_admin_password,
-    issue_admin_session,
-)
 from integrations.connectors.registry import ConnectorRegistry, ConnectorUnavailable
 from integrations.connections import (
     ConnectionOwnershipConflict,
@@ -37,13 +32,11 @@ from integrations.crypto import CredentialPurpose, decrypt_credential, encrypt_c
 from integrations.db_safety import assert_disposable_postgres
 from integrations.oauth import OAuthStateInvalid, consume_oauth_state, create_oauth_state
 from integrations.settings import (
-    ADMIN_PASSWORD_HASH_ENV,
     ARCHIVE_DIR_ENV,
     DATABASE_URL_ENV,
     INTERNAL_BASE_URL_ENV,
     MASTER_KEY_ENV,
     PUBLIC_BASE_URL_ENV,
-    SESSION_SECRET_ENV,
     TRUSTED_PROXY_CIDRS_ENV,
     WORKER_CONCURRENCY_ENV,
 )
@@ -60,7 +53,6 @@ from main import app
 
 
 UTC = timezone.utc
-SESSION_SECRET = b"task-nine-session-secret-material" * 2
 MASTER_KEY = b"o" * 32
 OAUTH_TABLES = (
     IntegrationSecurityAudit.__table__,
@@ -440,10 +432,7 @@ class OAuthEndpointTests(unittest.TestCase):
         )
         cls.engine = create_database_engine(cls.database_url)
         cls.Session = sessionmaker(bind=cls.engine, expire_on_commit=False)
-        cls.password_hash = hash_admin_password("task-nine-password", salt=b"9" * 16)
         cls.environment = {
-            ADMIN_PASSWORD_HASH_ENV: cls.password_hash,
-            SESSION_SECRET_ENV: _base64url(SESSION_SECRET),
             MASTER_KEY_ENV: _base64url(MASTER_KEY),
             INTERNAL_BASE_URL_ENV: "https://internal.integration.test",
             PUBLIC_BASE_URL_ENV: "https://public.integration.test",
@@ -503,11 +492,7 @@ class OAuthEndpointTests(unittest.TestCase):
     @contextmanager
     def _client(self, origin: str, *, authenticated: bool = False):
         client = TestClient(app, base_url=origin, raise_server_exceptions=False)
-        if authenticated:
-            client.cookies.set(
-                INTEGRATION_ADMIN_COOKIE,
-                issue_admin_session(session_secret=SESSION_SECRET),
-            )
+        del authenticated
         try:
             yield client
         finally:
@@ -770,7 +755,7 @@ class OAuthEndpointTests(unittest.TestCase):
     def test_unknown_state_returns_stable_400_without_echo_or_cookie_influence(self):
         unknown = "unknown-oauth-state-sentinel-2020"
         with self._client(self.environment[PUBLIC_BASE_URL_ENV]) as public:
-            public.cookies.set(INTEGRATION_ADMIN_COOKIE, "unrelated-cookie-sentinel")
+            public.cookies.set("obsolete_session", "unrelated-cookie-sentinel")
             response = public.get(
                 "/integrations/oauth/callback/pdd",
                 params={"state": unknown, "code": "unknown-code-sentinel"},

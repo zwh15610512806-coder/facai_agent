@@ -735,8 +735,7 @@ class CanvasGenerationRecoveryTests(unittest.TestCase):
             self.assertEqual("cancelled", item.status)
             self.assertEqual("cancelled", generation.status)
 
-    def test_paid_action_routes_protect_cancel_and_return_capacity_failure_without_retry_side_effect(self):
-        import config
+    def test_action_routes_are_passwordless_and_return_capacity_failure_without_retry_side_effect(self):
         from canvas_models import CanvasGeneration
         from database import get_db
         from fastapi import FastAPI
@@ -744,7 +743,6 @@ class CanvasGenerationRecoveryTests(unittest.TestCase):
         from routers.canvas import router as canvas_router
         from services.canvas import storage
 
-        token = "recovery-paid-access-token"
         app = FastAPI()
         app.include_router(canvas_router, prefix="/api/canvas")
 
@@ -753,32 +751,21 @@ class CanvasGenerationRecoveryTests(unittest.TestCase):
                 yield db
 
         app.dependency_overrides[get_db] = override_db
-        with patch.object(config, "CANVAS_ACCESS_TOKEN", token, create=True):
-            with TestClient(app) as client:
-                locked = client.post(f"/api/canvas/generations/{self.ids['generation']}/cancel")
-                self.assertEqual(401, locked.status_code, locked.text)
-                self.assertEqual(
-                    200,
-                    client.post("/api/canvas/access/unlock", json={"token": token}).status_code,
-                )
-                cancelled = client.post(f"/api/canvas/generations/{self.ids['generation']}/cancel")
-                self.assertEqual(200, cancelled.status_code, cancelled.text)
-                self.assertEqual("cancelled", cancelled.json()["status"])
+        with TestClient(app) as client:
+            cancelled = client.post(f"/api/canvas/generations/{self.ids['generation']}/cancel")
+            self.assertEqual(200, cancelled.status_code, cancelled.text)
+            self.assertEqual("cancelled", cancelled.json()["status"])
 
         self._mark_attempt(status="unknown", item_status="unknown", generation_status="unknown")
         with self.Session() as db:
             db.get(CanvasGeneration, self.ids["generation"]).storage_reservation_remaining_bytes = 0
             db.commit()
-        with patch.object(config, "CANVAS_ACCESS_TOKEN", token, create=True), patch.object(
+        with patch.object(
             storage,
             "assert_canvas_capacity",
             side_effect=storage.CanvasStorageError("canvas_storage_low_disk", "full"),
         ):
             with TestClient(app) as client:
-                self.assertEqual(
-                    200,
-                    client.post("/api/canvas/access/unlock", json={"token": token}).status_code,
-                )
                 insufficient = client.post(
                     f"/api/canvas/generation-items/{self.ids['item']}/resolve-unknown",
                     json={"action": "retry"},

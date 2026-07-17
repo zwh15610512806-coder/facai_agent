@@ -43,7 +43,6 @@ class HealthEndpointTests(unittest.TestCase):
             "last_error": "",
         })
         with (
-            patch.dict(os.environ, {"FACAI_AUTH_ENABLED": "0"}),
             patch.object(search_local, "_loaded", True),
             patch.object(search_local, "_state", ready_state),
             TestClient(app) as client,
@@ -248,7 +247,6 @@ class ManagedServiceTests(unittest.TestCase):
         with (
             patch.object(server, "configure_runtime_logging"),
             patch.object(server, "assert_verified_runtime"),
-            patch.object(server, "assert_startup_security"),
             patch("uvicorn.run") as run,
             patch.object(sys, "argv", ["facai_server.py", "--port", "8765"]),
         ):
@@ -261,41 +259,31 @@ class ManagedServiceTests(unittest.TestCase):
     def test_direct_main_uvicorn_disables_automatic_proxy_header_rewriting(self):
         with (
             patch("scripts.verify_runtime.assert_verified_runtime"),
-            patch("services.security.assert_startup_security"),
             patch("uvicorn.run") as run,
         ):
             runpy.run_path(str(ROOT / "main.py"), run_name="__main__")
 
         self.assertEqual(run.call_args.kwargs["proxy_headers"], False)
         self.assertEqual(run.call_args.kwargs["forwarded_allow_ips"], "")
-    def test_project_environment_is_loaded_before_service_security_checks(self):
+    def test_project_environment_is_loaded_before_service_startup(self):
         from scripts.runtime_environment import load_project_environment
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / ".env").write_text(
-                "FACAI_AUTH_ENABLED=1\nFACAI_ADMIN_TOKEN=loaded-from-project-env\n",
+                "DEEPSEEK_API_KEY=loaded-from-project-env\n",
                 encoding="utf-8",
             )
             with patch.dict(os.environ, {}, clear=False):
-                original_enabled = os.environ.pop("FACAI_AUTH_ENABLED", None)
-                original_token = os.environ.pop("FACAI_ADMIN_TOKEN", None)
+                original_key = os.environ.pop("DEEPSEEK_API_KEY", None)
                 try:
                     load_project_environment(root)
-                    self.assertEqual(os.environ["FACAI_AUTH_ENABLED"], "1")
-                    self.assertEqual(
-                        os.environ["FACAI_ADMIN_TOKEN"],
-                        "loaded-from-project-env",
-                    )
+                    self.assertEqual(os.environ["DEEPSEEK_API_KEY"], "loaded-from-project-env")
                 finally:
-                    if original_enabled is None:
-                        os.environ.pop("FACAI_AUTH_ENABLED", None)
+                    if original_key is None:
+                        os.environ.pop("DEEPSEEK_API_KEY", None)
                     else:
-                        os.environ["FACAI_AUTH_ENABLED"] = original_enabled
-                    if original_token is None:
-                        os.environ.pop("FACAI_ADMIN_TOKEN", None)
-                    else:
-                        os.environ["FACAI_ADMIN_TOKEN"] = original_token
+                        os.environ["DEEPSEEK_API_KEY"] = original_key
 
     def test_unmanaged_occupied_port_is_reported_without_starting_or_killing(self):
         service = _load_watchdog_module()

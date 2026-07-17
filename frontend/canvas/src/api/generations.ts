@@ -5,11 +5,6 @@ export type GenerationCreateResult =
   | { ok: true; value: { id: string } }
   | { ok: false; kind: "unauthorized" | "offline" | "server" | "busy"; message: string };
 
-export interface CanvasAccessStatus {
-  configured: boolean;
-  locked: boolean;
-}
-
 export interface ResultVersion {
   versionId: string;
   generationId: string;
@@ -37,8 +32,6 @@ export interface ResultVersionPage {
 
 export interface GenerationsApi {
   create(projectId: string, request: CanvasGenerationCreate, idempotencyKey: string): Promise<GenerationCreateResult>;
-  accessStatus(): Promise<{ ok: true; value: CanvasAccessStatus } | Extract<GenerationCreateResult, { ok: false }>>;
-  unlock(token: string): Promise<{ ok: true; value: CanvasAccessStatus } | Extract<GenerationCreateResult, { ok: false }>>;
   listResultVersions(projectId: string, boardId?: string, cursor?: string | null): Promise<
     { ok: true; value: ResultVersionPage } | Extract<GenerationCreateResult, { ok: false }>
   >;
@@ -106,20 +99,11 @@ function safeMessage(body: unknown, fallback: string): string {
 }
 
 function failure(status: number, body: unknown): Failure {
-  if (status === 401) return { ok: false, kind: "unauthorized", message: "需要解锁付费生成功能" };
+  if (status === 401 || status === 403) return { ok: false, kind: "unauthorized", message: "请求被服务拒绝" };
   if (status === 409 || status === 503 || status === 507) {
     return { ok: false, kind: "busy", message: safeMessage(body, "生成服务暂时不可用") };
   }
   return { ok: false, kind: "server", message: safeMessage(body, `生成请求失败 (${status})`) };
-}
-
-function parseAccessStatus(value: unknown): CanvasAccessStatus {
-  const record = recordValue(value, "access status");
-  exactKeys(record, ["configured", "locked"], "access status");
-  if (typeof record.configured !== "boolean" || typeof record.locked !== "boolean") {
-    throw new Error("access status fields must be boolean");
-  }
-  return { configured: record.configured, locked: record.locked };
 }
 
 function parseResultVersion(value: unknown): ResultVersion {
@@ -183,22 +167,6 @@ export function createGenerationsApi({
       } catch {
         return { ok: false, kind: "server", message: "生成服务返回了无效响应" };
       }
-    },
-    accessStatus: async () => {
-      const result = await request(`${base}/access/status`, { method: "GET" });
-      if ("ok" in result) return result;
-      try { return { ok: true, value: parseAccessStatus(result.body) }; }
-      catch { return { ok: false, kind: "server", message: "访问状态响应无效" }; }
-    },
-    unlock: async (token) => {
-      const result = await request(`${base}/access/unlock`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      if ("ok" in result) return result;
-      try { return { ok: true, value: parseAccessStatus(result.body) }; }
-      catch { return { ok: false, kind: "server", message: "解锁服务返回了无效响应" }; }
     },
     listResultVersions: async (projectId, boardId, cursor) => {
       const query = new URLSearchParams();

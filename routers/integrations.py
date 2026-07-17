@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.routing import APIRoute
@@ -25,16 +25,10 @@ from integration_models import (
     IntegrationSyncCheckpoint,
     IntegrationSyncRun,
 )
-from integrations.admin_auth import (
-    AdminSessionClaims,
-    INTEGRATION_ADMIN_COOKIE,
-    LoginContextConfigurationError,
-    SESSION_MAX_AGE_SECONDS,
-    admin_session_digest,
-    authenticate_admin_login,
-    derive_login_source_digest,
-    require_integration_admin,
-    resolve_login_request_context,
+from integrations.actor import (
+    IntegrationActor,
+    current_integration_actor,
+    integration_actor_digest,
 )
 from integrations.app_configs import (
     list_provider_app_configs,
@@ -85,9 +79,6 @@ from integrations.schemas import (
     AppConfigView,
     AuthorizationStartRequest,
     AuthorizationStartResponse,
-    IntegrationLoginRequest,
-    IntegrationLogoutResponse,
-    IntegrationSessionResponse,
     CommonDataQuery,
     ExportCreateRequest,
     ManualSyncRequest,
@@ -101,11 +92,7 @@ from integrations.schemas import (
     ProviderListResponse,
     RefundDataQuery,
 )
-from integrations.settings import (
-    MASTER_KEY_ENV,
-    TRUSTED_PROXY_CIDRS_ENV,
-    load_integration_settings,
-)
+from integrations.settings import MASTER_KEY_ENV, load_integration_settings
 from integrations.sync.queue import enqueue_job
 from integrations.types import (
     AuthorizationStatus,
@@ -119,7 +106,6 @@ from integrations.types import (
     SyncStatus,
     utc_now,
 )
-from integrations.admin_auth import verify_admin_password
 from models import Product
 from services.security import request_actor_digest
 
@@ -193,7 +179,7 @@ def _audit_mutation_validation(operation: str, path_key: str | None = None):
     async def dependency(
         request: Request,
         db: Session = Depends(get_db),
-        claims: AdminSessionClaims = Depends(require_integration_admin),
+        claims: IntegrationActor = Depends(current_integration_actor),
     ) -> None:
         raw_target = request.path_params.get(path_key) if path_key else 0
         target = _safe_validation_target(path_key, raw_target)
@@ -207,11 +193,6 @@ def _audit_mutation_validation(operation: str, path_key: str | None = None):
     return dependency
 
 
-session_router = APIRouter(
-    prefix="/api/integrations",
-    tags=["integrations"],
-    route_class=_SanitizedValidationRoute,
-)
 public_router = APIRouter(
     prefix="/integrations",
     tags=["integrations-public"],
@@ -221,7 +202,7 @@ admin_router = APIRouter(
     prefix="/api/integrations",
     tags=["integrations"],
     route_class=_SanitizedValidationRoute,
-    dependencies=[Depends(require_integration_admin)],
+    dependencies=[Depends(current_integration_actor)],
 )
 operations_router = APIRouter(
     prefix="/api/operations",
@@ -236,24 +217,6 @@ _PROVIDER_LABELS = {
     Provider.TAOBAO: "淘宝店",
     Provider.PDD: "拼多多店",
 }
-
-
-def _commit_rejection_audit(
-    db: Session,
-    *,
-    summary_code: str,
-    reason: str,
-    source_digest: str | None,
-) -> None:
-    write_security_audit(
-        db,
-        event_type="login_rejected",
-        outcome="denied",
-        source_digest=source_digest,
-        summary_code=summary_code,
-        details={"reason": reason},
-    )
-    db.commit()
 
 
 def _credential_settings_or_503():
@@ -369,122 +332,6 @@ def _invalid_oauth_callback() -> HTTPException:
     )
 
 
-@session_router.post("/session", response_model=IntegrationSessionResponse)
-def create_integration_session(
-    payload: IntegrationLoginRequest,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    settings = load_integration_settings()
-    database_is_postgresql = db.get_bind().dialect.name == "postgresql"
-    if (
-        not settings.login_ready
-        or settings.admin_password_hash is None
-        or settings.session_secret is None
-    ):
-        if database_is_postgresql:
-            _commit_rejection_audit(
-                db,
-                summary_code="login_not_configured",
-                reason="login_not_configured",
-                source_digest=None,
-            )
-        raise HTTPException(
-            status_code=503,
-            detail="Integration administrator login is not configured",
-        )
-    if not database_is_postgresql:
-        raise HTTPException(
-            status_code=503,
-            detail="Integration administrator database is not ready",
-        )
-    if TRUSTED_PROXY_CIDRS_ENV in settings.errors:
-        _commit_rejection_audit(
-            db,
-            summary_code="transport_configuration_invalid",
-            reason="transport_configuration_invalid",
-            source_digest=None,
-        )
-        raise HTTPException(
-            status_code=503,
-            detail="Integration trusted proxy configuration is invalid",
-        )
-
-    try:
-        context = resolve_login_request_context(
-            request,
-            settings.trusted_proxy_networks,
-        )
-    except LoginContextConfigurationError:
-        _commit_rejection_audit(
-            db,
-            summary_code="transport_configuration_invalid",
-            reason="transport_configuration_invalid",
-            source_digest=None,
-        )
-        raise HTTPException(
-            status_code=503,
-            detail="Integration trusted proxy configuration is invalid",
-        ) from None
-
-    source_digest = derive_login_source_digest(
-        session_secret=settings.session_secret,
-        client_ip=context.client_ip,
-    )
-    if context.effective_scheme != "https" and not context.client_ip.is_loopback:
-        _commit_rejection_audit(
-            db,
-            summary_code="https_required",
-            reason="https_required",
-            source_digest=source_digest,
-        )
-        raise HTTPException(
-            status_code=400,
-            detail="HTTPS is required for integration administrator login",
-        )
-
-    result = authenticate_admin_login(
-        db,
-        password=payload.password,
-        encoded_password_hash=settings.admin_password_hash,
-        session_secret=settings.session_secret,
-        context=context,
-    )
-    if result.cookie is None or result.claims is None:
-        body: dict[str, object] = {"detail": result.detail}
-        if result.retry_after_seconds is not None:
-            body["retry_after_seconds"] = result.retry_after_seconds
-        return JSONResponse(body, status_code=result.status_code)
-
-    response = JSONResponse(
-        IntegrationSessionResponse(
-            authenticated=True,
-            expires_at=result.claims.exp,
-        ).model_dump(mode="json"),
-        status_code=200,
-    )
-    response.set_cookie(
-        key=INTEGRATION_ADMIN_COOKIE,
-        value=result.cookie,
-        max_age=SESSION_MAX_AGE_SECONDS,
-        path="/",
-        secure=context.effective_scheme == "https",
-        httponly=True,
-        samesite="lax",
-    )
-    return response
-
-
-@admin_router.get("/session", response_model=IntegrationSessionResponse)
-def get_integration_session(
-    claims: AdminSessionClaims = Depends(require_integration_admin),
-):
-    return IntegrationSessionResponse(
-        authenticated=True,
-        expires_at=claims.exp,
-    )
-
-
 @admin_router.get("/providers", response_model=ProviderListResponse)
 def get_integration_providers(db: Session = Depends(get_db)):
     _credential_settings_or_503()
@@ -499,7 +346,7 @@ def put_integration_provider_app_config(
     provider: Provider,
     payload: AppConfigUpdate,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("update_app_config", "provider")
     ),
@@ -511,7 +358,7 @@ def put_integration_provider_app_config(
             provider=provider,
             update=payload,
             master_key=settings.master_key,
-            session_digest=admin_session_digest(claims),
+        session_digest=integration_actor_digest(claims),
         )
         db.commit()
     except SQLAlchemyError:
@@ -531,12 +378,12 @@ def start_provider_authorization(
     provider: Provider,
     payload: AuthorizationStartRequest,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("start_authorization", "provider")
     ),
 ):
-    session_digest = admin_session_digest(claims)
+    session_digest = integration_actor_digest(claims)
 
     def reject(reason: str) -> None:
         db.rollback()
@@ -779,7 +626,7 @@ def _reporting_range(query: CommonDataQuery) -> ReportingRange:
 def _commit_mutation_rejection(
     db: Session,
     *,
-    claims: AdminSessionClaims,
+    claims: IntegrationActor,
     operation: str,
     target_id: int,
     reason: str,
@@ -793,7 +640,7 @@ def _commit_mutation_rejection(
         event_type="integration_mutation_rejected",
         outcome="failure",
         summary_code="integration_mutation_rejected",
-        session_digest=admin_session_digest(claims),
+        session_digest=integration_actor_digest(claims),
         provider=provider,
         target_type="integration_command",
         target_id=f"{operation}:{target_id}",
@@ -1060,12 +907,12 @@ def start_manual_integration_sync(
     connection_id: int,
     payload: ManualSyncRequest,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("manual_sync", "connection_id")
     ),
 ):
-    session_digest = admin_session_digest(claims)
+    session_digest = integration_actor_digest(claims)
     try:
         result, units, connection = enqueue_manual_sync(
             db,
@@ -1124,7 +971,7 @@ def reauthorize_integration_connection(
     connection_id: int,
     payload: ReauthorizationRequest,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("reauthorize", "connection_id")
     ),
@@ -1153,7 +1000,7 @@ def reauthorize_integration_connection(
 def disable_integration_connection(
     connection_id: int,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("disable_connection", "connection_id")
     ),
@@ -1181,7 +1028,7 @@ def disable_integration_connection(
         event_type="connection_disabled",
         outcome="success",
         summary_code="connection_disabled",
-        session_digest=admin_session_digest(claims),
+        session_digest=integration_actor_digest(claims),
         provider=connection.provider,
         target_type="connection",
         target_id=str(connection.id),
@@ -1195,7 +1042,7 @@ def disable_integration_connection(
 def disable_integration_authorization(
     authorization_id: int,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("disable_authorization", "authorization_id")
     ),
@@ -1240,7 +1087,7 @@ def disable_integration_authorization(
         event_type="authorization_disabled",
         outcome="success",
         summary_code="authorization_disabled_locally",
-        session_digest=admin_session_digest(claims),
+        session_digest=integration_actor_digest(claims),
         provider=authorization.provider,
         target_type="authorization",
         target_id=str(authorization.id),
@@ -1259,24 +1106,11 @@ def purge_integration_connection(
     connection_id: int,
     payload: PurgeConnectionRequest,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("purge_connection", "connection_id")
     ),
 ):
-    settings = load_integration_settings()
-    if settings.admin_password_hash is None or not verify_admin_password(
-        payload.password.get_secret_value(),
-        settings.admin_password_hash,
-    ):
-        _commit_mutation_rejection(
-            db,
-            claims=claims,
-            operation="purge_connection",
-            target_id=connection_id,
-            reason="password_invalid",
-        )
-        raise HTTPException(status_code=403, detail={"code": "password_invalid"})
     connection = db.scalar(
         select(IntegrationConnection)
         .where(IntegrationConnection.id == connection_id)
@@ -1333,7 +1167,7 @@ def purge_integration_connection(
         event_type="connection_purge_enqueued",
         outcome="success",
         summary_code="connection_purge_enqueued",
-        session_digest=admin_session_digest(claims),
+        session_digest=integration_actor_digest(claims),
         provider=connection.provider,
         target_type="connection",
         target_id=str(connection.id),
@@ -1352,7 +1186,7 @@ def retry_integration_sync_run(
     run_id: int,
     payload: RetryRunRequest,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("retry_sync_run", "run_id")
     ),
@@ -1434,7 +1268,7 @@ def retry_integration_sync_run(
         event_type="sync_run_retry_enqueued",
         outcome="success",
         summary_code="sync_run_retry_enqueued",
-        session_digest=admin_session_digest(claims),
+        session_digest=integration_actor_digest(claims),
         provider=connection.provider,
         target_type="sync_run",
         target_id=str(parent.id),
@@ -1574,12 +1408,12 @@ def get_integration_sync_run(
 def create_integration_export(
     payload: ExportCreateRequest,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("create_export")
     ),
 ):
-    session_digest = admin_session_digest(claims)
+    session_digest = integration_actor_digest(claims)
     try:
         export_job = create_export_job(
             db,
@@ -1631,7 +1465,7 @@ def create_integration_export(
 def get_integration_export(
     public_id: str,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
 ):
     try:
         export_job = get_export_job(db, public_id)
@@ -1645,7 +1479,7 @@ def get_integration_export(
         event_type="integration_export_polled",
         outcome="success",
         summary_code="integration_export_polled",
-        session_digest=admin_session_digest(claims),
+        session_digest=integration_actor_digest(claims),
         target_type="integration_export",
         target_id=export_job.public_id,
         details={"creator_session_digest": export_job.requester_session_digest},
@@ -1657,7 +1491,7 @@ def get_integration_export(
 def download_integration_export(
     public_id: str,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
 ):
     try:
         export_job = get_export_job(db, public_id)
@@ -1687,7 +1521,7 @@ def download_integration_export(
         event_type="integration_export_downloaded",
         outcome="success",
         summary_code="integration_export_downloaded",
-        session_digest=admin_session_digest(claims),
+        session_digest=integration_actor_digest(claims),
         target_type="integration_export",
         target_id=export_job.public_id,
         details={"creator_session_digest": export_job.requester_session_digest},
@@ -1710,7 +1544,7 @@ def put_integration_product_link(
     commerce_product_id: int,
     payload: ProductLinkUpdate,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("update_product_link", "commerce_product_id")
     ),
@@ -1740,7 +1574,7 @@ def put_integration_product_link(
             provider=(commerce_product.provider if commerce_product is not None else None),
         )
         raise HTTPException(status_code=404, detail={"code": "product_not_found"})
-    session_digest = admin_session_digest(claims)
+    session_digest = integration_actor_digest(claims)
     now = datetime.now(timezone.utc)
     db.execute(
         postgres_insert(CommerceProductLink)
@@ -1782,7 +1616,7 @@ def put_integration_product_link(
 def delete_integration_product_link(
     commerce_product_id: int,
     db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
+    claims: IntegrationActor = Depends(current_integration_actor),
     _validation_audit: None = Depends(
         _audit_mutation_validation("delete_product_link", "commerce_product_id")
     ),
@@ -1804,7 +1638,7 @@ def delete_integration_product_link(
             CommerceProductLink.commerce_product_id == commerce_product_id
         )
     )
-    session_digest = admin_session_digest(claims)
+    session_digest = integration_actor_digest(claims)
     write_security_audit(
         db,
         event_type="commerce_product_link_deleted",
@@ -1820,40 +1654,4 @@ def delete_integration_product_link(
     return {"commerce_product_id": commerce_product.id, "linked": False}
 
 
-@admin_router.delete("/session", response_model=IntegrationLogoutResponse)
-def delete_integration_session(
-    request: Request,
-    response: Response,
-    db: Session = Depends(get_db),
-    claims: AdminSessionClaims = Depends(require_integration_admin),
-):
-    settings = load_integration_settings()
-    secure = request.scope.get("scheme") == "https"
-    try:
-        context = resolve_login_request_context(
-            request,
-            settings.trusted_proxy_networks,
-        )
-        secure = context.effective_scheme == "https"
-    except LoginContextConfigurationError:
-        pass
-    write_security_audit(
-        db,
-        event_type="session_deleted",
-        outcome="success",
-        session_digest=admin_session_digest(claims),
-        summary_code="session_deleted",
-        details={},
-    )
-    db.commit()
-    response.delete_cookie(
-        key=INTEGRATION_ADMIN_COOKIE,
-        path="/",
-        secure=secure,
-        httponly=True,
-        samesite="lax",
-    )
-    return IntegrationLogoutResponse(success=True)
-
-
-__all__ = ["admin_router", "public_router", "session_router"]
+__all__ = ["admin_router", "operations_router", "public_router"]

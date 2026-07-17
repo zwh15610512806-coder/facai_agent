@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from database import get_db
-from integrations.admin_auth import AdminSessionClaims, require_integration_admin
+from integrations.actor import IntegrationActor, current_integration_actor
 from integrations.management import (
     ManagementConflict,
     authorization_view,
@@ -118,7 +118,7 @@ class ManagementSafeViewTests(unittest.TestCase):
 
 class ManagementEndpointContractTests(unittest.TestCase):
     def setUp(self):
-        app.dependency_overrides[require_integration_admin] = lambda: object()
+        app.dependency_overrides[current_integration_actor] = lambda: IntegrationActor("test-actor")
         app.dependency_overrides[get_db] = lambda: object()
         self.client = TestClient(app)
 
@@ -161,27 +161,18 @@ class ManagementEndpointContractTests(unittest.TestCase):
         )
         db = Mock()
         db.scalar.return_value = connection
-        claims = AdminSessionClaims(
-            sid="a" * 64,
-            iat=now,
-            exp=now.replace(hour=12),
-        )
-        app.dependency_overrides[require_integration_admin] = lambda: claims
+        claims = IntegrationActor("a" * 64)
+        app.dependency_overrides[current_integration_actor] = lambda: claims
         app.dependency_overrides[get_db] = lambda: db
 
         with (
-            patch(
-                "routers.integrations.load_integration_settings",
-                return_value=SimpleNamespace(admin_password_hash="configured"),
-            ),
-            patch("routers.integrations.verify_admin_password", return_value=True),
             patch("routers.integrations.enqueue_job", return_value=job),
             patch("routers.integrations.write_security_audit"),
             patch("routers.integrations.utc_now", return_value=now),
         ):
             response = self.client.post(
                 "/api/integrations/connections/9/purge",
-                json={"password": "test-password", "confirmation": "测试店铺"},
+                json={"confirmation": "测试店铺"},
             )
 
         self.assertEqual(response.status_code, 202)

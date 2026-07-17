@@ -858,18 +858,6 @@ textarea {
   font-size: 11px;
 }
 
-.canvas-access-dialog {
-  width: min(420px, calc(100vw - 32px));
-  border: 1px solid #cdd5df;
-  border-radius: 12px;
-  box-shadow: 0 24px 70px rgb(20 29 48 / 25%);
-}
-
-.canvas-access-dialog form {
-  display: grid;
-  gap: 10px;
-}
-
 .canvas-project-dialogs section {
   position: fixed;
   z-index: 20;
@@ -1036,7 +1024,7 @@ textarea {
 .canvas-workspace {
   position: relative;
   display: grid;
-  grid-template-columns: 252px minmax(0, 1fr) 368px;
+  grid-template-columns: 280px minmax(0, 1fr) 368px;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -1056,27 +1044,67 @@ textarea {
 }
 
 .canvas-project-sidebar {
-  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
   border: 0;
   border-right: 1px solid var(--border);
 }
 
+.canvas-project-sidebar-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 18px 16px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
 .canvas-project-sidebar h1 {
-  margin: 0 0 16px;
+  min-width: 0;
+  margin: 0;
   font-family: var(--font-display);
   font-size: 19px;
   color: var(--text);
+}
+
+.canvas-project-count {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: var(--r-pill);
+  color: var(--facai);
+  background: var(--facai-soft);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.canvas-project-sidebar section > h2 {
+  margin: 0 0 8px;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.canvas-project-create-section,
+.canvas-project-filter-section {
+  flex: 0 0 auto;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .canvas-create-project {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  margin-bottom: 10px;
+  margin: 0;
 }
 
 .canvas-create-project input,
-.canvas-project-sidebar > input[type="search"] {
+.canvas-project-filter-section > input[type="search"] {
+  width: 100%;
   min-height: 40px;
   padding: 8px 10px;
   background: var(--surface);
@@ -1092,43 +1120,86 @@ textarea {
   box-shadow: var(--s-brand);
 }
 
-.canvas-project-sidebar > label {
+.canvas-project-archived-filter {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 9px 2px 14px;
+  margin: 10px 2px 0;
   color: var(--text-2);
   font-size: 12px;
   font-weight: 700;
 }
 
-.canvas-project-sidebar > label input {
+.canvas-project-archived-filter input {
   min-height: auto;
 }
 
+.canvas-project-list-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding-top: 13px;
+}
+
+.canvas-project-list-section > h2 {
+  flex: 0 0 auto;
+  padding: 0 16px;
+}
+
 .canvas-project-feedback {
-  min-height: 20px;
-  margin: 0 0 6px;
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 16px 8px;
   color: var(--danger);
   font-size: 12px;
   line-height: 1.5;
 }
 
+.canvas-project-feedback:empty {
+  display: none;
+}
+
 .canvas-project-list {
   display: grid;
+  flex: 1 1 auto;
+  align-content: start;
   gap: 7px;
   margin: 0;
-  padding: 0;
+  padding: 0 10px 16px;
+  overflow-y: auto;
   list-style: none;
+  scrollbar-gutter: stable;
+}
+
+.canvas-project-empty {
+  display: grid;
+  gap: 5px;
+  margin: 6px;
+  padding: 18px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r);
+  color: var(--text-3);
+  background: var(--surface-darker);
+  font-size: 11px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.canvas-project-empty strong {
+  color: var(--text-2);
+  font-size: 13px;
 }
 
 .canvas-project-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 2px 7px;
-  padding: 5px;
+  gap: 3px 6px;
+  padding: 7px;
+  overflow: visible;
   border: 1px solid transparent;
   border-radius: var(--r);
   background: transparent;
@@ -1142,6 +1213,17 @@ textarea {
 .canvas-project-row.is-active {
   border-color: var(--facai-subtle);
   background: var(--facai-soft);
+}
+
+.canvas-project-row.is-active::before {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: -1px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--facai);
+  content: "";
 }
 
 .canvas-project-select {
@@ -1163,13 +1245,30 @@ textarea {
 
 .canvas-project-meta {
   grid-column: 1;
-  padding: 0 7px 5px;
+  padding: 0 7px 3px;
   color: var(--text-3);
   font-size: 10px;
 }
 
-.canvas-project-menu {
+.canvas-project-status {
   grid-column: 2;
+  grid-row: 1;
+  padding: 3px 6px;
+  border-radius: var(--r-pill);
+  color: var(--text-3);
+  background: var(--surface-darker);
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.canvas-project-row.is-active .canvas-project-status {
+  color: var(--facai);
+  background: rgba(255, 255, 255, .8);
+}
+
+.canvas-project-menu {
+  grid-column: 3;
   grid-row: 1 / span 2;
   position: relative;
 }
@@ -1260,6 +1359,19 @@ textarea {
   box-shadow: var(--s-1);
 }
 
+.canvas-toolbar-group {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.canvas-toolbar-group + .canvas-toolbar-group {
+  padding-left: 6px;
+  border-left: 1px solid var(--border-soft);
+}
+
 .canvas-toolbar-title {
   display: grid;
   min-width: 120px;
@@ -1280,7 +1392,7 @@ textarea {
   font-size: 10px;
 }
 
-.canvas-top-toolbar > label {
+.canvas-top-toolbar label {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1692,7 +1804,6 @@ textarea {
   color: var(--facai);
 }
 
-.canvas-access-dialog,
 .canvas-project-dialogs section {
   border-color: var(--border);
   border-radius: var(--r-lg);
@@ -1703,6 +1814,12 @@ textarea {
 
 .canvas-drawer-backdrop {
   display: none;
+}
+
+.canvas-page .facai-tools-launcher {
+  right: calc(368px + 28px);
+  bottom: 54px;
+  z-index: 15;
 }
 
 @media (min-width: 1024px) and (max-width: 1279px) {
@@ -1759,6 +1876,10 @@ textarea {
     align-items: center;
     justify-content: center;
   }
+
+  .canvas-page .facai-tools-launcher {
+    right: 28px;
+  }
 }
 
 @media (max-width: 1023px) {
@@ -1769,6 +1890,10 @@ textarea {
   }
 
   .canvas-page .nav {
+    display: none;
+  }
+
+  .canvas-page .facai-tools-launcher {
     display: none;
   }
 

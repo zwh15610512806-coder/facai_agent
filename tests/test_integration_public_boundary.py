@@ -6,15 +6,12 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from integrations.admin_auth import hash_admin_password
 from integrations.settings import (
-    ADMIN_PASSWORD_HASH_ENV,
     ARCHIVE_DIR_ENV,
     DATABASE_URL_ENV,
     INTERNAL_BASE_URL_ENV,
     MASTER_KEY_ENV,
     PUBLIC_BASE_URL_ENV,
-    SESSION_SECRET_ENV,
     TRUSTED_PROXY_CIDRS_ENV,
     WORKER_CONCURRENCY_ENV,
 )
@@ -30,8 +27,6 @@ class IntegrationPublicBoundaryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.environment = {
-            ADMIN_PASSWORD_HASH_ENV: hash_admin_password("boundary-password", salt=b"b" * 16),
-            SESSION_SECRET_ENV: _base64url(b"boundary-session-secret" * 2),
             MASTER_KEY_ENV: _base64url(b"b" * 32),
             INTERNAL_BASE_URL_ENV: "https://internal.integration.test",
             PUBLIC_BASE_URL_ENV: "https://public.integration.test",
@@ -196,7 +191,11 @@ class IntegrationPublicBoundaryTests(unittest.TestCase):
             ) as client,
         ):
             response = client.get("/api/integrations/providers")
-        self.assertEqual(response.status_code, 401, response.text)
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertEqual(
+            response.json()["detail"]["code"],
+            "security_configuration_incomplete",
+        )
 
     def test_ambiguous_default_loopback_ports_do_not_create_a_public_fence(self):
         ambiguous = dict(self.environment)

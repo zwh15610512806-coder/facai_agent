@@ -93,7 +93,7 @@ export function createExportsApi({
         // Invalid response bodies are normalized below.
       }
       if (response.status === 401) {
-        return { ok: false, kind: "unauthorized", message: "需要解锁付费导出功能" };
+        return { ok: false, kind: "unauthorized", message: "导出请求被服务拒绝" };
       }
       if (response.status === 422) {
         return { ok: false, kind: "validation", message: safeValidationMessage(body) };

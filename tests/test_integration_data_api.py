@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from database import get_db
-from integrations.admin_auth import require_integration_admin
 from integrations.reporting import (
     PageResult,
     ReportingRange,
@@ -83,9 +82,9 @@ class ReportingContractTests(unittest.TestCase):
             )
         with self.assertRaises(ValidationError) as raised:
             PurgeConnectionRequest.model_validate(
-                {"password": "plain-secret", "confirmation": "", "extra": 1}
+                {"confirmation": "", "extra": 1}
             )
-        self.assertNotIn("plain-secret", str(raised.exception))
+        self.assertIn("confirmation", str(raised.exception))
 
     def test_default_range_is_thirty_local_days_with_utc_exclusive_bounds(self):
         selected = ReportingRange.from_dates(
@@ -198,17 +197,11 @@ class ReportingContractTests(unittest.TestCase):
 
 class ReportingEndpointContractTests(unittest.TestCase):
     def setUp(self):
-        self.original_auth_enabled = os.environ.get("FACAI_AUTH_ENABLED")
-        os.environ["FACAI_AUTH_ENABLED"] = "0"
         app.dependency_overrides[get_db] = lambda: object()
         self.client = TestClient(app)
 
     def tearDown(self):
         app.dependency_overrides.clear()
-        if self.original_auth_enabled is None:
-            os.environ.pop("FACAI_AUTH_ENABLED", None)
-        else:
-            os.environ["FACAI_AUTH_ENABLED"] = self.original_auth_enabled
 
     def test_orders_route_uses_strict_query_and_repository_page_shape(self):
         empty = PageResult(items=[], total=0, page=1, per_page=50, total_pages=1)

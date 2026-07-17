@@ -16,7 +16,7 @@ if not exist "%PYTHON%" (
 
 REM 检查 .env 文件
 if not exist .env (
-    echo [ERROR] 未找到 .env。请复制 .env.example，并配置 FACAI_ADMIN_TOKEN。
+    echo [ERROR] 未找到 .env。请复制 .env.example，并配置所需的 AI 服务密钥。
     exit /b 1
 )
 

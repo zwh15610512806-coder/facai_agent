@@ -1,5 +1,4 @@
 const { test, expect } = require('@playwright/test');
-const crypto = require('crypto');
 
 const MAIN_PAGES = [
   '/app',
@@ -13,29 +12,28 @@ const MAIN_PAGES = [
   '/app/search',
   '/app/ai-config',
   '/app/operations',
-  '/app/api-connections/login',
+  '/app/api-connections',
 ];
 
-const TOOL_PAGES = MAIN_PAGES.filter(path => path !== '/app/api-connections/login');
-
-function base64url(value) {
-  return Buffer.from(value).toString('base64url');
-}
-
-function e2eAdminSession() {
-  const iat = Math.floor(Date.now() / 1000);
-  const claims = { exp: iat + 8 * 60 * 60, iat, sid: base64url(Buffer.alloc(32, 7)), v: 1 };
-  const payload = base64url(Buffer.from(JSON.stringify(claims), 'ascii'));
-  const signature = crypto.createHmac('sha256', Buffer.from(Array.from({ length: 32 }, (_, i) => i)))
-    .update(payload, 'ascii')
-    .digest('base64url');
-  return `${payload}.${signature}`;
-}
+const TOOL_PAGES = MAIN_PAGES;
 
 test('all main pages render without console errors', async ({ page }) => {
+  await page.route('**/api/integrations/providers', route => route.fulfill({
+    json: { providers: [] },
+  }));
+  await page.route(/\/api\/integrations\/connections(?:\?.*)?$/, route => route.fulfill({
+    json: { connections: [] },
+  }));
+  await page.route(/\/api\/integrations\/sync-runs(?:\?.*)?$/, route => route.fulfill({
+    json: { items: [], total: 0, page: 1, per_page: 50, total_pages: 1 },
+  }));
+
   const errors = [];
   page.on('console', message => {
-    if (message.type() === 'error') errors.push(message.text());
+    if (message.type() === 'error') {
+      const location = message.location();
+      errors.push(`${message.text()} @ ${location.url || 'unknown'}`);
+    }
   });
   page.on('pageerror', error => errors.push(error.message));
 
@@ -142,22 +140,11 @@ test('desktop AI work keeps the two-column layout', async ({ page }) => {
   expect(columns).toBe(2);
 });
 
-test('API connections login is public and a signed admin session opens the protected shell', async ({ page }) => {
-  await page.goto('/app/api-connections/login', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'API 接入中心' })).toBeVisible();
-  await expect(page.locator('script[src*="common.js"]')).toHaveCount(0);
-
-  await page.context().addCookies([{
-    name: 'facai_integrations_session',
-    value: e2eAdminSession(),
-    url: 'http://127.0.0.1:8765',
-    httpOnly: true,
-    sameSite: 'Lax',
-  }]);
+test('API connections opens directly without a login session', async ({ page }) => {
   await page.goto('/app/api-connections', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: '电商 API 接入中心' })).toBeVisible();
   await expect(page.locator('.provider-connection-row')).toHaveCount(4);
-  await expect(page.locator('#integrationLogout')).toBeVisible();
+  await expect(page.locator('#integrationLogout')).toHaveCount(0);
   await expect(page.getByText('功能框架已就绪，连接器尚未配置')).toBeVisible();
   await expect(page.locator('#facaiToolsToggle')).toBeVisible();
 });

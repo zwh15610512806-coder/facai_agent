@@ -289,6 +289,10 @@ test("workspace renders accessible project actions and wires toolbar, status and
   const mounted = mountWorkspace({ root, controller, store, adapter });
 
   expect(root.querySelector('[data-testid="canvas-project-sidebar"]')).not.toBeNull();
+  expect(root.querySelector('.canvas-project-sidebar-header')).not.toBeNull();
+  expect(root.querySelector('[data-testid="canvas-project-count"]')?.textContent).toBe("2 个项目");
+  expect(root.querySelector('.canvas-project-create-section')).not.toBeNull();
+  expect(root.querySelector('.canvas-project-filter-section')).not.toBeNull();
   expect(root.querySelector('input[aria-label="搜索项目"]')).not.toBeNull();
   expect(root.querySelector('[data-testid="canvas-project-search"]')).not.toBeNull();
   expect(root.querySelector('input[aria-label="新建项目名称"]')).not.toBeNull();
@@ -320,7 +324,12 @@ test("workspace renders accessible project actions and wires toolbar, status and
 
   const createName = root.querySelector<HTMLInputElement>('input[aria-label="新建项目名称"]');
   if (createName === null) throw new Error("missing create input");
+  const createProject = root.querySelector<HTMLButtonElement>('[data-testid="canvas-project-create"]');
+  if (createProject === null) throw new Error("missing create button");
+  expect(createProject.disabled).toBe(true);
   createName.value = "New Project";
+  createName.dispatchEvent(new Event("input", { bubbles: true }));
+  expect(createProject.disabled).toBe(false);
   button("新建").click();
   expect(controller.createProject).toHaveBeenCalledWith("New Project");
   await vi.waitFor(() => expect(createName.value).toBe(""));
@@ -423,6 +432,18 @@ test("workspace renders accessible project actions and wires toolbar, status and
   );
   button("重试同步").click();
   expect(controller.retryRemoteSync).toHaveBeenCalledTimes(1);
+
+  state = {
+    ...state,
+    projects: [],
+    query: "needle",
+    includeArchived: false,
+  };
+  listener?.(state);
+  expect(root.querySelector('[data-testid="canvas-project-count"]')?.textContent).toBe("0 个项目");
+  expect(root.querySelector('[data-testid="canvas-project-empty"]')?.textContent).toContain(
+    "没有找到匹配项目",
+  );
 
   mounted.dispose();
   mounted.dispose();

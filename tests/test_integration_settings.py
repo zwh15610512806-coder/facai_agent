@@ -20,8 +20,6 @@ def _base64url(raw: bytes) -> str:
 def _valid_environment(*, archive_dir: Path | None = None) -> dict[str, str]:
     archive = archive_dir or (ROOT / "data" / "integration-archive")
     return {
-        "FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH": "$scrypt$test-only",
-        "FACAI_INTEGRATIONS_SESSION_SECRET": _base64url(b"s" * 48),
         "FACAI_INTEGRATIONS_MASTER_KEY": _base64url(b"m" * 32),
         "FACAI_INTEGRATIONS_INTERNAL_BASE_URL": "https://admin.example.test:8443",
         "FACAI_INTEGRATIONS_PUBLIC_BASE_URL": "https://callbacks.example.test",
@@ -42,8 +40,6 @@ class IntegrationDependencyContractTests(unittest.TestCase):
     def test_env_example_documents_integration_settings_without_secrets(self):
         content = (ROOT / ".env.example").read_text(encoding="utf-8")
         for key in (
-            "FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH",
-            "FACAI_INTEGRATIONS_SESSION_SECRET",
             "FACAI_INTEGRATIONS_MASTER_KEY",
             "FACAI_INTEGRATIONS_INTERNAL_BASE_URL",
             "FACAI_INTEGRATIONS_PUBLIC_BASE_URL",
@@ -59,13 +55,10 @@ class IntegrationSettingsTests(unittest.TestCase):
         settings = load_integration_settings({})
 
         self.assertIsInstance(settings, IntegrationSettings)
-        self.assertFalse(settings.login_ready)
         self.assertFalse(settings.credential_ready)
         self.assertEqual(
             settings.errors,
             (
-                "FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH",
-                "FACAI_INTEGRATIONS_SESSION_SECRET",
                 "FACAI_INTEGRATIONS_MASTER_KEY",
                 "FACAI_INTEGRATIONS_INTERNAL_BASE_URL",
                 "FACAI_INTEGRATIONS_PUBLIC_BASE_URL",
@@ -76,27 +69,12 @@ class IntegrationSettingsTests(unittest.TestCase):
         self.assertEqual(settings.trusted_proxy_networks, ())
         self.assertEqual(settings.worker_concurrency, 4)
 
-    def test_login_readiness_is_independent_from_credential_readiness(self):
-        values = {
-            "FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH": "$scrypt$test-only",
-            "FACAI_INTEGRATIONS_SESSION_SECRET": _base64url(b"s" * 32),
-        }
-
-        settings = load_integration_settings(values)
-
-        self.assertTrue(settings.login_ready)
-        self.assertFalse(settings.credential_ready)
-        self.assertNotIn("FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH", settings.errors)
-        self.assertNotIn("FACAI_INTEGRATIONS_SESSION_SECRET", settings.errors)
-
     def test_valid_configuration_is_frozen_and_credential_ready(self):
         settings = load_integration_settings(_valid_environment())
 
-        self.assertTrue(settings.login_ready)
         self.assertTrue(settings.credential_ready)
         self.assertEqual(settings.errors, ())
         self.assertEqual(settings.master_key, b"m" * 32)
-        self.assertEqual(settings.session_secret, b"s" * 48)
         self.assertEqual(settings.worker_concurrency, 3)
         self.assertEqual(
             tuple(str(network) for network in settings.trusted_proxy_networks),
@@ -121,32 +99,13 @@ class IntegrationSettingsTests(unittest.TestCase):
                 self.assertIsNone(settings.master_key)
                 self.assertIn("FACAI_INTEGRATIONS_MASTER_KEY", settings.errors)
 
-    def test_master_and_session_secrets_reject_base64_padding(self):
-        for key in (
-            "FACAI_INTEGRATIONS_MASTER_KEY",
-            "FACAI_INTEGRATIONS_SESSION_SECRET",
-        ):
-            with self.subTest(key=key):
-                values = _valid_environment()
-                values[key] = f"{values[key]}="
-                settings = load_integration_settings(values)
-                self.assertIn(key, settings.errors)
-                if key == "FACAI_INTEGRATIONS_MASTER_KEY":
-                    self.assertIsNone(settings.master_key)
-                    self.assertFalse(settings.credential_ready)
-                else:
-                    self.assertIsNone(settings.session_secret)
-                    self.assertFalse(settings.login_ready)
-
-    def test_session_secret_requires_at_least_32_decoded_bytes(self):
-        for raw in (b"s" * 31, b"", b"s" * 16):
-            with self.subTest(length=len(raw)):
-                values = _valid_environment()
-                values["FACAI_INTEGRATIONS_SESSION_SECRET"] = _base64url(raw)
-                settings = load_integration_settings(values)
-                self.assertFalse(settings.login_ready)
-                self.assertIsNone(settings.session_secret)
-                self.assertIn("FACAI_INTEGRATIONS_SESSION_SECRET", settings.errors)
+    def test_master_secret_rejects_base64_padding(self):
+        values = _valid_environment()
+        values["FACAI_INTEGRATIONS_MASTER_KEY"] += "="
+        settings = load_integration_settings(values)
+        self.assertIn("FACAI_INTEGRATIONS_MASTER_KEY", settings.errors)
+        self.assertIsNone(settings.master_key)
+        self.assertFalse(settings.credential_ready)
 
     def test_urls_must_be_origin_only_and_https_outside_loopback(self):
         invalid_origins = (
@@ -363,7 +322,7 @@ class IntegrationSettingsTests(unittest.TestCase):
 
     def test_config_exports_non_fail_fast_settings_loader(self):
         settings = config.load_integration_settings({})
-        self.assertFalse(settings.login_ready)
+        self.assertFalse(settings.credential_ready)
 
 
 if __name__ == "__main__":

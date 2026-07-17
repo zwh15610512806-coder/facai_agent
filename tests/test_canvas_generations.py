@@ -727,24 +727,9 @@ class GenerationCreationTests(_GenerationFixture):
         app.dependency_overrides[get_db] = override_db
         return app
 
-    def test_paid_create_route_requires_unlock_and_safe_idempotency_key(self):
-        import config
-
+    def test_create_route_is_passwordless_and_requires_safe_idempotency_key(self):
         payload = self._request().model_dump(by_alias=True, mode="json")
-        with patch.object(config, "CANVAS_ACCESS_TOKEN", self.TOKEN, create=True):
-            with TestClient(self._app()) as client:
-                locked = client.post(
-                    f"/api/canvas/projects/{self.ids['project']}/generations",
-                    json=payload,
-                    headers={"Idempotency-Key": "generation-api-key-01"},
-                )
-                self.assertEqual(401, locked.status_code, locked.text)
-                self.assertEqual((0, 0, 0), self._counts())
-                unlock = client.post(
-                    "/api/canvas/access/unlock",
-                    json={"token": self.TOKEN},
-                )
-                self.assertEqual(200, unlock.status_code, unlock.text)
+        with TestClient(self._app()) as client:
                 missing = client.post(
                     f"/api/canvas/projects/{self.ids['project']}/generations",
                     json=payload,
@@ -775,14 +760,9 @@ class GenerationCreationTests(_GenerationFixture):
                 self.assertNotIn("requestSnapshot", serialized)
 
     def test_advanced_post_uses_wired_composition_when_output_node_has_no_group(self):
-        import config
-
         payload = self._advanced_request().model_dump(by_alias=True, mode="json")
-        with patch.object(config, "CANVAS_ACCESS_TOKEN", self.TOKEN, create=True):
-            with TestClient(self._app()) as client:
-                unlock = client.post("/api/canvas/access/unlock", json={"token": self.TOKEN})
-                self.assertEqual(200, unlock.status_code, unlock.text)
-                created = client.post(
+        with TestClient(self._app()) as client:
+            created = client.post(
                     f"/api/canvas/projects/{self.ids['project']}/generations",
                     json=payload,
                     headers={"Idempotency-Key": "advanced-composition-route-01"},
@@ -792,7 +772,6 @@ class GenerationCreationTests(_GenerationFixture):
         self.assertEqual((1, 1, 1), self._counts())
 
     def test_advanced_post_rejects_tampered_system_cutout_lineage(self):
-        import config
         from canvas_models import CanvasProject
 
         payload = self._advanced_request().model_dump(by_alias=True, mode="json")
@@ -806,11 +785,8 @@ class GenerationCreationTests(_GenerationFixture):
             project.semantic_state = json.dumps(semantic, ensure_ascii=False, separators=(",", ":"))
             db.commit()
 
-        with patch.object(config, "CANVAS_ACCESS_TOKEN", self.TOKEN, create=True):
-            with TestClient(self._app()) as client:
-                unlock = client.post("/api/canvas/access/unlock", json={"token": self.TOKEN})
-                self.assertEqual(200, unlock.status_code, unlock.text)
-                rejected = client.post(
+        with TestClient(self._app()) as client:
+            rejected = client.post(
                     f"/api/canvas/projects/{self.ids['project']}/generations",
                     json=payload,
                     headers={"Idempotency-Key": "advanced-forged-lineage-01"},
@@ -819,16 +795,11 @@ class GenerationCreationTests(_GenerationFixture):
         self.assertEqual((0, 0, 0), self._counts())
 
     def test_advanced_post_rejects_dimensions_tampered_from_generation_node(self):
-        import config
-
         payload = self._advanced_request().model_dump(by_alias=True, mode="json")
         payload["items"][0].update({"width": 1024, "height": 1024, "ratio": "1:1"})
 
-        with patch.object(config, "CANVAS_ACCESS_TOKEN", self.TOKEN, create=True):
-            with TestClient(self._app()) as client:
-                unlock = client.post("/api/canvas/access/unlock", json={"token": self.TOKEN})
-                self.assertEqual(200, unlock.status_code, unlock.text)
-                rejected = client.post(
+        with TestClient(self._app()) as client:
+            rejected = client.post(
                     f"/api/canvas/projects/{self.ids['project']}/generations",
                     json=payload,
                     headers={"Idempotency-Key": "advanced-dimension-tamper-01"},

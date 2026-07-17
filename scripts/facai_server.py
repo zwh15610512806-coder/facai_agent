@@ -17,7 +17,6 @@ load_project_environment(ROOT)
 
 from scripts.verify_runtime import assert_verified_runtime  # noqa: E402
 from services.runtime_logging import configure_runtime_logging  # noqa: E402
-from services.security import assert_startup_security  # noqa: E402
 
 
 def main() -> int:
@@ -32,7 +31,6 @@ def main() -> int:
         sys.executable,
         sys.prefix,
     )
-    assert_startup_security("0.0.0.0")
     import uvicorn
 
     uvicorn.run(

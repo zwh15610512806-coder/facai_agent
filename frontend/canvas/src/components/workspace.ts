@@ -32,7 +32,6 @@ import { createStatusBar } from "./status-bar";
 import { createTopToolbar } from "./top-toolbar";
 import { createCompleteSetPanel } from "./complete-set-panel";
 import { createGenerationStatus } from "./generation-status";
-import { createAccessDialog } from "./access-dialog";
 import { createNodeInspector } from "./node-inspector";
 import { createNodeToolbar } from "./node-toolbar";
 import { createResultBoard } from "./result-board";
@@ -464,7 +463,6 @@ export function mountWorkspace({
   });
   let modelCatalog: ModelProfile[] = [];
   const generationStatus = createGenerationStatus();
-  const accessDialog = createAccessDialog();
   const generationController = generationsApi === undefined ? null : createGenerationController({
     store,
     autosave: { flush: () => controller.flushSave() },
@@ -490,20 +488,6 @@ export function mountWorkspace({
       );
       renderWorkflow();
     };
-    const access = await generationsApi.accessStatus();
-    if (!access.ok) {
-      generationStatus.update(canvasUserMessage(access.message, "生成访问状态检查失败，请重试"), "error");
-      return;
-    }
-    if (access.value.configured && access.value.locked) {
-      accessDialog.open(async (token) => {
-        const unlocked = await generationsApi.unlock(token);
-        if (!unlocked.ok) return canvasUserMessage(unlocked.message, "解锁失败，请检查访问令牌");
-        void run();
-        return null;
-      });
-      return;
-    }
     await run();
   };
 
@@ -519,17 +503,8 @@ export function mountWorkspace({
     dispatch,
     onGenerate: () => { void submitGeneration(); },
   });
-  const requestProviderUnlock = (retry: () => void): void => {
-    if (generationsApi === undefined) {
-      generationStatus.update("付费访问服务尚未配置", "error");
-      return;
-    }
-    accessDialog.open(async (token) => {
-      const unlocked = await generationsApi.unlock(token);
-      if (!unlocked.ok) return canvasUserMessage(unlocked.message, "解锁失败，请检查访问令牌");
-      retry();
-      return null;
-    });
+  const reportUnexpectedAccessDenial = (_retry: () => void): void => {
+    generationStatus.update("请求被服务拒绝，请刷新页面后重试", "error");
   };
   if (exportsApi !== undefined) {
     exportPanel = createExportPanel({
@@ -540,7 +515,7 @@ export function mountWorkspace({
       getVersions: () => resultVersions,
       isEditable: () => editable,
       flushSave: () => controller.flushSave(),
-      onUnauthorized: requestProviderUnlock,
+      onUnauthorized: reportUnexpectedAccessDenial,
       onOperation: (operation) => {
         knownOperations = [
           ...knownOperations.filter((candidate) => candidate.id !== operation.id),
@@ -886,7 +861,6 @@ export function mountWorkspace({
     propertiesHeader,
     propertiesTabs,
     ...inspectorPanels.values(),
-    accessDialog.element,
   );
   center.append(toolbar.element, stage, status.element);
   shell.append(sidebar.element, center, properties, drawerBackdrop);

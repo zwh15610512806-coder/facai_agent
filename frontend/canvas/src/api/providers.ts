@@ -211,7 +211,7 @@ function serverFailure(status: number): ApiFailure {
 
 function managementFailure(status: number): ProviderManagementFailure {
   if (status === 401) return { ok: false, kind: "unauthorized", message: "需要解锁提供方管理功能" };
-  if (status === 503) return { ok: false, kind: "unconfigured", message: "服务器未配置 Canvas 访问令牌" };
+  if (status === 503) return { ok: false, kind: "unconfigured", message: "服务器尚未配置图像模型服务" };
   if (status === 422) return { ok: false, kind: "validation", message: "提供方配置未通过安全校验" };
   return { ok: false, kind: "server", message: `提供方管理请求失败 (${status})` };
 }

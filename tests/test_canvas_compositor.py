@@ -56,8 +56,9 @@ class CanvasFontResourceTests(unittest.TestCase):
         source_license = source_root / "OFL.txt"
         self.assertEqual(16_437_364, source_font.stat().st_size)
         self.assertEqual(EXPECTED_FONT_DIGEST, hashlib.sha256(source_font.read_bytes()).hexdigest())
-        self.assertEqual(4_301, source_license.stat().st_size)
-        self.assertEqual(EXPECTED_LICENSE_DIGEST, hashlib.sha256(source_license.read_bytes()).hexdigest())
+        canonical_license = source_license.read_bytes().replace(b"\r\n", b"\n")
+        self.assertEqual(4_301, len(canonical_license))
+        self.assertEqual(EXPECTED_LICENSE_DIGEST, hashlib.sha256(canonical_license).hexdigest())
         self.assertEqual(f"sha256:{EXPECTED_FONT_DIGEST}", FONT_RESOURCE_VERSION)
         self.assertEqual(source_font.read_bytes(), BUILT_FONT_PATH.read_bytes())
 

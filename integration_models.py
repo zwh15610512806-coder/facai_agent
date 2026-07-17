@@ -261,29 +261,6 @@ class IntegrationSecurityAudit(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
-class IntegrationLoginThrottle(Base):
-    __tablename__ = "integration_login_throttles"
-    __table_args__ = (
-        UniqueConstraint(
-            "source_digest",
-            name="uq_integration_login_throttles_source_digest",
-        ),
-        Index("ix_integration_login_throttles_locked_until", "locked_until"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    source_digest = Column(String(64), nullable=False)
-    failure_count = Column(Integer, nullable=False, default=0)
-    window_started_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
-    locked_until = Column(DateTime(timezone=True))
-    updated_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=utc_now,
-        onupdate=utc_now,
-    )
-
-
 def _json_type():
     """Use native JSONB on PostgreSQL while preserving SQLite test compatibility."""
     return JSON().with_variant(JSONB(), "postgresql")

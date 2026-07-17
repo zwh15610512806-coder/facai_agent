@@ -27,7 +27,6 @@ from integration_models import (
     IntegrationAppConfig,
     IntegrationAuthorization,
     IntegrationConnection,
-    IntegrationLoginThrottle,
     IntegrationOAuthState,
     IntegrationSecurityAudit,
 )
@@ -81,7 +80,6 @@ CONTROL_MODELS = (
     IntegrationConnection,
     IntegrationOAuthState,
     IntegrationSecurityAudit,
-    IntegrationLoginThrottle,
 )
 CONTROL_TABLES = tuple(model.__table__ for model in CONTROL_MODELS)
 OPAQUE_CIPHERTEXT = "opaque-encrypted-payload"
@@ -553,14 +551,13 @@ class IntegrationModelTests(unittest.TestCase):
         session.flush()
         return connection
 
-    def test_metadata_retains_exactly_the_six_foundation_control_tables(self):
+    def test_metadata_retains_exactly_the_five_foundation_control_tables(self):
         self.assertEqual(
             sorted(table.name for table in CONTROL_TABLES),
             [
                 "integration_app_configs",
                 "integration_authorizations",
                 "integration_connections",
-                "integration_login_throttles",
                 "integration_oauth_states",
                 "integration_security_audit",
             ],
@@ -636,31 +633,6 @@ class IntegrationModelTests(unittest.TestCase):
                         initiating_session_digest="c" * 64,
                         return_path="/app/api-connections",
                         expires_at=expires_at,
-                    ),
-                ]
-            )
-            with self.assertRaises(IntegrityError):
-                session.commit()
-        finally:
-            session.rollback()
-            session.close()
-
-    def test_login_throttle_is_unique_by_source_digest(self):
-        session = self.Session()
-        try:
-            source_digest = "d" * 64
-            now = datetime.now(timezone.utc)
-            session.add_all(
-                [
-                    IntegrationLoginThrottle(
-                        source_digest=source_digest,
-                        failure_count=1,
-                        window_started_at=now,
-                    ),
-                    IntegrationLoginThrottle(
-                        source_digest=source_digest,
-                        failure_count=2,
-                        window_started_at=now,
                     ),
                 ]
             )

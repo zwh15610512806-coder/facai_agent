@@ -352,32 +352,6 @@ class NormalizedAdFinanceTransaction(_NormalizedPayload):
     transaction_at: AwareUtcDateTime
 
 
-class IntegrationLoginRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    password: str = Field(min_length=1, max_length=512)
-
-    @field_validator("password")
-    @classmethod
-    def password_must_fit_scrypt_work_bound(cls, value: str) -> str:
-        try:
-            encoded = value.encode("utf-8")
-        except UnicodeEncodeError:
-            raise ValueError("password must be valid UTF-8") from None
-        if len(encoded) > 512:
-            raise ValueError("password must not exceed 512 UTF-8 bytes")
-        return value
-
-
-class IntegrationSessionResponse(BaseModel):
-    authenticated: bool
-    expires_at: datetime
-
-
-class IntegrationLogoutResponse(BaseModel):
-    success: bool
-
-
 class AppConfigUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -544,7 +518,6 @@ class RetryRunRequest(BaseModel):
 class PurgeConnectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    password: SecretStr = Field(min_length=1, max_length=512)
     confirmation: str = Field(min_length=1, max_length=255)
 
 
@@ -635,9 +608,6 @@ __all__ = [
     "CommonDataQuery",
     "ExportCreateRequest",
     "ExportFilters",
-    "IntegrationLoginRequest",
-    "IntegrationLogoutResponse",
-    "IntegrationSessionResponse",
     "ManualSyncRequest",
     "NormalizedAdAccount",
     "NormalizedAdBalanceSnapshot",

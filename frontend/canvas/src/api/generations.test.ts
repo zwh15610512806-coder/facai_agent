@@ -33,19 +33,13 @@ test("generation API submits the canonical request with a caller-owned idempoten
   );
 });
 
-test("access token is sent only to unlock and retained generation settings stay client-side", async () => {
-  const fetcher = vi.fn(async () => new Response(JSON.stringify({ configured: true, locked: false }), {
-    status: 200, headers: { "Content-Type": "application/json" },
-  }));
+test("generation API exposes no access-token or unlock surface", () => {
+  const fetcher = vi.fn();
   const api = createGenerationsApi({ apiBase: "/api/canvas", fetcher });
 
-  await expect(api.unlock("raw-access-token")).resolves.toEqual({
-    ok: true, value: { configured: true, locked: false },
-  });
-  expect(fetcher).toHaveBeenCalledWith(
-    "/api/canvas/access/unlock",
-    expect.objectContaining({ body: JSON.stringify({ token: "raw-access-token" }) }),
-  );
+  expect("accessStatus" in api).toBe(false);
+  expect("unlock" in api).toBe(false);
+  expect(fetcher).not.toHaveBeenCalled();
 });
 
 test("result versions load every cursor page before a board can choose a prior retry", async () => {

@@ -69,26 +69,18 @@ DATABASE_URL=sqlite:///./data/script_agent.db
 CHROMA_PERSIST_DIR=./data/chroma_db
 ```
 
-初始化应用内角色口令（不会在终端打印口令，口令只写入已被 Git 忽略的 `.env`）：
-
-```powershell
-.\.venv\Scripts\python.exe scripts\bootstrap_auth.py
-```
-
-`FACAI_ADMIN_TOKEN`、`FACAI_OPERATOR_TOKEN`、`FACAI_VIEWER_TOKEN` 分别对应管理员、操作员和只读角色。除静态资源、登录和 `/healthz` 外，匿名请求默认拒绝；脚本调用可通过 `X-Facai-Session-Token` 请求头传入对应角色口令。
-
-口令疑似泄露时运行 `.\.venv\Scripts\python.exe scripts\bootstrap_auth.py --rotate`，然后重启服务；该命令会使已有会话失效，并且仍不会把新口令打印到终端。
+应用采用无口令的可信内网模式：不提供登录页、角色口令或访问令牌。任何能连接服务端口的客户端都拥有完整业务权限，因此必须通过 Windows 防火墙、公司网段或受控 VPN 限制可达范围，禁止直接暴露到公网。
 
 更换 embedding 模型或从旧索引迁移后，需要由管理员显式重建产品和脚本 Chroma collection，避免旧向量与新向量混用：
 
 ```bash
-curl -H "X-Facai-Session-Token: <FACAI_ADMIN_TOKEN>" -X POST http://localhost:8001/api/products/reindex
-curl -H "X-Facai-Session-Token: <FACAI_ADMIN_TOKEN>" -X POST http://localhost:8001/api/templates/reindex
+curl -X POST http://localhost:8001/api/products/reindex
+curl -X POST http://localhost:8001/api/templates/reindex
 ```
 
 如果重建失败，请优先检查 `ARK_API_KEY`、`ARK_BASE_URL`、`EMBEDDING_MODEL_NAME` 和火山方舟 endpoint 权限。`EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL` 只在需要为向量服务单独配置凭据时使用。
 
-`/healthz` 只代表进程存活，供看门狗使用；受保护的 `/readyz` 会分别报告数据库、搜索索引新鲜度、向量队列、后台 worker 和磁盘空间。依赖退化不会触发进程重启。
+`/healthz` 只代表进程存活，供看门狗使用；`/readyz` 会分别报告数据库、搜索索引新鲜度、向量队列、后台 worker 和磁盘空间。依赖退化不会触发进程重启。
 
 ## 公司内网上线检查
 
@@ -96,7 +88,7 @@ curl -H "X-Facai-Session-Token: <FACAI_ADMIN_TOKEN>" -X POST http://localhost:80
 
 - 只在可信公司网段开放服务地址，不要把 `8001` 直接暴露到公网。
 - Windows 防火墙入站规则只放行公司办公网段；如果跨网段访问，优先走 VPN 或统一网关。
-- 保持 `FACAI_AUTH_ENABLED=1`，并为三个角色使用互不相同的高熵口令；LAN 绑定在鉴权关闭或缺少管理员口令时会失败关闭。
+- 服务没有应用层登录保护；Windows 防火墙入站规则必须只放行可信公司网段，不得使用公网隧道直接暴露端口。
 - 共享盘/本地资料扫描会索引当前服务账号可读的文件，确认共享目录权限不会暴露不应被检索的资料。
 - SQLite 每日备份会执行完整恢复演练并按保留策略清理；将 `FACAI_BACKUP_OFFSITE_DIR` 配置为独立磁盘或受控 UNC 共享，并另外备份 `.env`、`data/chroma_db/`、`data/product_files/`、`data/uploads/` 和关键 `资料/` 目录。
 - Excel 导入只支持 `.xlsx`；旧 `.xls` 请先转换为 `.xlsx` 再上传。

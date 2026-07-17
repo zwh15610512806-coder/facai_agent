@@ -80,21 +80,21 @@ class RequestMiddlewareHardeningTests(unittest.TestCase):
 
     def test_cross_origin_mutating_api_request_is_rejected(self):
         response = self.client.post(
-            "/api/auth/login",
+            "/api/canvas/projects/missing/generations",
             headers={"Origin": "https://attacker.example"},
-            json={"token": "anything"},
+            json={},
         )
 
         self.assertEqual(response.status_code, 403)
 
     def test_same_origin_mutating_api_request_remains_allowed(self):
         response = self.client.post(
-            "/api/auth/login",
+            "/api/canvas/projects/missing/generations",
             headers={"Origin": "http://testserver"},
-            json={"token": "anything"},
+            json={},
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 422)
 
     def test_untrusted_host_is_rejected(self):
         response = self.client.get("/healthz", headers={"Host": "attacker.example"})
@@ -111,8 +111,8 @@ class RequestMiddlewareHardeningTests(unittest.TestCase):
 
     def test_oversize_json_body_is_rejected_before_validation(self):
         response = self.client.post(
-            "/api/auth/login",
-            content=b'{"token":"' + (b"x" * (2 * 1024 * 1024)) + b'"}',
+            "/api/canvas/projects/missing/generations",
+            content=b'{"prompt":"' + (b"x" * (2 * 1024 * 1024)) + b'"}',
             headers={"Content-Type": "application/json"},
         )
 

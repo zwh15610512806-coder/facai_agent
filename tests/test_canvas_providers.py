@@ -324,31 +324,13 @@ class CanvasProviderRoutesTests(unittest.TestCase):
             "credentialHint": "route key",
         }
 
-    def test_paid_routes_redact_credentials_and_reject_environment_variable_fields(self) -> None:
+    def test_passwordless_routes_redact_credentials_and_reject_environment_variable_fields(self) -> None:
         master_key = Fernet.generate_key().decode("ascii")
         with (
-            patch.object(config, "CANVAS_ACCESS_TOKEN", ACCESS_TOKEN, create=True),
             patch.object(config, "CANVAS_PROVIDER_SECRET_KEY", master_key, create=True),
             patch.object(config, "CANVAS_PROVIDER_ALLOWED_HOSTS", ("api.route-vendor.example",), create=True),
             TestClient(self._app()) as client,
         ):
-            locked = client.post("/api/canvas/model-providers", json=self._payload())
-            self.assertEqual(401, locked.status_code, locked.text)
-            for method, path, payload in (
-                ("post", "/api/canvas/model-providers/not-found/models", {
-                    "modelId": "locked-model", "displayName": "Locked", "capabilities": CAPABILITIES,
-                }),
-                ("patch", "/api/canvas/models/not-found", {"enabled": False}),
-                ("post", "/api/canvas/model-providers/not-found/test", {}),
-                ("delete", "/api/canvas/model-providers/not-found", None),
-            ):
-                with self.subTest(method=method, path=path):
-                    request = getattr(client, method)
-                    response = request(path) if payload is None else request(path, json=payload)
-                    self.assertEqual(401, response.status_code, response.text)
-            self.assertEqual(200, client.post(
-                "/api/canvas/access/unlock", json={"token": ACCESS_TOKEN}
-            ).status_code)
             invalid = client.post(
                 "/api/canvas/model-providers",
                 json={**self._payload(), "environmentCredentialRef": "AWS_SECRET_ACCESS_KEY"},
@@ -385,14 +367,10 @@ class CanvasProviderRoutesTests(unittest.TestCase):
 
     def test_missing_master_key_refuses_credential_save_without_creating_a_plaintext_row(self) -> None:
         with (
-            patch.object(config, "CANVAS_ACCESS_TOKEN", ACCESS_TOKEN, create=True),
             patch.object(config, "CANVAS_PROVIDER_SECRET_KEY", "", create=True),
             patch.object(config, "CANVAS_PROVIDER_ALLOWED_HOSTS", ("api.route-vendor.example",), create=True),
             TestClient(self._app()) as client,
         ):
-            self.assertEqual(200, client.post(
-                "/api/canvas/access/unlock", json={"token": ACCESS_TOKEN}
-            ).status_code)
             refused = client.post("/api/canvas/model-providers", json=self._payload())
             self.assertEqual(503, refused.status_code, refused.text)
             self.assertNotIn(SECRET, refused.text)
@@ -414,13 +392,9 @@ class CanvasProviderRoutesTests(unittest.TestCase):
             provider_id = provider.id
 
         with (
-            patch.object(config, "CANVAS_ACCESS_TOKEN", ACCESS_TOKEN, create=True),
             patch.object(config, "CANVAS_PROVIDER_SECRET_KEY", "", create=True),
             TestClient(self._app()) as client,
         ):
-            self.assertEqual(200, client.post(
-                "/api/canvas/access/unlock", json={"token": ACCESS_TOKEN}
-            ).status_code)
             disabled = client.delete(f"/api/canvas/model-providers/{provider_id}")
         self.assertEqual(200, disabled.status_code, disabled.text)
         self.assertFalse(disabled.json()["enabled"])

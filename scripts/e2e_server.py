@@ -96,7 +96,6 @@ def _install_outbound_guard() -> None:
     sys.addaudithook(audit_socket_connect)
 
 os.environ.update({
-    "FACAI_AUTH_ENABLED": "0",
     "DATABASE_URL": f"sqlite:///{(ROOT / 'test.db').as_posix()}",
     "CHROMA_PERSIST_DIR": str(ROOT / "chroma"),
     "SEARCH_INDEX_BACKEND": "sqlite",
@@ -112,7 +111,6 @@ os.environ.update({
     # coverage remains sync/async, while the isolated server never needs
     # production parallel throughput.
     "CANVAS_GENERATION_CONCURRENCY": "1",
-    "CANVAS_ACCESS_TOKEN": "e2e-canvas-access-token",
     "FACAI_SKIP_LAN_IP_PROBE": "1",
     "ALLOWED_HOSTS": "127.0.0.1,localhost",
     "DEEPSEEK_API_KEY": "",
@@ -124,7 +122,6 @@ os.environ.update({
     "QWEN_API_KEY": "",
     "DASHSCOPE_API_KEY": "",
     "EMBEDDING_API_KEY": "",
-    "FACAI_INTEGRATIONS_SESSION_SECRET": _base64url(bytes(range(32))),
     "FACAI_INTEGRATIONS_MASTER_KEY": _base64url(bytes(range(32, 64))),
     "FACAI_INTEGRATIONS_INTERNAL_BASE_URL": "http://127.0.0.1:8765",
     "FACAI_INTEGRATIONS_PUBLIC_BASE_URL": "https://callbacks.test.invalid",
@@ -134,13 +131,6 @@ os.environ.update({
 })
 
 _install_outbound_guard()
-
-from integrations.admin_auth import hash_admin_password
-
-os.environ["FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH"] = hash_admin_password(
-    "e2e-integration-admin",
-    salt=b"facai-e2e-salt!!",
-)
 
 # ChromaDB eagerly imports ONNX even when embedding is unconfigured. The Canvas
 # browser suite does not exercise vector search, so install a narrow E2E-only

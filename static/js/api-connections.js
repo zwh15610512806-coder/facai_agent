@@ -6,7 +6,6 @@
 
   var providers = [];
   var connections = [];
-  var loginUrl = '/app/api-connections/login?next=' + encodeURIComponent('/app/api-connections');
 
   function notify(message, type) {
     if (window.FacaiUI && typeof window.FacaiUI.toast === 'function') {
@@ -41,12 +40,6 @@
     options.headers = headers;
     options.credentials = 'same-origin';
     var response = await fetch(url, options);
-    if (response.status === 401) {
-      window.location.assign(loginUrl);
-      var authError = new Error('integration_session_required');
-      authError.isAuthRedirect = true;
-      throw authError;
-    }
     if (!response.ok) {
       var error = new Error(await apiErrorMessage(response, fallback || '请求失败，请稍后重试。'));
       error.status = response.status;
@@ -374,7 +367,7 @@
 
   function updatePurgeSubmit() {
     var expected = purgeDialog.querySelector('[data-purge-display-name]').textContent;
-    purgeDialog.querySelector('[data-purge-submit]').disabled = !(purgeForm.elements.password.value && purgeForm.elements.confirmation.value === expected);
+    purgeDialog.querySelector('[data-purge-submit]').disabled = purgeForm.elements.confirmation.value !== expected;
   }
 
   function openPurgeDialog(card) {
@@ -389,19 +382,15 @@
   async function submitPurge(event) {
     event.preventDefault();
     var submit = purgeDialog.querySelector('[data-purge-submit]');
-    var password = purgeForm.elements.password.value;
     var confirmation = purgeForm.elements.confirmation.value;
     setButtonBusy(submit, true);
-    purgeForm.elements.password.value = '';
     try {
-      await requestJson('/api/integrations/connections/' + encodeURIComponent(purgeForm.elements.connection_id.value) + '/purge', {method: 'POST', body: JSON.stringify({password: password, confirmation: confirmation})}, '永久清除任务提交失败。');
-      password = '';
+      await requestJson('/api/integrations/connections/' + encodeURIComponent(purgeForm.elements.connection_id.value) + '/purge', {method: 'POST', body: JSON.stringify({confirmation: confirmation})}, '永久清除任务提交失败。');
       confirmation = '';
       purgeDialog.close();
       notify('永久清除任务已进入安全队列。', 'success');
       await refreshConnections();
     } catch (error) {
-      password = '';
       confirmation = '';
       if (!error.isAuthRedirect) purgeDialog.querySelector('[data-purge-status]').textContent = error.message;
     } finally {
@@ -435,16 +424,6 @@
     }
   }
 
-  async function logout() {
-    setButtonBusy(document.getElementById('integrationLogout'), true);
-    try {
-      await fetch('/api/integrations/session', {method: 'DELETE', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}});
-    } finally {
-      window.location.assign(loginUrl);
-    }
-  }
-
-  document.getElementById('integrationLogout').addEventListener('click', logout);
   document.getElementById('integrationRefresh').addEventListener('click', refreshAll);
   document.getElementById('providerConnectionList').addEventListener('submit', function (event) {
     var form = event.target.closest('[data-provider-config]');

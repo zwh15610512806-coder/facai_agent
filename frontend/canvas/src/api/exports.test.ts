@@ -67,7 +67,7 @@ describe("ExportsApi", () => {
     expect(await unauthorized.create("p", request, "export-request-key-0002")).toEqual({
       ok: false,
       kind: "unauthorized",
-      message: "需要解锁付费导出功能",
+      message: "导出请求被服务拒绝",
     });
     expect(await invalid.create("p", request, "export-request-key-0003")).toEqual({
       ok: false,

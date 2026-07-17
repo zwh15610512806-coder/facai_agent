@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db
-from services.canvas.access import require_canvas_paid_access
 from services.canvas.credentials import (
     ProviderCredentialConfigurationError,
     ProviderSecretCodec,
@@ -100,7 +99,6 @@ def get_provider_models(provider_id: str, db: Session = Depends(get_db)):
     "/model-providers",
     response_model=ProviderView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def post_model_provider(payload: ProviderCreate, db: Session = Depends(get_db)):
     try:
@@ -119,7 +117,6 @@ def post_model_provider(payload: ProviderCreate, db: Session = Depends(get_db)):
 @router.patch(
     "/model-providers/{provider_id}",
     response_model=ProviderView,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def patch_model_provider(
     provider_id: str,
@@ -143,7 +140,6 @@ def patch_model_provider(
 @router.delete(
     "/model-providers/{provider_id}",
     response_model=ProviderView,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def delete_model_provider(provider_id: str, db: Session = Depends(get_db)):
     try:
@@ -158,7 +154,6 @@ def delete_model_provider(provider_id: str, db: Session = Depends(get_db)):
 @router.post(
     "/model-providers/{provider_id}/test",
     response_model=ProviderTestResult,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def test_model_provider(
     provider_id: str,
@@ -183,7 +178,6 @@ def test_model_provider(
     "/model-providers/{provider_id}/models",
     response_model=ModelProfileView,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def post_model_profile(
     provider_id: str,
@@ -202,7 +196,6 @@ def post_model_profile(
 @router.patch(
     "/models/{model_profile_id}",
     response_model=ModelProfileView,
-    dependencies=[Depends(require_canvas_paid_access)],
 )
 def patch_model_profile(
     model_profile_id: str,

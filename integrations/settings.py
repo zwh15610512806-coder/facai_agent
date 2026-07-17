@@ -17,8 +17,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 
-ADMIN_PASSWORD_HASH_ENV = "FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH"
-SESSION_SECRET_ENV = "FACAI_INTEGRATIONS_SESSION_SECRET"
 MASTER_KEY_ENV = "FACAI_INTEGRATIONS_MASTER_KEY"
 INTERNAL_BASE_URL_ENV = "FACAI_INTEGRATIONS_INTERNAL_BASE_URL"
 PUBLIC_BASE_URL_ENV = "FACAI_INTEGRATIONS_PUBLIC_BASE_URL"
@@ -36,15 +34,12 @@ _DNS_HOST_RE = re.compile(
 
 @dataclass(frozen=True, slots=True)
 class IntegrationSettings:
-    admin_password_hash: str | None
-    session_secret: bytes | None
     master_key: bytes | None
     internal_base_url: str | None
     public_base_url: str | None
     archive_dir: Path | None
     trusted_proxy_networks: tuple[IPv4Network | IPv6Network, ...]
     worker_concurrency: int
-    login_ready: bool
     credential_ready: bool
     errors: tuple[str, ...]
 
@@ -254,13 +249,6 @@ def _valid_postgres_url(values: Mapping[str, str], errors: list[str]) -> bool:
 
 def _validate_integration_settings(values: Mapping[str, str]) -> IntegrationSettings:
     errors: list[str] = []
-    admin_password_hash = _nonempty(values, ADMIN_PASSWORD_HASH_ENV, errors)
-    session_secret = _decode_base64url_secret(
-        values,
-        SESSION_SECRET_ENV,
-        errors,
-        minimum_bytes=32,
-    )
     master_key = _decode_base64url_secret(
         values,
         MASTER_KEY_ENV,
@@ -303,7 +291,6 @@ def _validate_integration_settings(values: Mapping[str, str]) -> IntegrationSett
     worker_concurrency = _parse_worker_concurrency(values, errors)
     database_ready = _valid_postgres_url(values, errors)
 
-    login_ready = admin_password_hash is not None and session_secret is not None
     credential_keys = {
         MASTER_KEY_ENV,
         INTERNAL_BASE_URL_ENV,
@@ -314,8 +301,7 @@ def _validate_integration_settings(values: Mapping[str, str]) -> IntegrationSett
         DATABASE_URL_ENV,
     }
     credential_ready = (
-        login_ready
-        and master_key is not None
+        master_key is not None
         and internal_base_url is not None
         and public_base_url is not None
         and archive_dir is not None
@@ -323,15 +309,12 @@ def _validate_integration_settings(values: Mapping[str, str]) -> IntegrationSett
         and not any(key in errors for key in credential_keys)
     )
     return IntegrationSettings(
-        admin_password_hash=admin_password_hash,
-        session_secret=session_secret,
         master_key=master_key,
         internal_base_url=internal_base_url,
         public_base_url=public_base_url,
         archive_dir=archive_dir,
         trusted_proxy_networks=trusted_proxy_networks,
         worker_concurrency=worker_concurrency,
-        login_ready=login_ready,
         credential_ready=credential_ready,
         errors=tuple(errors),
     )

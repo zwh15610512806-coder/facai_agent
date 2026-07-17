@@ -1,6 +1,6 @@
-import { a as e, i as t, n, o as r, t as i } from "./access-dialog-BOxkqzcQ.mjs";
+import { i as e, r as t, t as n } from "./providers-B_cwmKFI.mjs";
 //#region frontend/canvas/src/components/model-profile-editor.ts
-var a = {
+var r = {
 	text_to_image: !0,
 	image_to_image: !0,
 	mask_edit: !1,
@@ -20,12 +20,12 @@ var a = {
 	concurrency_limit: 1,
 	price_metadata: null
 };
-function o(e) {
+function i(e) {
 	let n = document.createElement("section");
 	n.className = "canvas-model-profile-editor", n.dataset.testid = "canvas-model-profile-editor";
-	let r = document.createElement("h3");
-	r.textContent = "添加图像模型";
-	let i = document.createElement("form"), o = document.createElement("div");
+	let i = document.createElement("h3");
+	i.textContent = "添加图像模型";
+	let a = document.createElement("form"), o = document.createElement("div");
 	o.className = "canvas-model-basic-fields";
 	let s = (e, t, n = o) => {
 		let r = document.createElement("label");
@@ -77,7 +77,7 @@ function o(e) {
 	let j = document.createElement("label");
 	j.append(A, "使用高级能力 JSON 覆盖上方字段");
 	let M = document.createElement("textarea");
-	M.setAttribute("aria-label", "高级模型能力 JSON"), M.value = JSON.stringify(a, null, 2);
+	M.setAttribute("aria-label", "高级模型能力 JSON"), M.value = JSON.stringify(r, null, 2);
 	let N = document.createElement("label");
 	N.textContent = "完整能力 JSON", N.append(M);
 	let P = document.createElement("textarea");
@@ -87,9 +87,9 @@ function o(e) {
 	let I = document.createElement("p");
 	I.dataset.testid = "canvas-model-profile-feedback", I.setAttribute("role", "status");
 	let L = document.createElement("button");
-	L.type = "submit", L.textContent = "保存模型配置", i.append(o, d, y, O, I, L), n.append(r, i);
+	L.type = "submit", L.textContent = "保存模型配置", a.append(o, d, y, O, I, L), n.append(i, a);
 	let R = (e) => e.split(",").map((e) => e.trim()).filter(Boolean), z = () => ({
-		...a,
+		...r,
 		text_to_image: p.checked,
 		image_to_image: m.checked,
 		mask_edit: h.checked,
@@ -109,11 +109,11 @@ function o(e) {
 			I.textContent = "请先选择一个第三方提供方";
 			return;
 		}
-		let r;
+		let i;
 		try {
 			let e = A.checked ? JSON.parse(M.value) : z(), t = JSON.parse(P.value);
 			if (typeof e != "object" || !e || Array.isArray(e) || typeof t != "object" || !t || Array.isArray(t)) throw Error();
-			r = {
+			i = {
 				modelId: l.value.trim(),
 				displayName: u.value.trim(),
 				capabilities: e,
@@ -123,9 +123,9 @@ function o(e) {
 			I.textContent = "高级模型能力和协议配置必须是 JSON 对象";
 			return;
 		}
-		i.reportValidity() && (L.disabled = !0, e.api.createModelProfile(n, r).then((n) => {
+		a.reportValidity() && (L.disabled = !0, e.api.createModelProfile(n, i).then((n) => {
 			if (L.disabled = !1, n.ok) {
-				i.reset(), p.checked = !0, m.checked = !0, _.checked = !0, x.value = "1", S.value = "1", C.value = "1", M.value = JSON.stringify(a, null, 2), P.value = "{}", I.textContent = "", e.onSaved();
+				a.reset(), p.checked = !0, m.checked = !0, _.checked = !0, x.value = "1", S.value = "1", C.value = "1", M.value = JSON.stringify(r, null, 2), P.value = "{}", I.textContent = "", e.onSaved();
 				return;
 			}
 			if (n.kind === "unauthorized") {
@@ -141,13 +141,13 @@ function o(e) {
 			L.disabled = !1, I.textContent = "保存请求失败，请重试";
 		}));
 	};
-	return i.addEventListener("submit", (e) => {
+	return a.addEventListener("submit", (e) => {
 		e.preventDefault(), B();
 	}), { element: n };
 }
 //#endregion
 //#region frontend/canvas/src/components/provider-editor.ts
-function s(e) {
+function a(e) {
 	let r = document.createElement("section");
 	r.className = "canvas-provider-editor", r.dataset.testid = "canvas-provider-editor";
 	let i = document.createElement("h3");
@@ -234,15 +234,15 @@ function s(e) {
 }
 //#endregion
 //#region frontend/canvas/src/components/model-manager.ts
-function c(e) {
+function o(e) {
 	let n = document.createElement("section");
 	n.className = "canvas-model-manager", n.dataset.testid = "canvas-model-manager";
 	let r = document.createElement("h2");
 	r.textContent = "图像生成模型";
-	let i = document.createElement("p");
-	i.className = "canvas-model-manager-notice", i.textContent = "在这里统一管理 Seedream 与第三方图像模型。密钥只会写入受保护接口，不会从目录返回或显示。";
-	let a = document.createElement("p");
-	a.dataset.testid = "canvas-model-manager-feedback", a.setAttribute("role", "status"), a.setAttribute("aria-live", "polite");
+	let o = document.createElement("p");
+	o.className = "canvas-model-manager-notice", o.textContent = "在这里统一管理 Seedream 与第三方图像模型。密钥只会写入受保护接口，不会从目录返回或显示。";
+	let s = document.createElement("p");
+	s.dataset.testid = "canvas-model-manager-feedback", s.setAttribute("role", "status"), s.setAttribute("aria-live", "polite");
 	let c = document.createElement("div");
 	c.className = "canvas-provider-list";
 	let l = document.createElement("select");
@@ -254,11 +254,11 @@ function c(e) {
 	let f = [], p = [], m = () => {
 		Promise.all([e.managementApi.loadProviders(), e.catalogApi.loadCatalog()]).then(([n, r]) => {
 			if (!n.ok) {
-				a.textContent = t(n.message, "图像供应商加载失败，请重试");
+				s.textContent = t(n.message, "图像供应商加载失败，请重试");
 				return;
 			}
 			if (!r.ok) {
-				a.textContent = t(r.message, "图像模型加载失败，请重试");
+				s.textContent = t(r.message, "图像模型加载失败，请重试");
 				return;
 			}
 			f = n.value, p = r.value, l.replaceChildren(Object.assign(document.createElement("option"), {
@@ -270,22 +270,22 @@ function c(e) {
 			}))), c.replaceChildren(...f.map((n) => {
 				let r = document.createElement("article");
 				r.className = "canvas-provider-row";
-				let i = p.filter((e) => e.providerId === n.id).length, o = document.createElement("div");
-				o.innerHTML = "<strong></strong><span></span>", o.querySelector("strong").textContent = n.name, o.querySelector("span").textContent = `${i} 个模型 · ${n.enabled ? "已启用" : "已停用"}`;
-				let s = document.createElement("button");
-				return s.type = "button", s.textContent = "检测连接", s.addEventListener("click", () => {
+				let i = p.filter((e) => e.providerId === n.id).length, a = document.createElement("div");
+				a.innerHTML = "<strong></strong><span></span>", a.querySelector("strong").textContent = n.name, a.querySelector("span").textContent = `${i} 个模型 · ${n.enabled ? "已启用" : "已停用"}`;
+				let o = document.createElement("button");
+				return o.type = "button", o.textContent = "检测连接", o.addEventListener("click", () => {
 					window.confirm("本次检测将发送 1 次可能计费的提供方请求；具体费用由供应商计费规则决定。是否继续？") && e.managementApi.probeProvider(n.id, !0).then((n) => {
 						if (n.ok) {
-							a.textContent = n.value.status === "configuration_ready" ? "连接配置已就绪" : "连接当前不可用";
+							s.textContent = n.value.status === "configuration_ready" ? "连接配置已就绪" : "连接当前不可用";
 							return;
 						}
 						if (n.kind === "unauthorized") {
-							e.onUnauthorized(() => s.click());
+							e.onUnauthorized(() => o.click());
 							return;
 						}
-						n.kind === "unconfigured" && e.onUnconfigured(), a.textContent = t(n.message, "连通性测试失败，请检查配置");
+						n.kind === "unconfigured" && e.onUnconfigured(), s.textContent = t(n.message, "连通性测试失败，请检查配置");
 					});
-				}), r.append(o, s), r;
+				}), r.append(a, o), r;
 			})), d.replaceChildren(...p.map((e) => {
 				let n = document.createElement("article");
 				n.className = "canvas-model-row", n.innerHTML = "<strong></strong><span></span>", n.querySelector("strong").textContent = e.displayName;
@@ -293,21 +293,21 @@ function c(e) {
 				return n.querySelector("span").textContent = `${e.modelId} · ${r}`, n;
 			})), e.onCatalog(p);
 		}).catch(() => {
-			a.textContent = "模型目录加载失败";
+			s.textContent = "模型目录加载失败";
 		});
-	}, h = s({
+	}, h = a({
 		api: e.managementApi,
 		onSaved: m,
 		onUnauthorized: e.onUnauthorized,
 		onUnconfigured: e.onUnconfigured
-	}), g = o({
+	}), g = i({
 		api: e.managementApi,
 		providerId: () => l.value || null,
 		onSaved: m,
 		onUnauthorized: e.onUnauthorized,
 		onUnconfigured: e.onUnconfigured
 	});
-	return n.append(r, i, c, h.element, u, g.element, a, d), m(), {
+	return n.append(r, o, c, h.element, u, g.element, s, d), m(), {
 		element: n,
 		refresh: m,
 		clearSensitive: h.clear
@@ -315,36 +315,33 @@ function c(e) {
 }
 //#endregion
 //#region frontend/canvas/src/admin.ts
-function l({ root: n, apiBase: a }) {
-	let o = e({ apiBase: a }), s = r({ apiBase: a }), l = i(), u = document.createElement("p");
-	u.className = "canvas-model-admin-status", u.setAttribute("role", "status"), u.setAttribute("aria-live", "polite");
-	let d = c({
-		catalogApi: o,
-		managementApi: o,
+function s({ root: t, apiBase: n }) {
+	let r = e({ apiBase: n }), i = document.createElement("p");
+	i.className = "canvas-model-admin-status", i.setAttribute("role", "status"), i.setAttribute("aria-live", "polite");
+	let a = o({
+		catalogApi: r,
+		managementApi: r,
 		onUnauthorized: (e) => {
-			l.open(async (n) => {
-				let r = await s.unlock(n);
-				return r.ok ? (e(), null) : t(r.message, "解锁失败，请检查访问令牌");
-			});
+			i.textContent = "请求被服务拒绝，请刷新页面后重试。";
 		},
 		onUnconfigured: () => {
-			u.textContent = "服务器尚未配置产品画布访问令牌，第三方图像模型管理暂不可用。";
+			i.textContent = "服务器尚未配置第三方图像模型密钥，模型管理暂不可用。";
 		},
 		onCatalog: () => {
-			u.textContent = "图像生成模型目录已更新。";
+			i.textContent = "图像生成模型目录已更新。";
 		}
 	});
-	return n.replaceChildren(d.element, u, l.element), { dispose: () => {
-		d.clearSensitive(), n.replaceChildren();
+	return t.replaceChildren(a.element, i), { dispose: () => {
+		a.clearSensitive(), t.replaceChildren();
 	} };
 }
-var u = document.querySelector("#canvas-model-admin");
-if (u !== null) {
-	let e = l({
-		root: u,
-		apiBase: u.dataset.apiBase ?? "/api/canvas"
+var c = document.querySelector("#canvas-model-admin");
+if (c !== null) {
+	let e = s({
+		root: c,
+		apiBase: c.dataset.apiBase ?? "/api/canvas"
 	});
 	window.addEventListener("pagehide", () => e.dispose(), { once: !0 });
 }
 //#endregion
-export { l as mountCanvasModelManager };
+export { s as mountCanvasModelManager };

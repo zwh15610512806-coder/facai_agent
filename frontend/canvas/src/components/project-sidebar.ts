@@ -32,9 +32,19 @@ export function createProjectSidebar(controller: ProjectController): ProjectSide
   element.dataset.testid = "canvas-project-sidebar";
   element.setAttribute("aria-label", "项目列表");
 
+  const header = document.createElement("header");
+  header.className = "canvas-project-sidebar-header";
   const heading = document.createElement("h1");
   heading.textContent = "产品视觉画布";
+  const projectCount = document.createElement("span");
+  projectCount.className = "canvas-project-count";
+  projectCount.dataset.testid = "canvas-project-count";
+  header.append(heading, projectCount);
 
+  const createSection = document.createElement("section");
+  createSection.className = "canvas-project-create-section";
+  const createHeading = document.createElement("h2");
+  createHeading.textContent = "新建项目";
   const createForm = document.createElement("form");
   createForm.className = "canvas-create-project";
   const createInput = document.createElement("input");
@@ -47,24 +57,37 @@ export function createProjectSidebar(controller: ProjectController): ProjectSide
   const createButton = document.createElement("button");
   createButton.type = "submit";
   createButton.textContent = "新建";
+  createButton.disabled = true;
   createButton.dataset.testid = "canvas-project-create";
   createForm.append(createInput, createButton);
+  createInput.addEventListener("input", () => {
+    createButton.disabled = createInput.value.trim() === "";
+  });
   createForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const name = createInput.value.trim();
     if (name !== "") {
       void controller.createProject(name).then((result) => {
-        if (result.ok) createInput.value = "";
+        if (result.ok) {
+          createInput.value = "";
+          createButton.disabled = true;
+        }
       });
     }
   });
+  createSection.append(createHeading, createForm);
 
+  const filterSection = document.createElement("section");
+  filterSection.className = "canvas-project-filter-section";
+  const filterHeading = document.createElement("h2");
+  filterHeading.textContent = "查找项目";
   const search = document.createElement("input");
   search.type = "search";
   search.setAttribute("aria-label", "搜索项目");
   search.dataset.testid = "canvas-project-search";
   search.placeholder = "搜索项目";
   const archivedLabel = document.createElement("label");
+  archivedLabel.className = "canvas-project-archived-filter";
   const archived = document.createElement("input");
   archived.type = "checkbox";
   archivedLabel.append(archived, "显示已归档");
@@ -74,7 +97,12 @@ export function createProjectSidebar(controller: ProjectController): ProjectSide
   archived.addEventListener("change", () => {
     void controller.searchProjects(search.value, archived.checked);
   });
+  filterSection.append(filterHeading, search, archivedLabel);
 
+  const listSection = document.createElement("section");
+  listSection.className = "canvas-project-list-section";
+  const listHeading = document.createElement("h2");
+  listHeading.textContent = "项目";
   const list = document.createElement("ul");
   list.className = "canvas-project-list";
   list.dataset.testid = "canvas-project-list";
@@ -83,7 +111,8 @@ export function createProjectSidebar(controller: ProjectController): ProjectSide
   feedback.setAttribute("aria-live", "polite");
   const dialogs = document.createElement("div");
   dialogs.className = "canvas-project-dialogs";
-  element.append(heading, createForm, search, archivedLabel, feedback, list, dialogs);
+  listSection.append(listHeading, feedback, list);
+  element.append(header, createSection, filterSection, listSection, dialogs);
 
   const update = (state: ProjectControllerState): void => {
     latestState = state;
@@ -91,8 +120,22 @@ export function createProjectSidebar(controller: ProjectController): ProjectSide
       search.value = state.query;
     }
     archived.checked = state.includeArchived;
+    projectCount.textContent = `${state.projects.length} 个项目`;
     feedback.textContent = state.loading ? "正在加载项目…" : state.error === null ? "" : canvasUserMessage(state.error, "项目加载失败，请重试");
     list.replaceChildren();
+    if (!state.loading && state.error === null && state.projects.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "canvas-project-empty";
+      empty.dataset.testid = "canvas-project-empty";
+      const emptyTitle = document.createElement("strong");
+      emptyTitle.textContent = state.query.trim() === "" ? "还没有项目" : "没有找到匹配项目";
+      const emptyCopy = document.createElement("span");
+      emptyCopy.textContent = state.query.trim() === ""
+        ? "在上方输入名称，创建第一个产品项目。"
+        : "换个关键词，或勾选显示已归档项目。";
+      empty.append(emptyTitle, emptyCopy);
+      list.append(empty);
+    }
     for (const project of state.projects) {
       const row = document.createElement("li");
       row.className = "canvas-project-row";
@@ -108,8 +151,15 @@ export function createProjectSidebar(controller: ProjectController): ProjectSide
       if (project.id === state.activeProjectId) select.setAttribute("aria-current", "true");
       const meta = document.createElement("span");
       meta.className = "canvas-project-meta";
-      meta.textContent = project.status === "archived" ? "已归档" : "自动保存";
-      row.append(select, meta);
+      meta.textContent = project.status === "archived" ? "可恢复" : "自动保存";
+      const status = document.createElement("span");
+      status.className = "canvas-project-status";
+      status.textContent = project.id === state.activeProjectId
+        ? "当前"
+        : project.status === "archived"
+          ? "已归档"
+          : "项目";
+      row.append(select, status, meta);
 
       if (project.id === state.activeProjectId && renamingProjectId === project.id) {
         const renameForm = document.createElement("form");

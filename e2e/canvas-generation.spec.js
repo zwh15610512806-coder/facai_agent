@@ -4,7 +4,6 @@ const { test, expect } = require('@playwright/test');
 test.setTimeout(90_000);
 
 const createdProjectIds = new Set();
-const ACCESS_TOKEN = 'e2e-canvas-access-token';
 
 function projectUrl(projectId) {
   return `/api/canvas/projects/${encodeURIComponent(projectId)}`;
@@ -154,18 +153,6 @@ async function configureOutput(page, fieldset, projectId, { outputType, skuId, m
   }
 }
 
-async function unlock(page, token) {
-  const dialog = page.locator('dialog.canvas-access-dialog');
-  await expect(dialog).toBeVisible();
-  await dialog.locator('input[type="password"]').fill(token);
-  await dialog.locator('button[type="submit"]').click();
-}
-
-async function unlockRequest(request) {
-  const response = await request.post('/api/canvas/access/unlock', { data: { token: ACCESS_TOKEN } });
-  expect(response.status()).toBe(200);
-}
-
 async function getGeneration(request, generationId) {
   const response = await request.get(`/api/canvas/generations/${generationId}`);
   expect(response.ok()).toBeTruthy();
@@ -197,16 +184,8 @@ async function submitFromPage(page, projectId) {
     response.request().method() === 'POST'
       && new URL(response.url()).pathname === `${projectUrl(projectId)}/generations`
   ));
-  const dialog = page.locator('dialog.canvas-access-dialog');
   await page.getByTestId('canvas-generate').click();
-  const firstOutcome = await Promise.race([
-    generationCreated.then((response) => ({ response })),
-    dialog.waitFor({ state: 'visible' }).then(() => ({ response: null })),
-  ]);
-  if (firstOutcome.response === null) {
-    await unlock(page, ACCESS_TOKEN);
-  }
-  const response = firstOutcome.response ?? await generationCreated;
+  const response = await generationCreated;
   const body = await response.text();
   expect(response.status(), body).toBeGreaterThanOrEqual(200);
   expect(response.status(), body).toBeLessThan(300);
@@ -310,21 +289,11 @@ test('isolated fake models support an explicit complete-set generation without o
   }
   await expect(page.getByTestId('canvas-generate')).toBeEnabled();
 
-  const badUnlock = page.waitForResponse((response) => (
-    response.request().method() === 'POST'
-      && new URL(response.url()).pathname === '/api/canvas/access/unlock'
-      && response.status() === 401
-  ));
-  await page.getByTestId('canvas-generate').click();
-  await unlock(page, 'not-the-e2e-token');
-  await badUnlock;
-  await expect(page.locator('dialog.canvas-access-dialog')).toBeVisible();
-
   const generationCreated = page.waitForResponse((response) => (
     response.request().method() === 'POST'
       && new URL(response.url()).pathname === `${projectUrl(projectId)}/generations`
   ));
-  await unlock(page, ACCESS_TOKEN);
+  await page.getByTestId('canvas-generate').click();
   const generationResponse = await generationCreated;
   const generationResponseBody = await generationResponse.text();
   expect(generationResponse.status(), generationResponseBody).toBe(201);
@@ -404,7 +373,6 @@ test('persists async progress through refresh and cancels the saved provider tas
     detail.items[0]?.attempts[0]?.status === 'polling'
   ));
 
-  await unlockRequest(request);
   const cancelled = await request.post(`/api/canvas/generations/${generation.id}/cancel`);
   expect(cancelled.status()).toBe(200);
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -445,7 +413,6 @@ test('partially failed item retries once and browser reload pages immutable resu
   expect(failedItem).toBeTruthy();
   expect(partial.items.find((item) => item.status === 'succeeded')).toBeTruthy();
 
-  await unlockRequest(request);
   const retried = await request.post(`/api/canvas/generation-items/${failedItem.id}/retry`);
   expect(retried.status()).toBe(200);
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -505,7 +472,6 @@ test('unknown submission stays actionable until explicit retry and succeeds with
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('canvas-generation-status')).toContainText('状态待确认');
 
-  await unlockRequest(request);
   const retried = await request.post(`/api/canvas/generation-items/${unknown.items[0].id}/resolve-unknown`, {
     data: { action: 'retry' },
   });
@@ -531,8 +497,6 @@ test('capacity rejection is safe before generation and the retained intent succe
       && new URL(response.url()).pathname === `${projectUrl(projectId)}/generations`
   ));
   await page.getByTestId('canvas-generate').click();
-  await expect(page.locator('dialog.canvas-access-dialog')).toBeVisible();
-  await unlock(page, ACCESS_TOKEN);
   const rejected = await rejectedResponse;
   expect(rejected.status()).toBe(507);
   await expect(page.getByTestId('canvas-generation-status')).toContainText('存储空间不足');

@@ -26,7 +26,6 @@
       <div><h1>电商 API 接入中心</h1><p>只管理店铺连接、平台授权、启停、清除与同步任务。</p></div>
       <div class="integration-header-actions">
         <button id="integrationRefresh" class="btn btn-soft btn-sm" type="button"><i data-lucide="refresh-cw" aria-hidden="true"></i>刷新</button>
-        <button id="integrationLogout" class="btn btn-soft btn-sm" type="button"><i data-lucide="log-out" aria-hidden="true"></i>退出管理</button>
       </div>
     </header>
 
@@ -88,8 +87,7 @@
     <form method="dialog" data-purge-form>
       <div class="integration-dialog-header"><div><h2 id="purgeConnectionDialogTitle">永久清除连接数据</h2><p>此操作会删除该连接的业务数据、同步记录与归档，且不可恢复。</p></div><button class="integration-dialog-close" type="button" data-dialog-close aria-label="关闭">×</button></div>
       <input name="connection_id" type="hidden">
-      <p class="integration-confirm-copy">请输入管理员密码，并完整输入 <strong data-purge-display-name></strong>。</p>
-      <label>管理员密码<input name="password" type="password" autocomplete="current-password" required></label>
+      <p class="integration-confirm-copy">请完整输入连接名称 <strong data-purge-display-name></strong> 以确认不可恢复的清除操作。</p>
       <label>确认连接名称<input name="confirmation" type="text" autocomplete="off" required></label>
       <div class="integration-dialog-status" role="status" aria-live="polite" data-purge-status></div>
       <div class="integration-dialog-actions"><button class="btn btn-soft" type="button" data-dialog-close>取消</button><button class="btn integration-danger-button" type="submit" data-purge-submit disabled>永久清除</button></div>
