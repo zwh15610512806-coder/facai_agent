@@ -6,8 +6,10 @@ import os
 import re
 import sys
 import uuid
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from urllib.parse import urlsplit
+from typing import Any
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -179,25 +181,23 @@ def _serialize_canvas_bootstrap(payload: dict[str, object]) -> str:
     )
 
 
-def _canvas_page_response(request: Request, *, project_id: str | None):
+def _workbench_page_response(
+    request: Request,
+    *,
+    active_workspace: str,
+    project_id: str | None,
+):
     return templates.TemplateResponse(
         request,
-        "canvas.html",
+        "inspiration.html",
         {
             "request": request,
+            "active_workspace": active_workspace,
             "canvas_bootstrap_json": _serialize_canvas_bootstrap(
                 {"apiBase": "/api/canvas", "projectId": project_id}
             ),
         },
     )
-
-def _apply_security_headers(response):
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
-    response.headers.setdefault("Referrer-Policy", "no-referrer")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-    return response
-
 
 def _origin_is_allowed(request: Request, origin: str) -> bool:
     if not origin or origin == "null":
@@ -234,7 +234,11 @@ def _origin_is_allowed(request: Request, origin: str) -> bool:
         current = f"{context.effective_scheme}://{request_host}"
     else:
         current = f"{request.url.scheme.lower()}://{request_host}"
-    return normalized == current or normalized in configured
+    browser_confirmed_same_origin = (
+        request.headers.get("sec-fetch-site", "").lower() == "same-origin"
+        and _host_matches_origin(request_host, origin)
+    )
+    return normalized == current or normalized in configured or browser_confirmed_same_origin
 
 
 def _canonical_hostname(hostname: str) -> tuple[str, str]:
@@ -397,69 +401,131 @@ def _host_is_allowed(host_header: str) -> bool:
     return address.is_loopback or address.is_private or address.is_link_local
 
 
-@app.middleware("http")
-async def protect_api_and_app_requests(request: Request, call_next):
-    request_id = str(uuid.uuid4())
-    request.state.request_id = request_id
-    integration_origin = _configured_integration_origin(
-        request.headers.get("host", "")
+class ProtectAPIAndAppRequestsMiddleware:
+    """Preserve request controls without buffering streaming ASGI responses."""
+
+    _SECURITY_HEADERS = (
+        (b"x-content-type-options", b"nosniff"),
+        (b"x-frame-options", b"SAMEORIGIN"),
+        (b"referrer-policy", b"no-referrer"),
+        (
+            b"permissions-policy",
+            b"camera=(), microphone=(), geolocation=()",
+        ),
     )
-    if integration_origin == "public" and not _public_callback_path_is_allowed(request):
-        return _apply_security_headers(
-            JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    def __init__(self, app: Callable[..., Awaitable[None]]) -> None:
+        self.app = app
+
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[[], Awaitable[dict[str, Any]]],
+        send: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        scope.setdefault("state", {})
+        request = Request(scope, receive=receive)
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        principal: Principal | None = None
+        audit_recorded = False
+
+        async def send_response_start(message: dict[str, Any]) -> None:
+            nonlocal audit_recorded
+            if message.get("type") == "http.response.start":
+                headers = list(message.get("headers", []))
+                header_names = {name.lower() for name, _ in headers}
+                headers = [
+                    (name, value)
+                    for name, value in headers
+                    if name.lower() != b"x-request-id"
+                ]
+                headers.append((b"x-request-id", request_id.encode("ascii")))
+                for name, value in self._SECURITY_HEADERS:
+                    if name not in header_names:
+                        headers.append((name, value))
+                message["headers"] = headers
+                if principal is not None and not audit_recorded:
+                    _record_audit_safely(
+                        request,
+                        principal,
+                        int(message["status"]),
+                        request_id,
+                    )
+                    audit_recorded = True
+            await send(message)
+
+        async def send_response(response: JSONResponse) -> None:
+            await response(scope, receive, send_response_start)
+
+        integration_origin = _configured_integration_origin(
+            request.headers.get("host", "")
         )
-    if not _host_is_allowed(request.headers.get("host", "")):
-        return _apply_security_headers(
-            JSONResponse({"detail": "Request host is not allowed"}, status_code=400)
-        )
-    path = request.scope.get("path", "")
-    if path.startswith("/api/"):
-        fetch_site = request.headers.get("sec-fetch-site", "").lower()
-        if fetch_site == "cross-site":
-            return _apply_security_headers(
-                JSONResponse({"detail": "Cross-site API requests are not allowed"}, status_code=403)
+        if integration_origin == "public" and not _public_callback_path_is_allowed(request):
+            await send_response(JSONResponse({"detail": "Not Found"}, status_code=404))
+            return
+        if not _host_is_allowed(request.headers.get("host", "")):
+            await send_response(
+                JSONResponse({"detail": "Request host is not allowed"}, status_code=400)
             )
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-            origin = request.headers.get("origin", "").strip()
-            if origin and not _origin_is_allowed(request, origin):
-                return _apply_security_headers(
-                    JSONResponse({"detail": "Request origin is not allowed"}, status_code=403)
+            return
+
+        path = request.scope.get("path", "")
+        if path.startswith("/api/"):
+            fetch_site = request.headers.get("sec-fetch-site", "").lower()
+            if fetch_site == "cross-site":
+                await send_response(
+                    JSONResponse(
+                        {"detail": "Cross-site API requests are not allowed"},
+                        status_code=403,
+                    )
                 )
+                return
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+                origin = request.headers.get("origin", "").strip()
+                if origin and not _origin_is_allowed(request, origin):
+                    await send_response(
+                        JSONResponse(
+                            {"detail": "Request origin is not allowed"},
+                            status_code=403,
+                        )
+                    )
+                    return
 
-    principal = None
-    if not _request_is_public_utility(path):
-        principal = principal_for_request(request)
-        request.state.principal = principal
-        try:
-            violation = request_limit_violation(
-                principal=principal,
-                method=request.method,
-                path=path,
-            )
-        except Exception as exc:
-            logging.getLogger("facai.security").warning(
-                "Request-control check failed open for %s: %s", path, exc
-            )
-            violation = None
-        if violation is not None:
-            detail, retry_after = violation
-            response = JSONResponse(
-                {"detail": detail},
-                status_code=429,
-                headers={"Retry-After": str(retry_after)},
-            )
-            response.headers["X-Request-ID"] = request_id
-            _record_audit_safely(request, principal, response.status_code, request_id)
-            return _apply_security_headers(response)
+        if not _request_is_public_utility(path):
+            principal = principal_for_request(request)
+            request.state.principal = principal
+            try:
+                violation = request_limit_violation(
+                    principal=principal,
+                    method=request.method,
+                    path=path,
+                )
+            except Exception as exc:
+                logging.getLogger("facai.security").warning(
+                    "Request-control check failed open for %s: %s", path, exc
+                )
+                violation = None
+            if violation is not None:
+                detail, retry_after = violation
+                _record_audit_safely(request, principal, 429, request_id)
+                audit_recorded = True
+                await send_response(
+                    JSONResponse(
+                        {"detail": detail},
+                        status_code=429,
+                        headers={"Retry-After": str(retry_after)},
+                    )
+                )
+                return
 
-    principal = getattr(request.state, "principal", None)
-    actor_name = principal.name if principal else "anonymous"
-    with request_actor(actor_name, request_id):
-        response = await call_next(request)
-    response.headers["X-Request-ID"] = request_id
-    if principal is not None:
-        _record_audit_safely(request, principal, response.status_code, request_id)
-    return _apply_security_headers(response)
+        actor_name = principal.name if principal else "anonymous"
+        with request_actor(actor_name, request_id):
+            await self.app(scope, receive, send_response_start)
 
 
 def _record_audit_safely(
@@ -498,6 +564,9 @@ def _request_is_public_utility(path: str) -> bool:
     )
 
 
+app.add_middleware(ProtectAPIAndAppRequestsMiddleware)
+
+
 @app.get("/")
 def home(): return RedirectResponse(url="/app")
 @app.get("/healthz")
@@ -513,10 +582,32 @@ def readyz():
 def login_page():
     return RedirectResponse(url="/app", status_code=303)
 @app.get("/app")
-def app_page(request: Request): return templates.TemplateResponse(request, "inspiration.html", {"request": request})
+def app_page(
+    request: Request,
+    workspace: str | None = None,
+    project_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    active_workspace = "canvas" if workspace == "canvas" else "ai"
+    if active_workspace == "canvas" and project_id is not None:
+        from services.canvas import projects as canvas_project_service
+
+        try:
+            canvas_project_service.get_project_snapshot(db, project_id=project_id)
+        except canvas_project_service.CanvasProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail="Canvas project not found") from exc
+    return _workbench_page_response(
+        request,
+        active_workspace=active_workspace,
+        project_id=project_id if active_workspace == "canvas" else None,
+    )
+
+
 @app.get("/app/canvas")
 def canvas_page(request: Request):
-    return _canvas_page_response(request, project_id=None)
+    return RedirectResponse(url="/app?workspace=canvas", status_code=303)
+
+
 @app.get("/app/canvas/{project_id}")
 def canvas_project_page(
     request: Request,
@@ -529,7 +620,10 @@ def canvas_project_page(
         canvas_project_service.get_project_snapshot(db, project_id=project_id)
     except canvas_project_service.CanvasProjectNotFound as exc:
         raise HTTPException(status_code=404, detail="Canvas project not found") from exc
-    return _canvas_page_response(request, project_id=project_id)
+    return RedirectResponse(
+        url=f"/app?{urlencode({'workspace': 'canvas', 'project_id': project_id})}",
+        status_code=303,
+    )
 @app.get("/app/generate")
 def generate_page(request: Request): return templates.TemplateResponse(request, "index.html", {"request": request})
 @app.get("/app/products")

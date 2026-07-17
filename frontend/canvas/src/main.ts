@@ -110,11 +110,12 @@ export function mountCanvas(
 }
 
 function defaultSyncUrl(projectId: string | null): void {
-  const path =
-    projectId === null
-      ? "/app/canvas"
-      : `/app/canvas/${encodeURIComponent(projectId)}`;
-  if (window.location.pathname !== path) {
+  const query = new URLSearchParams({ workspace: "canvas" });
+  if (projectId !== null) {
+    query.set("project_id", projectId);
+  }
+  const path = `/app?${query.toString()}`;
+  if (`${window.location.pathname}${window.location.search}` !== path) {
     window.history.replaceState(null, "", path);
   }
 }

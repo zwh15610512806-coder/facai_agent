@@ -1,18 +1,158 @@
 import asyncio
 import json
+import socket
+import struct
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
+from fastapi import Request
 from fastapi.testclient import TestClient
+from fastapi.responses import StreamingResponse
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
 from main import app
 from routers.canvas import events as canvas_event_routes
+
+
+class CanvasSSEDisconnectRegressionTests(unittest.TestCase):
+    def test_uvicorn_client_disconnect_stops_canvas_sse_polling(self):
+        """A disconnect must stop the production Canvas event generator polling."""
+        import uvicorn
+        import canvas_models  # noqa: F401 - register metadata.
+        from services.canvas import projects
+
+        route_path = "/api/canvas/_sse-disconnect-regression"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = create_engine(
+                f"sqlite:///{Path(temp_dir) / 'canvas-sse.db'}",
+                connect_args={"check_same_thread": False},
+            )
+            Session = sessionmaker(bind=engine, expire_on_commit=False)
+            Base.metadata.create_all(bind=engine)
+            with Session() as db:
+                project = projects.create_project(db, name="Disconnect regression")
+                project_id = project.id
+            factory = TrackingSessionFactory(Session)
+            stream_finalized = threading.Event()
+
+            async def tracked_event_stream(request: Request):
+                try:
+                    async for event in canvas_event_routes.project_event_stream(
+                        request,
+                        project_id=project_id,
+                        session_factory=factory,
+                        last_event_id=None,
+                    ):
+                        yield event
+                finally:
+                    stream_finalized.set()
+
+            def event_route(request: Request):
+                return StreamingResponse(
+                    tracked_event_stream(request),
+                    media_type="text/event-stream",
+                )
+
+            async def asgi_24(scope, receive, send):
+                scope = dict(scope)
+                scope["asgi"] = {**scope.get("asgi", {}), "spec_version": "2.4"}
+                await app(scope, receive, send)
+
+            app.add_api_route(route_path, event_route, methods=["GET"])
+            route = next(
+                route
+                for route in app.router.routes
+                if getattr(route, "path", None) == route_path
+            )
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(("127.0.0.1", 0))
+                port = listener.getsockname()[1]
+            server = uvicorn.Server(
+                uvicorn.Config(
+                    asgi_24,
+                    host="127.0.0.1",
+                    port=port,
+                    lifespan="off",
+                    access_log=False,
+                    log_level="error",
+                    ws="none",
+                )
+            )
+            server_thread = threading.Thread(target=server.run, daemon=True)
+            connection = None
+            try:
+                server_thread.start()
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    try:
+                        with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                            break
+                    except OSError:
+                        time.sleep(0.01)
+                else:
+                    self.fail("Uvicorn did not start in time")
+
+                connection = socket.create_connection(("127.0.0.1", port), timeout=1)
+                connection.sendall(
+                    (
+                        f"GET {route_path} HTTP/1.1\r\n"
+                        "Host: testserver\r\n"
+                        "Accept: text/event-stream\r\n"
+                        "Connection: keep-alive\r\n\r\n"
+                    ).encode("ascii")
+                )
+                response = b""
+                deadline = time.monotonic() + 1
+                while b"event: snapshot\n" not in response and time.monotonic() < deadline:
+                    response += connection.recv(4096)
+                self.assertIn(b"HTTP/1.1 200", response)
+                self.assertIn(b"event: snapshot\n", response)
+
+                deadline = time.monotonic() + 1
+                while factory.created_count < 2 and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertGreaterEqual(factory.created_count, 2)
+                polls_before_disconnect = factory.created_count
+
+                connection.setsockopt(
+                    socket.SOL_SOCKET,
+                    socket.SO_LINGER,
+                    struct.pack("ii", 1, 0),
+                )
+                connection.close()
+                connection = None
+
+                time.sleep(canvas_event_routes.POLL_INTERVAL_SECONDS * 2 + 0.1)
+                self.assertEqual(
+                    polls_before_disconnect,
+                    factory.created_count,
+                    "Canvas SSE generator kept polling after its client disconnected",
+                )
+                self.assertEqual(0, factory.open_count)
+                self.assertTrue(
+                    stream_finalized.wait(timeout=1),
+                    "Canvas SSE generator did not exit after its client disconnected",
+                )
+            finally:
+                if connection is not None:
+                    connection.close()
+                server.should_exit = True
+                server_thread.join(timeout=2)
+                server_thread_alive = server_thread.is_alive()
+                app.router.routes.remove(route)
+                app.openapi_schema = None
+                engine.dispose()
+                self.assertFalse(
+                    server_thread_alive,
+                    "Uvicorn regression-test thread did not exit",
+                )
 
 
 class FakeRequest:

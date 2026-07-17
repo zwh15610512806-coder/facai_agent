@@ -16402,8 +16402,10 @@ function im(e = tm(), t) {
 	return n.innerHTML = nm, rm.add(n), e;
 }
 function am(e) {
-	let t = e === null ? "/app/canvas" : `/app/canvas/${encodeURIComponent(e)}`;
-	window.location.pathname !== t && window.history.replaceState(null, "", t);
+	let t = new URLSearchParams({ workspace: "canvas" });
+	e !== null && t.set("project_id", e);
+	let n = `/app?${t.toString()}`;
+	`${window.location.pathname}${window.location.search}` !== n && window.history.replaceState(null, "", n);
 }
 function om({ bootstrap: t, root: n = document.querySelector("#canvas-app") ?? void 0, api: r = Qe({ apiBase: t.apiBase }), assetsApi: i = vt({ apiBase: t.apiBase }), compositionsApi: a = xt({ apiBase: t.apiBase }), skusApi: o = ln({ apiBase: t.apiBase }), providersApi: s = e({ apiBase: t.apiBase }), generationsApi: c = jt({ apiBase: t.apiBase }), exportsApi: l = Ft({ apiBase: t.apiBase }), adapter: u = yd(), openEvents: d = (e, n) => on({
 	apiBase: t.apiBase,

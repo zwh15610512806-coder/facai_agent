@@ -52,7 +52,7 @@ class CanvasPageTests(unittest.TestCase):
         raw = match.group("body").strip()
         return raw, json.loads(raw)
 
-    def test_canvas_root_renders_independent_shell_without_project_id(self):
+    def test_canvas_root_redirects_to_main_workbench_canvas_without_project_id(self):
         response = self.client.get("/app/canvas")
 
         self.assertEqual(200, response.status_code, response.text)
@@ -60,23 +60,20 @@ class CanvasPageTests(unittest.TestCase):
         self.assertEqual(
             1,
             response.text.count(
-                '<link rel="stylesheet" href="/static/canvas/canvas.css?v=canvas-workbench-20260716">'
+                '<link rel="stylesheet" href="/static/canvas/canvas.css?v=workbench-canvas-20260717">'
             ),
         )
         self.assertEqual(
             1,
             response.text.count(
-                '<script type="module" src="/static/canvas/canvas.js?v=canvas-workbench-20260716"></script>'
+                '<script type="module" src="/static/canvas/canvas.js?v=workbench-canvas-20260717"></script>'
             ),
         )
-        self.assertIn('<link rel="stylesheet" href="/static/css/style.css?v=canvas-workbench-20260716">', response.text)
-        self.assertIn('href="/app/canvas" class="nav-link on"', response.text)
+        self.assertIn('<link rel="stylesheet" href="/static/css/style.css?v=canvas-usability-20260716">', response.text)
+        self.assertIn('href="/app?workspace=canvas" class="nav-link on"', response.text)
         self.assertIn('请使用桌面端打开产品视觉画布', response.text)
         self.assertIn('class="canvas-page-main"', response.text)
-        self.assertIn(
-            '<script src="/static/js/common.js?v=canvas-workbench-20260716"></script>',
-            response.text,
-        )
+        self.assertIn('<script src="/static/js/common.js?v=canvas-usability-20260716"></script>', response.text)
         self.assertNotIn("api_key", response.text.casefold())
         self.assertNotIn("/static/js/inspiration.js", response.text)
         _raw, bootstrap = self._bootstrap(response)
@@ -84,6 +81,10 @@ class CanvasPageTests(unittest.TestCase):
             {"apiBase": "/api/canvas", "projectId": None},
             bootstrap,
         )
+
+        redirect = self.client.get("/app/canvas", follow_redirects=False)
+        self.assertEqual(303, redirect.status_code, redirect.text)
+        self.assertEqual("/app?workspace=canvas", redirect.headers["location"])
 
     def test_canvas_project_page_requires_existing_project_and_embeds_only_minimal_bootstrap(self):
         malicious_name = (
@@ -113,6 +114,13 @@ class CanvasPageTests(unittest.TestCase):
             "C:\\server-secret",
         ):
             self.assertNotIn(forbidden, raw)
+
+        redirect = self.client.get(f"/app/canvas/{project.id}", follow_redirects=False)
+        self.assertEqual(303, redirect.status_code, redirect.text)
+        self.assertEqual(
+            f"/app?workspace=canvas&project_id={project.id}",
+            redirect.headers["location"],
+        )
 
     def test_canvas_unknown_project_returns_404(self):
         response = self.client.get(f"/app/canvas/{uuid4()}")

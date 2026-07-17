@@ -7,6 +7,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from main import app
 from tests.frontend_source import read_page_source
@@ -28,7 +29,45 @@ class SecurityHardeningTests(unittest.TestCase):
             headers={"Origin": "https://evil.example"},
         )
         self.assertEqual(cross_site.status_code, 403)
+        self.assertEqual(
+            {"detail": "Cross-site API requests are not allowed"},
+            cross_site.json(),
+        )
         self.assertEqual(wrong_origin.status_code, 403)
+        self.assertEqual(
+            {"detail": "Request origin is not allowed"},
+            wrong_origin.json(),
+        )
+        for response in (cross_site, wrong_origin):
+            self.assertRegex(response.headers.get("x-request-id", ""), r"^[a-f0-9-]{36}$")
+            self.assertEqual("nosniff", response.headers.get("x-content-type-options"))
+            self.assertEqual("SAMEORIGIN", response.headers.get("x-frame-options"))
+            self.assertEqual("no-referrer", response.headers.get("referrer-policy"))
+            self.assertEqual(
+                "camera=(), microphone=(), geolocation=()",
+                response.headers.get("permissions-policy"),
+            )
+
+    def test_request_protection_is_pure_asgi_and_adds_headers_to_responses(self):
+        self.assertFalse(
+            any(issubclass(middleware.cls, BaseHTTPMiddleware) for middleware in app.user_middleware),
+            "Streaming responses must not pass through BaseHTTPMiddleware",
+        )
+        client = TestClient(app)
+        try:
+            response = client.get("/healthz")
+        finally:
+            client.close()
+
+        self.assertEqual(200, response.status_code)
+        self.assertRegex(response.headers.get("x-request-id", ""), r"^[a-f0-9-]{36}$")
+        self.assertEqual("nosniff", response.headers.get("x-content-type-options"))
+        self.assertEqual("SAMEORIGIN", response.headers.get("x-frame-options"))
+        self.assertEqual("no-referrer", response.headers.get("referrer-policy"))
+        self.assertEqual(
+            "camera=(), microphone=(), geolocation=()",
+            response.headers.get("permissions-policy"),
+        )
 
     def test_cors_is_not_wildcard_with_credentials(self):
         main_py = (ROOT / "main.py").read_text(encoding="utf-8")
@@ -93,6 +132,7 @@ class SecurityHardeningTests(unittest.TestCase):
             self.assertEqual(response.status_code, 422)
             self.assertRegex(response.headers.get("x-request-id", ""), r"^[a-f0-9-]{36}$")
             with session_factory() as session:
+                self.assertEqual(1, session.query(AuditEvent).count())
                 event = session.query(AuditEvent).one()
                 self.assertEqual(event.actor_name, "intranet:testclient")
                 self.assertEqual(event.actor_role, "trusted-intranet")
@@ -100,21 +140,43 @@ class SecurityHardeningTests(unittest.TestCase):
             engine.dispose()
 
     def test_ai_requests_remain_rate_limited(self):
+        from models import AuditEvent
         from services.access_control import SlidingWindowLimiter
 
-        with (
-            patch.dict(
-                os.environ,
-                {"FACAI_AI_RATE_LIMIT_PER_MINUTE": "1", "FACAI_AI_DAILY_TOKEN_BUDGET": "0"},
-            ),
-            patch("services.access_control.REQUEST_LIMITER", SlidingWindowLimiter()),
-        ):
-            client = TestClient(app)
-            first = client.post("/api/scripts/generate", json={})
-            second = client.post("/api/scripts/generate", json={})
-        self.assertEqual(first.status_code, 422)
-        self.assertEqual(second.status_code, 429)
-        self.assertEqual(second.headers.get("retry-after"), "60")
+        with TemporaryDirectory() as temp_dir:
+            engine = create_engine(f"sqlite:///{Path(temp_dir) / 'rate-audit.db'}")
+            AuditEvent.__table__.create(engine)
+            session_factory = sessionmaker(bind=engine)
+            with (
+                patch.dict(
+                    os.environ,
+                    {"FACAI_AI_RATE_LIMIT_PER_MINUTE": "1", "FACAI_AI_DAILY_TOKEN_BUDGET": "0"},
+                ),
+                patch("services.access_control.REQUEST_LIMITER", SlidingWindowLimiter()),
+                patch("services.access_control.CONTROL_SESSION_FACTORY", session_factory),
+            ):
+                client = TestClient(app)
+                try:
+                    first = client.post("/api/scripts/generate", json={})
+                    second = client.post("/api/scripts/generate", json={})
+                finally:
+                    client.close()
+            self.assertEqual(first.status_code, 422)
+            self.assertEqual(second.status_code, 429)
+            self.assertEqual(second.headers.get("retry-after"), "60")
+            self.assertRegex(second.headers.get("x-request-id", ""), r"^[a-f0-9-]{36}$")
+            self.assertEqual("nosniff", second.headers.get("x-content-type-options"))
+            self.assertEqual("SAMEORIGIN", second.headers.get("x-frame-options"))
+            self.assertEqual("no-referrer", second.headers.get("referrer-policy"))
+            self.assertEqual(
+                "camera=(), microphone=(), geolocation=()",
+                second.headers.get("permissions-policy"),
+            )
+            with session_factory() as session:
+                events = session.query(AuditEvent).order_by(AuditEvent.id).all()
+                self.assertEqual([422, 429], [event.status_code for event in events])
+                self.assertEqual(len({event.request_id for event in events}), 2)
+            engine.dispose()
 
 
 if __name__ == "__main__":

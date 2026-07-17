@@ -21,6 +21,18 @@ class InspirationPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("AI工作", response.text)
         self.assertIn("inspiration-shell", response.text)
+        self.assertIn('href="/app?workspace=canvas"', response.text)
+        self.assertNotIn('id="canvas-app"', response.text)
+
+    def test_canvas_workspace_renders_inside_main_workbench_route(self):
+        response = TestClient(app).get("/app?workspace=canvas")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn('href="/app?workspace=canvas" class="nav-link on"', response.text)
+        self.assertIn('id="canvas-app"', response.text)
+        self.assertIn('id="canvas-bootstrap"', response.text)
+        self.assertIn('/static/canvas/canvas.js?v=workbench-canvas-20260717', response.text)
+        self.assertNotIn('/static/js/inspiration.js', response.text)
 
     def test_legacy_inspiration_route_redirects_to_ai_work(self):
         response = TestClient(app).get("/app/inspiration", follow_redirects=False)
@@ -337,7 +349,7 @@ class InspirationNavigationTests(unittest.TestCase):
         for name in pages:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
             self.assertIn('href="/app"', page, name)
-            self.assertIn('href="/app/canvas"', page, name)
+            self.assertIn('href="/app?workspace=canvas"', page, name)
             self.assertIn('href="/app/generate"', page, name)
             self.assertNotIn('href="/app/seedance"', page, name)
             self.assertNotIn('>灵感</a>', page, name)
@@ -345,7 +357,7 @@ class InspirationNavigationTests(unittest.TestCase):
                 page,
                 re.compile(
                     r'href="/app"[^>]*>AI工作</a>\s*'
-                    r'<a href="/app/canvas"[^>]*>产品视觉画布</a>\s*'
+                    r'<a href="/app\?workspace=canvas"[^>]*>产品视觉画布</a>\s*'
                     r'<a href="/app/generate"[^>]*>生成脚本</a>',
                     re.S,
                 ),
@@ -409,7 +421,8 @@ class InspirationNavigationTests(unittest.TestCase):
     def test_ai_work_nav_is_active_only_on_ai_work_page(self):
         page = read_page_source("inspiration.html")
 
-        self.assertIn('<a href="/app" class="nav-link on">AI工作</a>', page)
+        self.assertIn('href="/app" class="nav-link{% if active_workspace != "canvas" %} on{% endif %}"', page)
+        self.assertIn('href="/app?workspace=canvas" class="nav-link{% if active_workspace == "canvas" %} on{% endif %}"', page)
 
     def test_rewrite_top_nav_label_is_script_rewrite(self):
         pages = [

@@ -130,6 +130,12 @@ function projectRow(page, projectId) {
   );
 }
 
+function canvasWorkbenchUrl(projectId) {
+  const query = new URLSearchParams({ workspace: 'canvas' });
+  if (projectId) query.set('project_id', projectId);
+  return `/app?${query.toString()}`;
+}
+
 async function createProjectThroughApi(request, name) {
   const response = await request.post('/api/canvas/projects', { data: { name } });
   expect(response.status()).toBe(201);
@@ -146,7 +152,7 @@ async function createProjectThroughUi(page, name) {
   await page.getByTestId('canvas-project-create').click();
   const snapshot = await (await responsePromise).json();
   createdProjectIds.add(snapshot.project.id);
-  await expect(page).toHaveURL(new RegExp(`/app/canvas/${snapshot.project.id}$`));
+  await expect(page).toHaveURL(canvasWorkbenchUrl(snapshot.project.id));
   return snapshot;
 }
 
@@ -233,7 +239,7 @@ test('AI work opens an empty Canvas and creation selects a real project URL', as
   const canvasEntry = page.getByRole('link', { name: '产品视觉画布' });
   await expect(canvasEntry).toBeVisible();
   await canvasEntry.click();
-  await expect(page).toHaveURL(/\/app\/canvas$/);
+  await expect(page).toHaveURL(canvasWorkbenchUrl());
   await expect(page.getByTestId('canvas-workspace')).toHaveAttribute('data-editable', 'false');
   await expect(page.getByTestId('canvas-project-row')).toHaveCount(0);
 
@@ -244,7 +250,7 @@ test('AI work opens an empty Canvas and creation selects a real project URL', as
   const snapshot = await createProjectThroughUi(page, '入口项目');
   const projectId = snapshot.project.id;
 
-  await expect(page).toHaveURL(new RegExp(`/app/canvas/${projectId}$`));
+  await expect(page).toHaveURL(canvasWorkbenchUrl(projectId));
   await expect(page.getByTestId('canvas-workspace')).toHaveAttribute('data-editable', 'true');
   expect(snapshot.project.semanticState.completeSet.selectedOutputTypes).toEqual([]);
   expect(snapshot.project.semanticState.outputBoards).toEqual([]);
@@ -298,7 +304,7 @@ test('project lifecycle supports rename, search, switch, archive, restore and de
   );
   await projectRow(page, alphaId).getByTestId('canvas-project-switch').click();
   await switchResponse;
-  await expect(page).toHaveURL(new RegExp(`/app/canvas/${alphaId}$`));
+  await expect(page).toHaveURL(canvasWorkbenchUrl(alphaId));
   await expect(projectRow(page, alphaId)).toHaveClass(/is-active/);
 
   const archiveResponse = page.waitForResponse(response =>
@@ -308,7 +314,7 @@ test('project lifecycle supports rename, search, switch, archive, restore and de
   await projectRow(page, alphaId).getByTestId('canvas-project-archive').click();
   const archived = await (await archiveResponse).json();
   expect(archived.project.status).toBe('archived');
-  await expect(page).toHaveURL(/\/app\/canvas$/);
+  await expect(page).toHaveURL(canvasWorkbenchUrl());
   await expect(projectRow(page, alphaId)).toHaveCount(0);
 
   const archivedListResponse = page.waitForResponse(response => {
@@ -361,7 +367,7 @@ test('switching projects closes the old EventSource exactly once and leaves one 
   );
   await projectRow(page, betaId).getByTestId('canvas-project-switch').click();
   await switchResponse;
-  await expect(page).toHaveURL(new RegExp(`/app/canvas/${betaId}$`));
+  await expect(page).toHaveURL(canvasWorkbenchUrl(betaId));
   await expect.poll(async () => (await eventSourceSnapshot(page)).length).toBe(2);
 
   const audit = await eventSourceSnapshot(page);

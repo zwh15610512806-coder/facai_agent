@@ -96,6 +96,32 @@ class RequestMiddlewareHardeningTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    def test_same_origin_https_request_behind_http_proxy_remains_allowed(self):
+        response = self.client.post(
+            "/api/canvas/projects/missing/generations",
+            headers={
+                "Host": "preview.serveousercontent.com:443",
+                "Origin": "https://preview.serveousercontent.com",
+                "Sec-Fetch-Site": "same-origin",
+            },
+            json={},
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_proxy_scheme_fallback_requires_browser_confirmed_same_origin(self):
+        response = self.client.post(
+            "/api/canvas/projects/missing/generations",
+            headers={
+                "Host": "preview.serveousercontent.com:443",
+                "Origin": "https://preview.serveousercontent.com",
+                "Sec-Fetch-Site": "same-site",
+            },
+            json={},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_untrusted_host_is_rejected(self):
         response = self.client.get("/healthz", headers={"Host": "attacker.example"})
 
