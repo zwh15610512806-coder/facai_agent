@@ -240,3 +240,13 @@ ALLOWED_HOSTS = [
     for host in os.getenv("ALLOWED_HOSTS", "").split(",")
     if host.strip()
 ]
+
+# Ephemeral public tunnels use random subdomains. Keep the root domain itself
+# excluded so this only admits a provider-issued tunnel hostname.
+PUBLIC_TUNNEL_HOST_SUFFIXES = tuple(
+    suffix.strip().lower()
+    for suffix in os.getenv(
+        "PUBLIC_TUNNEL_HOST_SUFFIXES", ".serveousercontent.com"
+    ).split(",")
+    if suffix.strip().startswith(".")
+)

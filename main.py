@@ -15,7 +15,14 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from config import ALLOWED_HOSTS, ALLOWED_ORIGINS, APP_DESCRIPTION, APP_TITLE, APP_VERSION
+from config import (
+    ALLOWED_HOSTS,
+    ALLOWED_ORIGINS,
+    APP_DESCRIPTION,
+    APP_TITLE,
+    APP_VERSION,
+    PUBLIC_TUNNEL_HOST_SUFFIXES,
+)
 from database import SessionLocal, engine, get_db, init_db
 from routers import (
     ai_config,
@@ -377,6 +384,11 @@ def _host_is_allowed(host_header: str) -> bool:
         return False
     hostname = hostname.lower().rstrip(".")
     if hostname in {"localhost", "testserver"} or hostname in ALLOWED_HOSTS:
+        return True
+    if any(
+        hostname.endswith(suffix) and hostname != suffix.removeprefix(".")
+        for suffix in PUBLIC_TUNNEL_HOST_SUFFIXES
+    ):
         return True
     try:
         address = ipaddress.ip_address(hostname)

@@ -16,7 +16,7 @@ from integrations.settings import (
     WORKER_CONCURRENCY_ENV,
 )
 from main import app
-from main import _host_matches_origin
+from main import _host_is_allowed, _host_matches_origin
 
 
 def _base64url(raw: bytes) -> str:
@@ -82,6 +82,21 @@ class IntegrationPublicBoundaryTests(unittest.TestCase):
             self.assertNotEqual(internal.get("/app").status_code, 400)
         with TestClient(app, base_url="https://attacker.integration.test", raise_server_exceptions=False) as attacker:
             self.assertEqual(attacker.get("/healthz").status_code, 400)
+
+    def test_public_tunnel_subdomain_is_allowed_without_admitting_other_hosts(self):
+        with patch("main.PUBLIC_TUNNEL_HOST_SUFFIXES", (".serveousercontent.com",)):
+            self.assertTrue(
+                _host_is_allowed(
+                    "c1b23ea8d90f077a-112-232-129-138.serveousercontent.com"
+                )
+            )
+            self.assertTrue(
+                _host_is_allowed(
+                    "c1b23ea8d90f077a-112-232-129-138.serveousercontent.com:443"
+                )
+            )
+            self.assertFalse(_host_is_allowed("serveousercontent.com"))
+            self.assertFalse(_host_is_allowed("attacker.example"))
 
     def test_origin_host_matching_enforces_effective_ports_and_ipv6_equivalence(self):
         self.assertTrue(
