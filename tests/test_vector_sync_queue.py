@@ -4,9 +4,9 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
 
 from database import Base, engine, get_db
 from main import app
@@ -127,6 +127,7 @@ class VectorSyncQueueTests(unittest.TestCase):
 
     def test_recovery_only_requeues_running_jobs_with_expired_lease(self):
         from datetime import timedelta
+
         from services.vector_sync import _recover_expired_running_jobs
 
         now = datetime.utcnow()
@@ -183,9 +184,12 @@ class VectorSyncQueueTests(unittest.TestCase):
             yield self.db
 
         app.dependency_overrides[get_db] = override_db
-        with TestClient(app) as client:
+        client = TestClient(app)
+        try:
             status_response = client.get("/api/ai-config/vector-sync")
             retry_response = client.post("/api/ai-config/vector-sync/retry")
+        finally:
+            client.close()
 
         self.assertEqual(status_response.status_code, 200)
         status = status_response.json()
@@ -202,11 +206,14 @@ class VectorSyncQueueTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_db
         with patch("routers.products._sync_product_index", return_value="pending"):
-            with TestClient(app) as client:
+            client = TestClient(app)
+            try:
                 response = client.post(
                     "/api/products/",
                     json={"name": "写入测试", "category": "烘焙调味", "price": 12.5},
                 )
+            finally:
+                client.close()
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["index_sync_status"], "pending")

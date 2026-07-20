@@ -2,7 +2,7 @@ import hashlib
 import json
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from threading import Barrier
 
 from sqlalchemy import func, select
@@ -42,8 +42,8 @@ from integrations.types import (
     Provider,
     ResourceType,
 )
+from tests.postgres_test_support import requires_disposable_postgres
 from tests.test_integration_models import _require_disposable_postgres_url
-
 
 QUEUE_TABLES = (
     IntegrationAuthorization.__table__,
@@ -53,6 +53,7 @@ QUEUE_TABLES = (
 )
 
 
+@requires_disposable_postgres
 class PersistentIntegrationQueueTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -76,7 +77,7 @@ class PersistentIntegrationQueueTests(unittest.TestCase):
 
     def setUp(self):
         self._reset_schema()
-        self.now = datetime(2026, 7, 14, 2, 0, tzinfo=timezone.utc)
+        self.now = datetime(2026, 7, 14, 2, 0, tzinfo=UTC)
 
     def _enqueue(
         self,
@@ -177,7 +178,7 @@ class PersistentIntegrationQueueTests(unittest.TestCase):
         expected = hashlib.sha256(
             (
                 f"{JobType.SYNC_RESOURCE.value}\nconnection-7\n{canonical}"
-            ).encode("utf-8")
+            ).encode()
         ).hexdigest()
         self.assertEqual(
             make_dedupe_key(

@@ -3,40 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>{% if active_workspace == "canvas" %}产品视觉画布{% else %}AI工作{% endif %} · 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=canvas-usability-20260716">
+<title>AI工作 · 抖音运营agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260720-2">
 <script src="/static/vendor/lucide.min.js"></script>
-<script src="/static/js/common.js?v=canvas-usability-20260716"></script>
-{% if active_workspace == "canvas" %}
-<link rel="stylesheet" href="/static/canvas/canvas.css?v=workbench-canvas-20260717">
-{% else %}
+<script src="/static/js/common.js?v=app-shell-20260720-2"></script>
 <link rel="stylesheet" href="/static/css/inspiration.css?v=20260710-stream">
-{% endif %}
 </head>
-<body{% if active_workspace == "canvas" %} class="canvas-page"{% endif %}>
+<body>
 <nav class="nav">
 <div class="nav-inner">
 <div class="nav-brand-group">
-<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/douyin-logo.svg" alt="抖音"></span><span>抖音运营agent</span></a>
 </div>
 <div class="nav-links">
-<a href="/app" class="nav-link{% if active_workspace != "canvas" %} on{% endif %}"{% if active_workspace != "canvas" %} aria-current="page"{% endif %}>AI工作</a><a href="/app?workspace=canvas" class="nav-link{% if active_workspace == "canvas" %} on{% endif %}"{% if active_workspace == "canvas" %} aria-current="page"{% endif %}>产品视觉画布</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/creators" class="nav-link">达人工作</a><a href="/app/operations" class="nav-link">运营数据中台</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a>
+<a href="/app" class="nav-link on" aria-current="page">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/creators" class="nav-link">达人工作</a><a href="/app/operations" class="nav-link">运营数据中台</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
-{% if active_workspace == "canvas" %}
-<main class="canvas-page-main">
-  <section class="canvas-desktop-gate" aria-labelledby="canvas-desktop-gate-title">
-    <div class="canvas-desktop-gate-card">
-      <i data-lucide="monitor-up" aria-hidden="true"></i>
-      <h1 id="canvas-desktop-gate-title">请使用桌面端打开产品视觉画布</h1>
-      <p>产品视觉画布需要更大的工作区域。请在宽度至少 1024px 的桌面浏览器中继续编辑。</p>
-      <a class="btn btn-pri" href="/app">返回 AI 工作台</a>
-    </div>
-  </section>
-  <div id="canvas-app"></div>
-</main>
-<script id="canvas-bootstrap" type="application/json">{{ canvas_bootstrap_json | safe }}</script>
-<script type="module" src="/static/canvas/canvas.js?v=workbench-canvas-20260717"></script>
-{% else %}
 <main class="inspiration-page">
 <section class="inspiration-shell" aria-label="AI工作对话工作台">
   <aside class="inspiration-panel inspiration-side">
@@ -85,6 +66,5 @@
 </main>
 <div id="conversationFloatingMenu" class="conversation-action-menu conversation-floating-menu" role="menu" hidden></div>
 <script src="/static/js/inspiration.js?v=20260710-stream"></script>
-{% endif %}
 </body>
 </html>

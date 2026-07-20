@@ -44,7 +44,7 @@ class CreatorPageContractTests(unittest.TestCase):
     def test_creator_page_is_externalized_three_column_workbench(self):
         page = (ROOT / "templates" / "creators.html").read_text(encoding="utf-8-sig")
         self.assertIn('/static/css/creators.css?v=20260713-creators-v2', page)
-        self.assertIn('/static/js/common.js?v=canvas-usability-20260716', page)
+        self.assertIn('/static/js/common.js?v=app-shell-20260720-2', page)
         self.assertIn('/static/js/creators.js?v=20260713-creators-v2', page)
         self.assertNotIn("<style", page.lower())
         self.assertNotRegex(page.lower(), r"<script(?![^>]+src=)")

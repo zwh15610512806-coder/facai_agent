@@ -5,12 +5,16 @@ import time
 import unittest
 from contextlib import closing
 from pathlib import Path
+from threading import Event
+from unittest.mock import patch
 
 from services.backup_manager import (
     create_backup,
     ensure_daily_backup,
     prune_backups,
     restore_backup,
+    start_backup_scheduler,
+    stop_backup_scheduler,
     verify_backup,
     verify_restore_drill,
 )
@@ -27,6 +31,7 @@ class BackupManagerTests(unittest.TestCase):
             connection.commit()
 
     def tearDown(self):
+        stop_backup_scheduler(join_timeout_seconds=1)
         self.temp.cleanup()
 
     def test_backup_is_consistent_copied_offsite_and_restorable(self):
@@ -80,6 +85,17 @@ class BackupManagerTests(unittest.TestCase):
         for path in removed:
             self.assertFalse(Path(str(path) + "-shm").exists())
         self.assertTrue(first.exists())
+
+    def test_scheduler_checks_for_a_new_daily_backup_while_process_stays_running(self):
+        called = Event()
+
+        with patch(
+            "services.backup_manager.ensure_configured_daily_backup",
+            side_effect=lambda: called.set(),
+        ):
+            start_backup_scheduler(check_interval_seconds=0.01)
+            self.assertTrue(called.wait(1), "scheduled backup check did not run")
+            stop_backup_scheduler(join_timeout_seconds=1)
 
 
 if __name__ == "__main__":

@@ -104,7 +104,6 @@ def _clear_worker_pid(pid: int) -> None:
 
 
 def start_server(port: int) -> subprocess.Popen:
-    bind_host = "0.0.0.0"
     LOG_DIR.mkdir(exist_ok=True)
     command = [
         sys.executable,

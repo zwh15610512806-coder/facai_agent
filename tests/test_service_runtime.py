@@ -10,6 +10,9 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from main import app
 
@@ -26,14 +29,30 @@ def _load_watchdog_module():
 
 class HealthEndpointTests(unittest.TestCase):
     def test_healthz_is_process_liveness_only(self):
-        with TestClient(app) as client:
+        client = TestClient(app)
+        try:
             response = client.get("/healthz")
+        finally:
+            client.close()
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
 
     def test_readyz_reports_database_search_vector_worker_and_disk(self):
         from routers import search_local
+        from services import readiness, task_queue, vector_sync
+
+        readiness_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        readiness_session = sessionmaker(bind=readiness_engine)
+        worker_status = {
+            "alive": True,
+            "last_heartbeat": datetime.now().isoformat(),
+            "heartbeat_age_seconds": 0.0,
+        }
 
         ready_state = dict(search_local._state)
         ready_state.update({
@@ -45,9 +64,22 @@ class HealthEndpointTests(unittest.TestCase):
         with (
             patch.object(search_local, "_loaded", True),
             patch.object(search_local, "_state", ready_state),
-            TestClient(app) as client,
+            patch.object(readiness, "engine", readiness_engine),
+            patch.object(readiness, "SessionLocal", readiness_session),
+            patch.object(task_queue, "task_worker_status", return_value=worker_status),
+            patch.object(vector_sync, "vector_worker_status", return_value=worker_status),
+            patch.object(
+                vector_sync,
+                "vector_sync_status",
+                return_value={"pending": 0, "running": 0, "failed": 0},
+            ),
         ):
-            response = client.get("/readyz")
+            client = TestClient(app)
+            try:
+                response = client.get("/readyz")
+            finally:
+                client.close()
+        readiness_engine.dispose()
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()

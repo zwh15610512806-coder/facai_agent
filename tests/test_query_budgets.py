@@ -122,6 +122,13 @@ class ListQueryBudgetTests(unittest.TestCase):
         self.assertEqual(legacy.status_code, 200, legacy.text)
         self.assertEqual(len(legacy.json()), 70)
         self.assertLessEqual(legacy_count, 3, f"legacy product list executed {legacy_count} SQL statements")
+        bounded = self.client.get("/api/products/", params={"limit": 25})
+        self.assertEqual(bounded.status_code, 200, bounded.text)
+        self.assertEqual(len(bounded.json()), 25)
+        self.assertEqual(
+            self.client.get("/api/products/", params={"limit": 501}).status_code,
+            422,
+        )
         self.assertEqual(page.status_code, 200, page.text)
         self.assertEqual(len(page.json()["items"]), 50)
         self.assertEqual(page.json()["total"], 70)

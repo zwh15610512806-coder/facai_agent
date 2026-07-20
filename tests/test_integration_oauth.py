@@ -4,11 +4,11 @@ import os
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
-from urllib.parse import parse_qs, urlencode, urlsplit
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, select
@@ -22,12 +22,12 @@ from integration_models import (
     IntegrationOAuthState,
     IntegrationSecurityAudit,
 )
-from integrations.connectors.registry import ConnectorRegistry, ConnectorUnavailable
 from integrations.connections import (
     ConnectionOwnershipConflict,
     ConnectorOutputInvalid,
     persist_oauth_result,
 )
+from integrations.connectors.registry import ConnectorRegistry, ConnectorUnavailable
 from integrations.crypto import CredentialPurpose, decrypt_credential, encrypt_credential
 from integrations.db_safety import assert_disposable_postgres
 from integrations.oauth import OAuthStateInvalid, consume_oauth_state, create_oauth_state
@@ -44,15 +44,15 @@ from integrations.types import (
     AccountIdentity,
     ConnectionStatus,
     ConnectionType,
+    EventIdScope,
     Provider,
     TokenBundle,
     VerifiedEvent,
-    EventIdScope,
 )
 from main import app
+from tests.postgres_test_support import requires_disposable_postgres
 
-
-UTC = timezone.utc
+UTC = UTC
 MASTER_KEY = b"o" * 32
 OAUTH_TABLES = (
     IntegrationSecurityAudit.__table__,
@@ -67,6 +67,7 @@ def _base64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
+@requires_disposable_postgres
 class OAuthStateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -423,6 +424,7 @@ class _EventConnector(_FakeConnector):
         )
 
 
+@requires_disposable_postgres
 class OAuthEndpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -964,6 +966,7 @@ class ConnectorRegistryTests(unittest.TestCase):
             event.event_type = "changed"
 
 
+@requires_disposable_postgres
 class ConnectorOutputValidationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

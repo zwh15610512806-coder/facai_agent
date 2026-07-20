@@ -1,8 +1,8 @@
-import os
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import DateTime, Enum as SqlEnum, UniqueConstraint, inspect, text
+from sqlalchemy import DateTime, UniqueConstraint, inspect, text
+from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
@@ -34,8 +34,8 @@ from integrations.types import (
     SyncSource,
     SyncStatus,
 )
+from tests.postgres_test_support import requires_disposable_postgres
 from tests.test_integration_models import _require_disposable_postgres_url
-
 
 SYNC_MODELS = (
     IntegrationJob,
@@ -231,6 +231,7 @@ class SyncModelMetadataTests(unittest.TestCase):
         self.assertEqual(actual, EXPECTED_ENUMS)
 
 
+@requires_disposable_postgres
 class PostgresSyncModelTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -261,7 +262,7 @@ class PostgresSyncModelTests(unittest.TestCase):
                 access_token_ciphertext="opaque-ciphertext",
                 access_token_tail="0000",
                 status=AuthorizationStatus.ACTIVE,
-                last_authorized_at=datetime.now(timezone.utc),
+                last_authorized_at=datetime.now(UTC),
             )
             session.add(authorization)
             session.flush()
@@ -282,7 +283,7 @@ class PostgresSyncModelTests(unittest.TestCase):
 
     @staticmethod
     def _now():
-        return datetime.now(timezone.utc).replace(microsecond=0)
+        return datetime.now(UTC).replace(microsecond=0)
 
     def _job_values(self, suffix: str):
         now = self._now()

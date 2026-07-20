@@ -15,14 +15,15 @@ from integrations.settings import (
     TRUSTED_PROXY_CIDRS_ENV,
     WORKER_CONCURRENCY_ENV,
 )
-from main import app
-from main import _host_is_allowed, _host_matches_origin
+from main import _host_is_allowed, _host_matches_origin, app
+from tests.postgres_test_support import requires_disposable_postgres
 
 
 def _base64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
+@requires_disposable_postgres
 class IntegrationPublicBoundaryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

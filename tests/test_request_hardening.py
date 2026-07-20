@@ -80,7 +80,7 @@ class RequestMiddlewareHardeningTests(unittest.TestCase):
 
     def test_cross_origin_mutating_api_request_is_rejected(self):
         response = self.client.post(
-            "/api/canvas/projects/missing/generations",
+            "/api/inspiration/chat",
             headers={"Origin": "https://attacker.example"},
             json={},
         )
@@ -89,7 +89,7 @@ class RequestMiddlewareHardeningTests(unittest.TestCase):
 
     def test_same_origin_mutating_api_request_remains_allowed(self):
         response = self.client.post(
-            "/api/canvas/projects/missing/generations",
+            "/api/inspiration/chat",
             headers={"Origin": "http://testserver"},
             json={},
         )
@@ -98,7 +98,7 @@ class RequestMiddlewareHardeningTests(unittest.TestCase):
 
     def test_same_origin_https_request_behind_http_proxy_remains_allowed(self):
         response = self.client.post(
-            "/api/canvas/projects/missing/generations",
+            "/api/inspiration/chat",
             headers={
                 "Host": "preview.serveousercontent.com:443",
                 "Origin": "https://preview.serveousercontent.com",
@@ -111,7 +111,7 @@ class RequestMiddlewareHardeningTests(unittest.TestCase):
 
     def test_proxy_scheme_fallback_requires_browser_confirmed_same_origin(self):
         response = self.client.post(
-            "/api/canvas/projects/missing/generations",
+            "/api/inspiration/chat",
             headers={
                 "Host": "preview.serveousercontent.com:443",
                 "Origin": "https://preview.serveousercontent.com",
@@ -137,7 +137,7 @@ class RequestMiddlewareHardeningTests(unittest.TestCase):
 
     def test_oversize_json_body_is_rejected_before_validation(self):
         response = self.client.post(
-            "/api/canvas/projects/missing/generations",
+            "/api/inspiration/chat",
             content=b'{"prompt":"' + (b"x" * (2 * 1024 * 1024)) + b'"}',
             headers={"Content-Type": "application/json"},
         )

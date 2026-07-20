@@ -1,9 +1,21 @@
 """产品管理 API — CRUD + 搜索 + 筛选 + 文件上传"""
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+import math
+import mimetypes
+import os
+import re
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Annotated, List, Literal, Optional
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
+from sqlalchemy.orm import Session, selectinload
+
+import import_materials
 from config import EMBEDDING_MODEL_NAME, MAX_UPLOAD_SIZE
 from database import SessionLocal, get_db
 from models import (
@@ -15,19 +27,16 @@ from models import (
     VectorSyncJob,
 )
 from schemas import (
-    ProductCreate, ProductUpdate, ProductOut, ProductWriteOut,
-    ProductListItem, ProductPageOut, SellingPointOut, SellingPointUpdate, ApiResponse
+    ApiResponse,
+    ProductCreate,
+    ProductListItem,
+    ProductOut,
+    ProductPageOut,
+    ProductUpdate,
+    ProductWriteOut,
+    SellingPointOut,
+    SellingPointUpdate,
 )
-from typing import List, Literal, Optional
-import math
-import mimetypes
-import os
-import re
-import uuid
-from datetime import UTC, datetime
-from pathlib import Path
-from urllib.parse import urlencode
-import import_materials
 from services.product_detail import (
     HIDDEN_SELLING_POINT_TYPE,
     _is_useless_selling_point,
@@ -38,7 +47,10 @@ from services.product_knowledge_chunks import (
     product_knowledge_quality_report,
     validate_product_knowledge_quality_report,
 )
-from services.product_price_extractor import apply_product_price_metadata, extract_product_price_metadata
+from services.product_price_extractor import (
+    apply_product_price_metadata,
+    extract_product_price_metadata,
+)
 from services.product_rag import answer_global_product_question, answer_product_question
 from services.upload_limits import write_upload_file
 
@@ -283,18 +295,23 @@ def _hide_selling_point_priority(product_id: int, priority: int, db: Session):
     ))
 
 
-@router.get("/", response_model=List[ProductListItem])
+@router.get("/", response_model=List[ProductListItem], deprecated=True)
 def list_products(
     category: Optional[str] = Query(None, description="品类筛选"),
     search: Optional[str] = Query(None, description="搜索关键词"),
     status: str = Query("active", description="状态"),
+    limit: Annotated[
+        int,
+        Query(ge=1, le=500, description="兼容接口最大返回条数"),
+    ] = 500,
     db: Session = Depends(get_db),
 ):
-    """获取产品列表，支持品类筛选和关键词搜索"""
+    """兼容产品列表；新调用方应使用 /page。"""
     products = (
         _filtered_product_query(db, category=category, search=search, status=status)
         .options(selectinload(Product.selling_points))
         .order_by(Product.created_at.desc())
+        .limit(limit)
         .all()
     )
     return _product_list_items(products)
@@ -901,14 +918,21 @@ async def upload_product_file(
 
     # 更新数据库
     product.info_file = file_path
-    price_updates = apply_product_price_metadata(product, extract_product_price_metadata(file_path))
+    try:
+        price_metadata = await run_blocking(extract_product_price_metadata, file_path)
+    except WorkQueueFull as exc:
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
+    price_updates = apply_product_price_metadata(product, price_metadata)
     from services.vector_sync import enqueue_vector_sync
     enqueue_vector_sync(db, "product", product_id, "upsert")
     db.commit()
 
     # 自动从资料中提取卖点
     from services.selling_point_extractor import extract_selling_points
-    points = await extract_selling_points(file_path, product.name, product.category)
+    try:
+        points = await extract_selling_points(file_path, product.name, product.category)
+    except WorkQueueFull as exc:
+        raise HTTPException(status_code=503, detail="文件解析任务繁忙，请稍后重试") from exc
 
     if points:
         # 删除旧卖点

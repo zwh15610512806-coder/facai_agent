@@ -3,7 +3,7 @@ import importlib.util
 import os
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -23,32 +23,32 @@ from integration_models import (
     IntegrationSyncCheckpoint,
     IntegrationWorkerHeartbeat,
 )
-from integrations.settings import IntegrationSettings
 from integrations.purge import PurgeFileError
+from integrations.settings import IntegrationSettings
 from integrations.sync.queue import enqueue_job
 from integrations.sync.worker import (
-    ClaimedJob,
     DEFAULT_WORKER_CONCURRENCY,
+    ClaimedJob,
     ConnectorUnavailableError,
     IntegrationWorker,
+    RetryableMaintenanceError,
     WorkerConfig,
     WorkerReadinessError,
-    RetryableMaintenanceError,
     build_default_job_handler,
     default_job_handler,
     expire_export_maintenance,
-    tick_scheduler_maintenance,
     parse_worker_enabled,
     release_worker_leases,
     stale_worker_ids,
+    tick_scheduler_maintenance,
     upsert_worker_heartbeat,
     validate_worker_readiness,
 )
 from integrations.types import ExportStatus, JobStatus, JobType, ResourceType, utc_now
+from tests.postgres_test_support import requires_disposable_postgres
 from tests.test_integration_models import _require_disposable_postgres_url
 
-
-UTC = timezone.utc
+UTC = UTC
 WORKER_TABLES = (
     IntegrationAuthorization.__table__,
     IntegrationConnection.__table__,
@@ -98,6 +98,7 @@ class WorkerConfigurationTests(unittest.TestCase):
         self.assertEqual(config.heartbeat_interval, 10.0)
         self.assertEqual(config.shutdown_timeout, 30.0)
 
+    @requires_disposable_postgres
     def test_readiness_requires_credentials_postgres_schema_and_writable_archive(self):
         postgres_engine = database.create_database_engine(
             _require_disposable_postgres_url()
@@ -677,6 +678,7 @@ class WorkerCliTests(unittest.TestCase):
         self.assertNotIn("test-worker-secret", rendered)
 
 
+@requires_disposable_postgres
 class WorkerDatabaseTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
@@ -1169,7 +1171,7 @@ class WorkerDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 .order_by(IntegrationJob.id)
                 .with_for_update()
             ).all()
-            for owner, job in zip(("worker-a", "worker-b"), jobs):
+            for owner, job in zip(("worker-a", "worker-b"), jobs, strict=True):
                 job.status = JobStatus.RUNNING
                 job.attempts = 1
                 job.lease_owner = owner

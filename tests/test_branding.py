@@ -5,8 +5,8 @@ import config
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NEW_BRAND = "法采新媒体运营 Agent"
-OLD_BRAND = "法采脚本 Agent"
+NEW_BRAND = "抖音运营agent"
+OLD_BRAND = "法采新媒体运营 Agent"
 
 
 class BrandingTests(unittest.TestCase):

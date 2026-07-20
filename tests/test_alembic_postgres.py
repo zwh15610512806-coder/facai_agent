@@ -4,7 +4,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
@@ -12,12 +11,10 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import Enum, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
-import commerce_models
-import creator_models
 import integration_models
-import models
+from alembic import command
 from database import Base
-
+from tests.postgres_test_support import requires_disposable_postgres
 
 ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = ROOT / "alembic.ini"
@@ -256,6 +253,7 @@ class AlembicSourceContractTests(unittest.TestCase):
         self.assertIn("down_revision: Union[str, Sequence[str], None] = '20260713_0001'", source)
 
 
+@requires_disposable_postgres
 class AlembicPostgresTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

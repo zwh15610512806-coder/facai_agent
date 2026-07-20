@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>脚本改写 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=canvas-usability-20260716">
+<title>脚本改写 — 抖音运营agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260720-2">
 <script src="/static/vendor/lucide.min.js"></script>
-<script src="/static/js/common.js?v=canvas-usability-20260716"></script>
+<script src="/static/js/common.js?v=app-shell-20260720-2"></script>
 <style>
 .rewrite-main{max-width:1540px}
 .rewrite-form-card{display:flex;flex-direction:column;gap:18px}
@@ -77,10 +77,10 @@
 <nav class="nav">
 <div class="nav-inner">
 <div class="nav-brand-group">
-<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/douyin-logo.svg" alt="抖音"></span><span>抖音运营agent</span></a>
 </div>
 <div class="nav-links">
-<a href="/app" class="nav-link">AI工作</a><a href="/app?workspace=canvas" class="nav-link">产品视觉画布</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link on">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/creators" class="nav-link">达人工作</a><a href="/app/operations" class="nav-link">运营数据中台</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link on">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/creators" class="nav-link">达人工作</a><a href="/app/operations" class="nav-link">运营数据中台</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a>
 <a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
 
@@ -181,7 +181,7 @@ function hideTip(){document.getElementById('tooltip').style.display='none';}
 
 async function loadProducts(){
  try{
-  var r=await fetch('/api/products/');if(!r.ok)throw new Error('HTTP '+r.status);products=await r.json();renderProducts(document.getElementById('productSearch').value);
+  products=await FacaiUI.fetchAllProducts();renderProducts(document.getElementById('productSearch').value);
  }catch(e){document.getElementById('productGrid').innerHTML='<div class="rewrite-product-empty">产品加载失败，请刷新页面重试</div>';}
 }
 function hasPendingProductField(p,field){return Array.isArray(p&&p.pending_fields)&&p.pending_fields.indexOf(field)>=0;}

@@ -1,6 +1,6 @@
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from threading import Barrier
 
 from sqlalchemy import func, select, update
@@ -31,10 +31,10 @@ from integrations.types import (
     Provider,
     ResourceType,
 )
+from tests.postgres_test_support import requires_disposable_postgres
 from tests.test_integration_models import _require_disposable_postgres_url
 
-
-UTC = timezone.utc
+UTC = UTC
 SCHEDULER_TABLES = (
     IntegrationAuthorization.__table__,
     IntegrationConnection.__table__,
@@ -271,6 +271,7 @@ class PureScheduleTests(unittest.TestCase):
         )
 
 
+@requires_disposable_postgres
 class SchedulerPersistenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

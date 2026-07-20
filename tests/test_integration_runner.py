@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
 from types import SimpleNamespace
@@ -46,8 +46,8 @@ from integrations.sync.queue import JobErrorCode, JobErrorSummary
 from integrations.sync.runner import (
     RunnerConfig,
     RunnerResult,
-    _RunState,
     _fail_run,
+    _RunState,
     run_sync_pages,
 )
 from integrations.types import (
@@ -71,10 +71,10 @@ from integrations.types import (
     TimeWindow,
     TokenBundle,
 )
+from tests.postgres_test_support import requires_disposable_postgres
 from tests.test_integration_models import _require_disposable_postgres_url
 
-
-UTC = timezone.utc
+UTC = UTC
 NOW = datetime(2026, 7, 14, 4, 0, tzinfo=UTC)
 MASTER_KEY = b"r" * 32
 QUARANTINE_KEY = b"runner-quarantine-key-material-32bytes"
@@ -259,6 +259,7 @@ class RunnerLockOrderTests(unittest.TestCase):
         self.assertEqual(events, ["authorization", "run", "connection"])
 
 
+@requires_disposable_postgres
 class IntegrationRunnerTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):

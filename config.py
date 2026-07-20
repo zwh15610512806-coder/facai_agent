@@ -1,114 +1,10 @@
 """应用配置管理"""
-import ipaddress
 import os
-import re
 from dotenv import load_dotenv
 
 from integrations.settings import load_integration_settings
 
 load_dotenv()
-
-
-def _strict_positive_env_int(name: str, default: int) -> int:
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    if not raw_value.isascii() or not raw_value.isdigit():
-        raise ValueError(f"{name} must be a positive integer")
-    value = int(raw_value)
-    if value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return value
-
-
-def _bounded_positive_env_int(name: str, default: int, *, maximum: int) -> int:
-    value = _strict_positive_env_int(name, default)
-    if value > maximum:
-        raise ValueError(f"{name} must be at most {maximum}")
-    return value
-
-
-_HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
-
-
-def _exact_provider_hostname(value: str, *, name: str) -> str:
-    """Return an IDNA-normalized administrator-supplied hostname only.
-
-    Provider records never get to choose these values: accepting a URL, a
-    wildcard, a path, or an IP literal here would weaken the network policy
-    before the provider transport gets a chance to validate an origin.
-    """
-
-    candidate = value.strip()
-    if not candidate or candidate != value or any(
-        marker in candidate for marker in ("*", ":", "/", "?", "#", "@", "[", "]", "\\")
-    ):
-        raise ValueError(f"{name} must contain exact hostnames only")
-    try:
-        ipaddress.ip_address(candidate)
-    except ValueError:
-        pass
-    else:
-        raise ValueError(f"{name} must not contain IP addresses")
-    try:
-        hostname = candidate.encode("idna").decode("ascii").lower()
-    except UnicodeError as exc:
-        raise ValueError(f"{name} contains an invalid hostname") from exc
-    labels = hostname.split(".")
-    if (
-        len(hostname) > 253
-        or len(labels) < 2
-        or any(not _HOST_LABEL.fullmatch(label) for label in labels)
-        or re.fullmatch(r"[0-9.]+", hostname) is not None
-    ):
-        raise ValueError(f"{name} must contain exact hostnames only")
-    return hostname
-
-
-def _provider_hostname_allowlist(
-    name: str,
-    default: tuple[str, ...],
-) -> tuple[str, ...]:
-    raw_value = os.getenv(name)
-    values = default if raw_value is None else tuple(
-        item.strip() for item in raw_value.split(",") if item.strip()
-    )
-    normalized: list[str] = []
-    for value in values:
-        hostname = _exact_provider_hostname(value, name=name)
-        if hostname not in normalized:
-            normalized.append(hostname)
-    return tuple(normalized)
-
-
-def _provider_exact_ip_allowlist(name: str) -> tuple[str, ...]:
-    raw_value = os.getenv(name)
-    if raw_value is None or not raw_value.strip():
-        return ()
-    addresses: list[str] = []
-    for raw_address in raw_value.split(","):
-        candidate = raw_address.strip()
-        if not candidate or candidate != raw_address:
-            raise ValueError(f"{name} must contain exact IP addresses")
-        try:
-            address = ipaddress.ip_address(candidate)
-        except ValueError as exc:
-            raise ValueError(f"{name} must contain exact IP addresses") from exc
-        canonical = str(address)
-        if canonical not in addresses:
-            addresses.append(canonical)
-    return tuple(addresses)
-
-
-def _strict_env_flag(name: str, default: bool) -> bool:
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    if raw_value == "0":
-        return False
-    if raw_value == "1":
-        return True
-    raise ValueError(f"{name} must be 0 or 1")
 
 # 数据库配置
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/script_agent.db")
@@ -156,7 +52,7 @@ EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY") or ARK_API_KEY or DOUBAO_API_
 EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL") or ARK_BASE_URL or DOUBAO_BASE_URL
 
 # 应用配置
-APP_TITLE = "法采新媒体运营 Agent"
+APP_TITLE = "抖音运营agent"
 APP_VERSION = "1.0.0"
 APP_DESCRIPTION = "抖音短视频带货脚本智能生成系统"
 
@@ -166,68 +62,6 @@ SEARCH_BACKEND_URL = os.getenv("SEARCH_BACKEND_URL", "http://127.0.0.1:5000")
 # 文件上传配置
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./data/uploads")
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
-
-# Product Canvas runtime project files (database rows store relative paths only).
-CANVAS_DATA_DIR = os.getenv("CANVAS_DATA_DIR", "data/canvas_projects")
-CANVAS_MAX_UPLOAD_BYTES = _strict_positive_env_int("CANVAS_MAX_UPLOAD_BYTES", 12_582_912)
-CANVAS_MAX_IMAGE_EDGE = _strict_positive_env_int("CANVAS_MAX_IMAGE_EDGE", 16_384)
-CANVAS_MAX_IMAGE_PIXELS = _strict_positive_env_int("CANVAS_MAX_IMAGE_PIXELS", 40_000_000)
-CANVAS_PREVIEW_MAX_EDGE = _strict_positive_env_int("CANVAS_PREVIEW_MAX_EDGE", 2_048)
-CANVAS_PROJECT_QUOTA_BYTES = _strict_positive_env_int(
-    "CANVAS_PROJECT_QUOTA_BYTES", 5_368_709_120
-)
-CANVAS_TOTAL_QUOTA_BYTES = _strict_positive_env_int(
-    "CANVAS_TOTAL_QUOTA_BYTES", 21_474_836_480
-)
-CANVAS_MIN_FREE_BYTES = _strict_positive_env_int("CANVAS_MIN_FREE_BYTES", 2_147_483_648)
-CANVAS_REMBG_MODEL_DIR = os.getenv("CANVAS_REMBG_MODEL_DIR", "data/models/rembg")
-CANVAS_REMBG_WORKERS = _strict_positive_env_int("CANVAS_REMBG_WORKERS", 1)
-CANVAS_LOCAL_OPERATION_WORKERS = _strict_positive_env_int(
-    "CANVAS_LOCAL_OPERATION_WORKERS", 1
-)
-CANVAS_REMOTE_IMAGE_MAX_BYTES = _bounded_positive_env_int(
-    "CANVAS_REMOTE_IMAGE_MAX_BYTES", 26_214_400, maximum=26_214_400
-)
-CANVAS_PROVIDER_SECRET_KEY = os.getenv("CANVAS_PROVIDER_SECRET_KEY", "")
-CANVAS_PROVIDER_ALLOWED_HOSTS = _provider_hostname_allowlist(
-    "CANVAS_PROVIDER_ALLOWED_HOSTS", ("ark.cn-beijing.volces.com",)
-)
-CANVAS_PROVIDER_PRIVATE_ALLOWED_HOSTS = _provider_hostname_allowlist(
-    "CANVAS_PROVIDER_PRIVATE_ALLOWED_HOSTS", ()
-)
-CANVAS_PROVIDER_PRIVATE_ALLOWED_IPS = _provider_exact_ip_allowlist(
-    "CANVAS_PROVIDER_PRIVATE_ALLOWED_IPS"
-)
-CANVAS_ALLOW_INSECURE_PROVIDER_HTTP = _strict_env_flag(
-    "CANVAS_ALLOW_INSECURE_PROVIDER_HTTP", False
-)
-CANVAS_PROVIDER_CONNECT_TIMEOUT_SECONDS = _bounded_positive_env_int(
-    "CANVAS_PROVIDER_CONNECT_TIMEOUT_SECONDS", 10, maximum=60
-)
-CANVAS_PROVIDER_TOTAL_TIMEOUT_SECONDS = _bounded_positive_env_int(
-    "CANVAS_PROVIDER_TOTAL_TIMEOUT_SECONDS", 60, maximum=300
-)
-CANVAS_PROVIDER_MAX_JSON_BYTES = _bounded_positive_env_int(
-    "CANVAS_PROVIDER_MAX_JSON_BYTES", 1_048_576, maximum=4_194_304
-)
-CANVAS_GENERATION_CONCURRENCY = _bounded_positive_env_int(
-    "CANVAS_GENERATION_CONCURRENCY", 1, maximum=16
-)
-CANVAS_GENERATION_LEASE_SECONDS = _bounded_positive_env_int(
-    "CANVAS_GENERATION_LEASE_SECONDS", 60, maximum=900
-)
-
-if CANVAS_PREVIEW_MAX_EDGE > CANVAS_MAX_IMAGE_EDGE:
-    raise ValueError("CANVAS_PREVIEW_MAX_EDGE must not exceed CANVAS_MAX_IMAGE_EDGE")
-if CANVAS_PROJECT_QUOTA_BYTES > CANVAS_TOTAL_QUOTA_BYTES:
-    raise ValueError("CANVAS_PROJECT_QUOTA_BYTES must not exceed CANVAS_TOTAL_QUOTA_BYTES")
-if CANVAS_PROVIDER_TOTAL_TIMEOUT_SECONDS < CANVAS_PROVIDER_CONNECT_TIMEOUT_SECONDS:
-    raise ValueError(
-        "CANVAS_PROVIDER_TOTAL_TIMEOUT_SECONDS must not be less than "
-        "CANVAS_PROVIDER_CONNECT_TIMEOUT_SECONDS"
-    )
-if CANVAS_REMBG_WORKERS != 1:
-    raise ValueError("CANVAS_REMBG_WORKERS must be 1 for deterministic single-threaded cutouts")
 
 # Web access controls
 ALLOWED_ORIGINS = [

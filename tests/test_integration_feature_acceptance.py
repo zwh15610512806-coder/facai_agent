@@ -1,8 +1,7 @@
-import os
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from threading import Event
@@ -30,8 +29,8 @@ from integration_models import (
     IntegrationJob,
     IntegrationSecurityAudit,
 )
-from integrations.audit import write_security_audit
 from integrations.actor import IntegrationActor, current_integration_actor
+from integrations.audit import write_security_audit
 from integrations.exports import (
     ExportRequestConflict,
     ExportWriteError,
@@ -65,14 +64,15 @@ from integrations.types import (
     Provider,
     RefundStatus,
 )
-from models import Product
 from main import app
+from models import Product
+from tests.postgres_test_support import requires_disposable_postgres
 from tests.test_integration_models import _require_disposable_postgres_url
 
+UTC = UTC
 
-UTC = timezone.utc
 
-
+@requires_disposable_postgres
 class IntegrationFeaturePostgresAcceptanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -382,7 +382,6 @@ class IntegrationFeaturePostgresAcceptanceTests(unittest.TestCase):
                     now=self.now,
                 )
                 export_id = export_job.id
-                public_id = export_job.public_id
             with self.Session.begin() as db:
                 generated = generate_export_job(
                     db,

@@ -2,9 +2,9 @@
 
 > **For Codex:** Execute this plan task by task with red-green-refactor discipline and fresh verification evidence.
 
-**Goal:** Remove every application, integration-center, and Canvas password/token login while retaining non-login security controls and replacing purge password re-entry with an explicit confirmation phrase.
+**Goal:** Remove every application and integration-center password/token login while retaining non-login security controls and replacing purge password re-entry with an explicit confirmation phrase.
 
-**Architecture:** Requests receive a fixed trusted-intranet actor for rate limiting and audit ownership, but no credential is read or validated. Integration mutations use a local integration actor digest rather than an administrator session. Canvas paid operations use the same open intranet boundary as the rest of the application. Host/Origin validation, request IDs, rate limits, audit writes, credential encryption, and dangerous-action confirmation remain independent controls.
+**Architecture:** Requests receive a fixed trusted-intranet actor for rate limiting and audit ownership, but no credential is read or validated. Integration mutations use a local integration actor digest rather than an administrator session. Host/Origin validation, request IDs, rate limits, audit writes, credential encryption, and dangerous-action confirmation remain independent controls.
 
 **Tech Stack:** FastAPI, Pydantic v2, SQLAlchemy, Jinja2, TypeScript, Vite, Vitest, Playwright, Python unittest.
 
@@ -65,33 +65,7 @@
 5. Remove `password_invalid` audit semantics from active production/frontend code.
 6. Re-run focused management and audit tests until green.
 
-## Task 4: Remove Canvas access-token gates
-
-**Files:**
-- Modify: `routers/canvas/__init__.py`
-- Modify: `routers/canvas/exports.py`
-- Modify: `routers/canvas/generations.py`
-- Modify: `routers/canvas/providers.py`
-- Modify: `frontend/canvas/src/api/generations.ts`
-- Modify: `frontend/canvas/src/components/workspace.ts`
-- Modify: `frontend/canvas/src/admin.ts`
-- Modify: relevant Vitest tests
-- Modify: `config.py`
-- Modify: `scripts/e2e_server.py`
-- Delete: `routers/canvas/access.py`
-- Delete: `services/canvas/access.py`
-- Delete: `frontend/canvas/src/components/access-dialog.ts`
-- Replace: `tests/test_canvas_access.py` with passwordless route coverage
-
-1. Rewrite Canvas access tests to prove paid endpoints are governed only by their normal validation/configuration and never return access-token `401/503` responses.
-2. Update frontend tests to prove generation and provider actions do not request an unlock token.
-3. Run focused Python/Vitest tests and confirm failure against the existing access gate.
-4. Remove access router, service, dependencies, API methods, dialogs, CSS, configuration, and E2E token injection.
-5. Keep provider API-key forms masked and unchanged.
-6. Run TypeScript typecheck, Vitest, and Canvas Python tests until green.
-7. Rebuild `static/canvas` and search the shipped bundle for access-token/login prompts.
-
-## Task 5: Remove obsolete configuration and documentation
+## Task 4: Remove obsolete configuration and documentation
 
 **Files:**
 - Modify: `.env.example`
@@ -102,7 +76,7 @@
 
 1. Add assertions that password-login environment keys and instructions are absent from shipped examples and runtime setup.
 2. Run focused documentation/configuration tests and confirm failure.
-3. Remove `FACAI_AUTH_*`, role tokens, integration password/session keys, and Canvas access keys from examples, scripts, and docs.
+3. Remove `FACAI_AUTH_*`, role tokens, and integration password/session keys from examples, scripts, and docs.
 4. Change integration secret generation to emit only secrets still required for credential encryption/OAuth.
 5. Document that any reachable client has full access and the service must remain on a trusted, access-controlled network.
 6. Re-run the focused tests and repository searches until green.
@@ -114,11 +88,10 @@
 
 1. Run `python -m compileall -q .` (excluding dependency/cache directories if needed).
 2. Run `python -m unittest discover -s tests -q`.
-3. Run `npm.cmd run typecheck:canvas` and `npm.cmd run test:canvas`.
-4. Run `npm.cmd run test:e2e` (which rebuilds Canvas first).
+3. Run `npm.cmd run test:e2e`.
 5. Run `python -m pip check` and the repository dependency audit commands available in the workspace.
 6. Start/restart the supervised application only after identifying the process/workspace relationship.
-7. Verify `/healthz`, `/readyz`, `/app`, `/app/api-connections`, `/app/canvas`, representative APIs, legacy login redirects, and absence of password prompts in a browser.
+7. Verify `/healthz`, `/readyz`, `/app`, `/app/api-connections`, representative APIs, legacy login redirects, and absence of password prompts in a browser.
 8. Run `git diff --check`, record branch/HEAD, list every uncommitted file, and report any remaining password references that are third-party credentials rather than login gates.
 
 ## Completion constraints

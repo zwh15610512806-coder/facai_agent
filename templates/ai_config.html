@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AI配置 - 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=canvas-usability-20260716">
+<title>AI配置 - 抖音运营agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260720-2">
 <script src="/static/vendor/lucide.min.js"></script>
-<script src="/static/js/common.js?v=canvas-usability-20260716"></script>
+<script src="/static/js/common.js?v=app-shell-20260720-2"></script>
 <style>
 body{background:var(--bg)}
 .ai-config-main{max-width:1440px;padding-top:24px}
@@ -57,52 +57,18 @@ body{background:var(--bg)}
 .provider-row-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:900}
 .provider-row-meta{font-size:11px;color:var(--text-3);line-height:1.55;overflow-wrap:anywhere}
 .provider-env-note{margin:-6px 0 12px}
-.ai-config-tabs{display:inline-flex;gap:4px;margin:0 0 18px;padding:4px;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--surface-darker)}
-.ai-config-tab{min-height:38px;padding:7px 16px;border:0;border-radius:var(--r-pill);background:transparent;color:var(--text-2);font-weight:900;cursor:pointer}
-.ai-config-tab[aria-selected="true"]{background:var(--surface);color:var(--facai);box-shadow:var(--s-1)}
-.ai-config-tab:focus-visible{outline:3px solid var(--facai-soft);outline-offset:2px}
-.ai-config-section[hidden]{display:none}
-.canvas-model-admin-shell{display:grid;gap:16px}
-.canvas-model-admin-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
-.canvas-model-admin-intro h2{margin:0 0 6px;font-size:18px}
-.canvas-model-admin-intro p{max-width:780px;margin:0;color:var(--text-2);font-size:13px;line-height:1.7}
-#canvas-model-admin{min-height:280px}
-#canvas-model-admin .canvas-model-manager{display:grid;grid-template-columns:minmax(280px,.8fr) minmax(0,1.4fr);gap:16px;align-items:start}
-#canvas-model-admin .canvas-model-manager>h2,#canvas-model-admin .canvas-model-manager>.canvas-model-manager-notice{grid-column:1/-1}
-#canvas-model-admin .canvas-model-manager h2{margin:0;font-size:18px}
-#canvas-model-admin .canvas-model-manager-notice{margin:0;padding:10px 12px;border-radius:var(--r-sm);background:var(--facai-ghost);color:var(--text-2);font-size:12px;line-height:1.6}
-#canvas-model-admin .canvas-provider-list,#canvas-model-admin .canvas-model-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
-#canvas-model-admin .canvas-provider-row,#canvas-model-admin .canvas-model-row,#canvas-model-admin .canvas-provider-editor,#canvas-model-admin .canvas-model-profile-editor{border:1px solid var(--border);border-radius:var(--r);background:var(--surface);box-shadow:var(--s-1);padding:16px}
-#canvas-model-admin .canvas-provider-row,#canvas-model-admin .canvas-model-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
-#canvas-model-admin .canvas-provider-row div,#canvas-model-admin .canvas-model-row{min-width:0}
-#canvas-model-admin .canvas-provider-row div{display:grid;gap:3px}
-#canvas-model-admin .canvas-provider-row span,#canvas-model-admin .canvas-model-row span{color:var(--text-3);font-size:11px;overflow-wrap:anywhere}
-#canvas-model-admin .canvas-model-basic-fields,#canvas-model-admin .canvas-model-capability-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-#canvas-model-admin form{display:grid;gap:12px}
-#canvas-model-admin label{display:grid;gap:6px;font-size:12px;font-weight:900;color:var(--text-2)}
-#canvas-model-admin input,#canvas-model-admin select,#canvas-model-admin textarea{width:100%;min-height:40px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);font:inherit}
-#canvas-model-admin textarea{min-height:116px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}
-#canvas-model-admin button{min-height:38px;padding:7px 13px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);font-weight:900;cursor:pointer}
-#canvas-model-admin button[type="submit"]{border-color:var(--facai);background:var(--facai);color:#fff}
-#canvas-model-admin button:focus-visible,#canvas-model-admin input:focus-visible,#canvas-model-admin select:focus-visible,#canvas-model-admin textarea:focus-visible{outline:3px solid var(--facai-soft);outline-offset:2px}
-#canvas-model-admin details{border:1px solid var(--border-soft);border-radius:var(--r-sm);background:var(--surface-darker);padding:10px}
-#canvas-model-admin summary{cursor:pointer;font-size:12px;font-weight:900;color:var(--text-2)}
-#canvas-model-admin fieldset{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;border:1px solid var(--border-soft);border-radius:var(--r-sm);padding:12px}
-#canvas-model-admin fieldset label{display:flex;align-items:center;gap:7px;font-weight:700}
-#canvas-model-admin fieldset input{width:auto;min-height:auto}
 @media (max-width:1100px){.ai-config-grid,.config-layout{grid-template-columns:1fr}.interface-list{max-height:none}.ai-config-head{align-items:flex-start;flex-direction:column}}
-@media (max-width:1100px){ #canvas-model-admin .canvas-model-manager{grid-template-columns:1fr}}
-@media (max-width:680px){.form-grid,.metric-grid{grid-template-columns:1fr}.ai-config-main{padding-left:12px;padding-right:12px}.panel{padding:16px}.ai-config-title{font-size:1.5rem}.ai-config-tabs{display:flex}.ai-config-tab{flex:1;padding-inline:10px}.canvas-model-admin-intro{display:grid}#canvas-model-admin fieldset,#canvas-model-admin .canvas-model-basic-fields,#canvas-model-admin .canvas-model-capability-grid{grid-template-columns:1fr}}
+@media (max-width:680px){.form-grid,.metric-grid{grid-template-columns:1fr}.ai-config-main{padding-left:12px;padding-right:12px}.panel{padding:16px}.ai-config-title{font-size:1.5rem}}
 </style>
 </head>
 <body>
 <nav class="nav">
 <div class="nav-inner">
 <div class="nav-brand-group">
-<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/douyin-logo.svg" alt="抖音"></span><span>抖音运营agent</span></a>
 </div>
 <div class="nav-links">
-<a href="/app" class="nav-link">AI工作</a><a href="/app?workspace=canvas" class="nav-link">产品视觉画布</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/creators" class="nav-link">达人工作</a><a href="/app/operations" class="nav-link">运营数据中台</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a>
+<a href="/app" class="nav-link">AI工作</a><a href="/app/generate" class="nav-link">生成脚本</a><a href="/app/rewrite" class="nav-link">脚本改写</a><a href="/app/products" class="nav-link">产品知识库</a><a href="/app/creators" class="nav-link">达人工作</a><a href="/app/operations" class="nav-link">运营数据中台</a><a href="/app/templates" class="nav-link">脚本模板库</a><a href="/app/history" class="nav-link">生成历史</a><a href="/app/search" class="nav-link">检索</a>
 </div></div></nav>
 <main class="page-main ai-config-main">
   <div class="ai-config-head">
@@ -112,11 +78,7 @@ body{background:var(--bg)}
     </div>
     <button class="btn btn-soft btn-sm" type="button" onclick="loadAll()"><i data-lucide="refresh-cw"></i>刷新</button>
   </div>
-  <div class="ai-config-tabs" role="tablist" aria-label="AI 模型配置类型">
-    <button id="aiConfigTextTab" class="ai-config-tab" type="button" role="tab" aria-controls="aiConfigTextSection" aria-selected="true">文本／对话模型</button>
-    <button id="aiConfigImageTab" class="ai-config-tab" type="button" role="tab" aria-controls="aiConfigImageSection" aria-selected="false">图像生成模型</button>
-  </div>
-  <section id="aiConfigTextSection" class="ai-config-section ai-config-grid" role="tabpanel" aria-labelledby="aiConfigTextTab">
+  <section class="ai-config-grid">
     <aside class="panel">
       <h2 class="panel-title">接口</h2>
       <div id="interfaceList" class="interface-list"></div>
@@ -204,16 +166,6 @@ body{background:var(--bg)}
         </div>
       </section>
     </section>
-  </section>
-  <section id="aiConfigImageSection" class="ai-config-section canvas-model-admin-shell" role="tabpanel" aria-labelledby="aiConfigImageTab" hidden>
-    <div class="panel canvas-model-admin-intro">
-      <div>
-        <h2>图像生成模型</h2>
-        <p>集中管理 Seedream 5.0 Pro 与任意第三方图像模型的供应商、密钥、Base URL、能力和连通性。产品项目中只负责选择模型，不在画布内维护敏感配置。</p>
-      </div>
-      <a class="btn btn-soft btn-sm" href="/app?workspace=canvas">返回产品视觉画布</a>
-    </div>
-    <div id="canvas-model-admin" data-api-base="/api/canvas" aria-live="polite"></div>
   </section>
 </main>
 <script>
@@ -477,20 +429,9 @@ function renderUsageTable(records){
  }).join('');
 }
 
-function setConfigTab(tab){
- const image=tab==='image';
- document.getElementById('aiConfigTextTab').setAttribute('aria-selected',image?'false':'true');
- document.getElementById('aiConfigImageTab').setAttribute('aria-selected',image?'true':'false');
- document.getElementById('aiConfigTextSection').hidden=image;
- document.getElementById('aiConfigImageSection').hidden=!image;
-}
-
 document.addEventListener('DOMContentLoaded',function(){
- document.getElementById('aiConfigTextTab').addEventListener('click',function(){setConfigTab('text');});
- document.getElementById('aiConfigImageTab').addEventListener('click',function(){setConfigTab('image');});
  loadAll();renderIcons();
 });
 </script>
-<script type="module" src="/static/canvas/canvas-admin.js?v=canvas-usability-20260716"></script>
 </body>
 </html>

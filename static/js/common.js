@@ -175,6 +175,27 @@
     });
   }
 
+  async function fetchAllProducts(params) {
+    var query = new URLSearchParams(params || {});
+    var items = [];
+    var page = 1;
+    var totalPages = 1;
+    do {
+      query.set("page", String(page));
+      query.set("per_page", "100");
+      var response = await fetch("/api/products/page?" + query.toString());
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      var payload = await response.json();
+      if (!payload || !Array.isArray(payload.items)) {
+        throw new Error("Invalid paged product response");
+      }
+      items = items.concat(payload.items);
+      totalPages = Math.max(0, Number(payload.total_pages || 0));
+      page += 1;
+    } while (page <= totalPages);
+    return items;
+  }
+
   function isCurrentTool(item, pathname) {
     pathname = String(pathname || '/').split('?')[0].replace(/\/+$/, '') || '/';
     return pathname === item.href || pathname.indexOf(item.href + '/') === 0;
@@ -294,6 +315,7 @@
     formatApiErrorMessage: formatApiErrorMessage,
     withBusyButton: withBusyButton,
     fetchWithTimeout: fetchWithTimeout,
+    fetchAllProducts: fetchAllProducts,
     renderPager: renderPager,
     toolLinks: Object.freeze(TOOL_LINKS.map(function (item) {
       return Object.freeze({label: item.label, href: item.href, icon: item.icon});

@@ -14,10 +14,10 @@ import re
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 
 import creator_models  # noqa: F401
 import models  # noqa: F401
+from alembic import op
 from database import core_sqlite_metadata
 
 revision: str = "20260713_0001"

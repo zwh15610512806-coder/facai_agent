@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = (ROOT / ".venv").resolve()
-LOCKS = (ROOT / "requirements.lock", ROOT / "requirements.canvas.lock")
+LOCKS = (ROOT / "requirements.lock",)
 LOCK_MARKER = VENV / ".facai-requirements.sha256"
 
 

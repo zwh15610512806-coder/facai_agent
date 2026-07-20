@@ -3,9 +3,8 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Venv = Join-Path $Root ".venv"
 $Python = Join-Path $Venv "Scripts\python.exe"
 $Lock = Join-Path $Root "requirements.lock"
-$CanvasLock = Join-Path $Root "requirements.canvas.lock"
 
-if (-not (Test-Path $Lock) -or -not (Test-Path $CanvasLock)) {
+if (-not (Test-Path $Lock)) {
     throw "A reviewed dependency lock is missing; dependency resolution must be reviewed before bootstrap"
 }
 if (-not (Test-Path $Python)) {
@@ -19,9 +18,6 @@ if (-not (Test-Path $Python)) {
 & $Python -m pip install --require-hashes -r $Lock
 if ($LASTEXITCODE -ne 0) { throw "Locked dependency installation failed" }
 $LASTEXITCODE = 0
-& $Python -m pip install --require-hashes -r $CanvasLock
-if ($LASTEXITCODE -ne 0) { throw "Canvas dependency installation failed" }
-
 $Digest = & $Python -c "from scripts.verify_runtime import verified_lock_digest; print(verified_lock_digest())"
 if ($LASTEXITCODE -ne 0) { throw "Unable to calculate verified dependency lock digest" }
 Set-Content -LiteralPath (Join-Path $Venv ".facai-requirements.sha256") -Value $Digest -Encoding ascii

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 import creator_models  # noqa: F401 - registers creator tables
 import models  # noqa: F401 - registers application tables
+from alembic import context
 from database import core_sqlite_metadata
 
 config = context.config

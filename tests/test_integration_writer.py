@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import json
 import unittest
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from pydantic import ValidationError
@@ -37,7 +37,6 @@ from integration_models import (
     IntegrationSyncError,
     IntegrationSyncRun,
 )
-
 from integrations.schemas import (
     NormalizedAdAccount,
     NormalizedAdBalanceSnapshot,
@@ -71,6 +70,7 @@ from integrations.types import (
     ConnectionType,
     FinanceTransactionStatus,
     MetricGranularity,
+    NormalizedRecord,
     OrderStatus,
     ProductStatus,
     Provider,
@@ -81,11 +81,10 @@ from integrations.types import (
     SyncSource,
     SyncStatus,
 )
-from integrations.types import NormalizedRecord
+from tests.postgres_test_support import requires_disposable_postgres
 from tests.test_integration_models import _require_disposable_postgres_url
 
-
-NOW = datetime(2026, 7, 14, 2, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 14, 2, 0, tzinfo=UTC)
 
 SCHEMA_BY_RESOURCE = {
     ResourceType.SHOPS: NormalizedShop,
@@ -583,6 +582,7 @@ class IntegrationWriterContractTests(unittest.TestCase):
                 )
 
 
+@requires_disposable_postgres
 class IntegrationWriterPostgresTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

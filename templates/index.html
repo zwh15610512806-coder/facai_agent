@@ -3,19 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>生成脚本 — 法采新媒体运营 Agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=canvas-usability-20260716">
+<title>生成脚本 — 抖音运营agent</title>
+<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260720-2">
 </head>
 <body>
 
 <nav class="nav">
 <div class="nav-inner">
 <div class="nav-brand-group">
-<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/facai-logo.png" alt="法采"></span><span>法采新媒体运营 Agent</span></a>
+<a href="/app" class="nav-brand"><span class="nav-brand-mark"><img src="/static/images/douyin-logo.svg" alt="抖音"></span><span>抖音运营agent</span></a>
 </div>
 <div class="nav-links">
 <a href="/app" class="nav-link">AI工作</a>
-<a href="/app?workspace=canvas" class="nav-link">产品视觉画布</a>
 <a href="/app/generate" class="nav-link on">生成脚本</a>
 <a href="/app/rewrite" class="nav-link">脚本改写</a>
 <a href="/app/products" class="nav-link">产品知识库</a>
@@ -540,7 +539,7 @@
 
 <!-- Lucide Icons -->
 <script src="/static/vendor/lucide.min.js"></script>
-<script src="/static/js/common.js?v=canvas-usability-20260716"></script>
+<script src="/static/js/common.js?v=app-shell-20260720-2"></script>
 
 <script>
 function scrollToStep1(){document.getElementById('step1').scrollIntoView({behavior:'smooth',block:'start'});}
@@ -660,9 +659,9 @@ function updateCategoryCountsFromProducts(products){
 
 async function loadProducts(){
  const s=document.getElementById('searchInput').value;
- let u='/api/products/?';if(currentCategory)u+='category='+encodeURIComponent(currentCategory)+'&';if(s)u+='search='+encodeURIComponent(s)+'&';
- try{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);state.products=await r.json();if(!currentCategory&&!s)updateCategoryCountsFromProducts(state.products);renderProducts();}
- catch(e){document.getElementById('productGrid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)"><i data-lucide="wifi-off" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4"></i><div style="font-weight:600;margin-bottom:4px">服务器未启动</div><div style="font-size:14px">请双击 run.bat 启动服务，然后刷新页面</div></div>';if(window.lucide)lucide.createIcons();}
+ const params={};if(currentCategory)params.category=currentCategory;if(s)params.search=s;
+ try{state.products=await FacaiUI.fetchAllProducts(params);if(!currentCategory&&!s)updateCategoryCountsFromProducts(state.products);renderProducts();}
+ catch(e){console.error('产品加载失败',e);document.getElementById('productGrid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)"><i data-lucide="wifi-off" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4"></i><div style="font-weight:600;margin-bottom:4px">产品加载失败</div><div style="font-size:14px">请刷新页面重试；若仍失败，请检查服务状态</div></div>';if(window.lucide)lucide.createIcons();}
 }
 let currentCategory='';
 function selectCategory(cat){

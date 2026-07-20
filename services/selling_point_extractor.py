@@ -1,8 +1,10 @@
 """从产品资料文件中提取卖点，替换原有卖点话术"""
-import os
+import json
 import logging
-from typing import List, Dict
+import os
+
 from services.ai_service import ai_service
+from services.bounded_executor import run_blocking
 
 logger = logging.getLogger(__name__)
 
@@ -11,35 +13,35 @@ def read_file_content(file_path: str) -> str:
     """读取各类文件内容为纯文本"""
     ext = os.path.splitext(file_path)[1].lower()
 
-    if ext == '.txt':
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
+    if ext == ".txt":
+        with open(file_path, encoding="utf-8") as file:
+            return file.read()
 
-    if ext in ('.pdf',):
+    if ext == ".pdf":
         try:
             from pdfminer.high_level import extract_text
             return extract_text(file_path)
         except ImportError:
             try:
                 import PyPDF2
-                text = ''
-                with open(file_path, 'rb') as f:
-                    reader = PyPDF2.PdfReader(f)
+                text = ""
+                with open(file_path, "rb") as file:
+                    reader = PyPDF2.PdfReader(file)
                     for page in reader.pages:
-                        text += page.extract_text() or ''
+                        text += page.extract_text() or ""
                 return text
             except ImportError:
-                return f"[PDF文件需安装 pdfminer.six 或 PyPDF2 来读取]"
+                return "[PDF文件需安装 pdfminer.six 或 PyPDF2 来读取]"
 
-    if ext in ('.docx', '.doc'):
+    if ext in (".docx", ".doc"):
         try:
             from docx import Document
             doc = Document(file_path)
-            return '\n'.join([p.text for p in doc.paragraphs])
+            return "\n".join([p.text for p in doc.paragraphs])
         except ImportError:
-            return f"[Word文件需安装 python-docx 来读取]"
+            return "[Word文件需安装 python-docx 来读取]"
 
-    if ext in ('.xlsx', '.xls'):
+    if ext in (".xlsx", ".xls"):
         try:
             import pandas as pd
             df = pd.read_excel(file_path)
@@ -48,27 +50,31 @@ def read_file_content(file_path: str) -> str:
             for col in df.columns:
                 for val in df[col].dropna():
                     texts.append(str(val))
-            return '\n'.join(texts)
+            return "\n".join(texts)
         except ImportError:
-            return f"[Excel文件需安装 openpyxl/pandas 来读取]"
+            return "[Excel文件需安装 openpyxl/pandas 来读取]"
 
-    if ext in ('.png', '.jpg', '.jpeg'):
-        return f"[图片文件暂不支持文字提取]"
+    if ext in (".png", ".jpg", ".jpeg"):
+        return "[图片文件暂不支持文字提取]"
 
     # 默认当文本读
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    except:
+        with open(file_path, encoding="utf-8") as file:
+            return file.read()
+    except (OSError, UnicodeError):
         return f"[无法读取文件: {file_path}]"
 
 
-async def extract_selling_points(file_path: str, product_name: str, product_category: str) -> List[Dict]:
+async def extract_selling_points(
+    file_path: str,
+    product_name: str,
+    product_category: str,
+) -> list[dict]:
     """从文件中提取卖点，返回卖点列表"""
-    content = read_file_content(file_path)
+    content = await run_blocking(read_file_content, file_path)
 
-    if not content or content.startswith('['):
-        logger.warning(f"无法读取文件内容: {file_path}")
+    if not content or content.startswith("["):
+        logger.warning("无法读取文件内容: %s", file_path)
         return []
 
     # 截断过长内容
@@ -107,16 +113,19 @@ async def extract_selling_points(file_path: str, product_name: str, product_cate
             )
 
             # 提取 JSON
-            import json
-            start = result.find('[')
-            end = result.rfind(']') + 1
+            start = result.find("[")
+            end = result.rfind("]") + 1
             if start >= 0 and end > start:
                 return json.loads(result[start:end])
-        except Exception as e:
-            logger.error(f"AI提取卖点失败: {e}")
+        except Exception:
+            logger.exception("AI提取卖点失败")
 
     # 离线回退：简单拆分
-    lines = [l.strip() for l in content.split('\n') if l.strip() and len(l.strip()) > 10]
+    lines = [
+        line.strip()
+        for line in content.split("\n")
+        if line.strip() and len(line.strip()) > 10
+    ]
     points = []
     for i, line in enumerate(lines[:5]):
         points.append({

@@ -1,13 +1,11 @@
-import re
 import unittest
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendCommonJsTests(unittest.TestCase):
-    SHARED_TOOLS_ASSET_VERSION = "canvas-usability-20260716"
+    SHARED_TOOLS_ASSET_VERSION = "app-shell-20260720-2"
     TOOL_TEMPLATES = [
         "index.html",
         "rewrite.html",
@@ -34,7 +32,23 @@ class FrontendCommonJsTests(unittest.TestCase):
         self.assertIn("formatApiErrorMessage", common)
         self.assertIn("withBusyButton", common)
         self.assertIn("fetchWithTimeout", common)
+        self.assertIn("fetchAllProducts", common)
         self.assertIn("renderPager", common)
+
+    def test_product_pages_use_the_bounded_paged_api(self):
+        common = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8")
+        self.assertIn('fetch("/api/products/page?" + query.toString())', common)
+        self.assertIn('query.set("per_page", "100")', common)
+        for name in ("index.html", "products.html", "rewrite.html"):
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+            self.assertIn("FacaiUI.fetchAllProducts", page, name)
+            self.assertNotIn("fetch('/api/products/')", page, name)
+
+    def test_product_pages_show_an_accurate_load_error(self):
+        for name in ("index.html", "products.html"):
+            page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
+            self.assertIn("产品加载失败", page, name)
+            self.assertNotIn("服务器未启动", page, name)
 
     def test_common_js_formats_structured_api_errors(self):
         common = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8")
@@ -51,7 +65,7 @@ class FrontendCommonJsTests(unittest.TestCase):
             version = self.SHARED_TOOLS_ASSET_VERSION
             self.assertIn(f'/static/css/style.css?v={version}', page, name)
             self.assertIn(f'/static/js/common.js?v={version}', page, name)
-            self.assertIn('href="/app?workspace=canvas" class="nav-link', page, name)
+            self.assertNotIn('workspace=canvas', page, name)
             self.assertNotIn('data-import-fab', page, name)
             self.assertNotIn('ai-config-fab', page, name)
 
@@ -75,12 +89,12 @@ class FrontendCommonJsTests(unittest.TestCase):
         self.assertIn("initToolNavigation", common)
         self.assertNotIn("href: '/app/canvas'", common)
 
-    def test_canvas_is_the_primary_nav_item_immediately_after_ai_work(self):
-        canvas_link = r'<a href="/app\?workspace=canvas"[^>]*>产品视觉画布</a>'
+    def test_generate_is_the_primary_nav_item_immediately_after_ai_work(self):
+        generate_link = r'<a href="/app/generate"[^>]*>生成脚本</a>'
         ai_link = r'<a href="/app"[^>]*>AI工作</a>'
         for name in self.TOOL_TEMPLATES:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
-            self.assertRegex(page, ai_link + r"\s*" + canvas_link, name)
+            self.assertRegex(page, ai_link + r"\s*" + generate_link, name)
 
     def test_mobile_tools_links_are_built_from_the_same_array(self):
         common = (ROOT / "static" / "js" / "common.js").read_text(encoding="utf-8")

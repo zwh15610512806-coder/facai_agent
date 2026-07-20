@@ -87,9 +87,9 @@ class PasswordlessIntegrationAccessTests(unittest.TestCase):
                 return_value=self._ready_settings(),
             ),
         ):
-            client = TestClient(app, raise_server_exceptions=False)
-            page = client.get("/app/api-connections", follow_redirects=False)
-            api = client.get("/api/integrations/providers")
+            with TestClient(app, raise_server_exceptions=False) as client:
+                page = client.get("/app/api-connections", follow_redirects=False)
+                api = client.get("/api/integrations/providers")
 
         self.assertEqual(page.status_code, 200)
         self.assertEqual(api.status_code, 200)
@@ -112,27 +112,6 @@ class PasswordlessIntegrationAccessTests(unittest.TestCase):
             PurgeConnectionRequest.model_validate(
                 {"password": "obsolete", "confirmation": "测试店铺"}
             )
-
-
-class PasswordlessCanvasAccessTests(unittest.TestCase):
-    def test_canvas_access_token_routes_are_absent(self):
-        client = TestClient(app, raise_server_exceptions=False)
-
-        status = client.get("/api/canvas/access/status")
-        unlock = client.post("/api/canvas/access/unlock", json={"token": "obsolete"})
-
-        self.assertEqual(status.status_code, 404)
-        self.assertEqual(unlock.status_code, 404)
-
-    def test_paid_canvas_mutations_reach_normal_validation_without_token(self):
-        response = TestClient(app, raise_server_exceptions=False).post(
-            "/api/canvas/model-providers",
-            json={},
-        )
-
-        self.assertEqual(response.status_code, 422)
-        self.assertNotIn("access", str(response.json()).lower())
-
 
 if __name__ == "__main__":
     unittest.main()

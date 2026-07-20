@@ -2,27 +2,25 @@
 
 from __future__ import annotations
 
-from contextlib import closing
-from contextlib import redirect_stdout
-from dataclasses import FrozenInstanceError, fields, replace
 import hashlib
 import io
 import json
 import os
-from pathlib import Path
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing, redirect_stdout
+from dataclasses import FrozenInstanceError, fields, replace
+from pathlib import Path
 from unittest.mock import patch
 
-from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import (
-    Column,
     JSON,
+    Column,
     MetaData,
     String,
     Table,
@@ -34,16 +32,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import SQLAlchemyError
 
-import commerce_models
-import creator_models
-import integration_models
-import models
+from alembic import command
 from database import Base
 from integrations.db_safety import assert_disposable_postgres
-
 from integrations.migration import (
-    BackupReport,
     LEGACY_COLUMN_ADAPTERS,
+    BackupReport,
     LegacyColumnAdapter,
     MigrationError,
     MigrationReport,
@@ -52,7 +46,7 @@ from integrations.migration import (
     backup_sqlite_source,
     migrate_sqlite_to_postgres,
 )
-
+from tests.postgres_test_support import requires_disposable_postgres
 
 ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = ROOT / "alembic.ini"
@@ -671,6 +665,7 @@ class PostgresCutoverRunbookTests(unittest.TestCase):
                 self.assertIn(required, content)
 
 
+@requires_disposable_postgres
 class SQLiteToPostgresMigrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

@@ -1,13 +1,20 @@
 """Consistent SQLite backups, retention, offsite copy, and restore verification."""
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import sqlite3
 import tempfile
+import threading
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger("facai.backup")
+_scheduler_lock = threading.Lock()
+_scheduler_stop = threading.Event()
+_scheduler_thread: threading.Thread | None = None
 
 
 def _resolved_child(directory: Path, path: Path) -> Path:
@@ -186,3 +193,49 @@ def ensure_configured_daily_backup() -> Path | None:
         return None
     offsite = os.getenv("FACAI_BACKUP_OFFSITE_DIR", "").strip() or None
     return ensure_daily_backup(source, offsite_dir=offsite)
+
+
+def _backup_scheduler_loop(check_interval_seconds: float) -> None:
+    while not _scheduler_stop.wait(check_interval_seconds):
+        try:
+            ensure_configured_daily_backup()
+        except Exception:
+            logger.exception("Scheduled daily backup failed")
+
+
+def start_backup_scheduler(*, check_interval_seconds: float | None = None) -> None:
+    """Check throughout a long-running process whether today's backup exists."""
+
+    global _scheduler_thread
+    if check_interval_seconds is None:
+        try:
+            check_interval_seconds = float(
+                os.getenv("FACAI_BACKUP_CHECK_INTERVAL_SECONDS", "3600")
+            )
+        except ValueError:
+            check_interval_seconds = 3600.0
+        check_interval_seconds = max(60.0, check_interval_seconds)
+    elif check_interval_seconds <= 0:
+        raise ValueError("backup scheduler interval must be positive")
+
+    with _scheduler_lock:
+        if _scheduler_thread is not None and _scheduler_thread.is_alive():
+            return
+        _scheduler_stop.clear()
+        _scheduler_thread = threading.Thread(
+            target=_backup_scheduler_loop,
+            args=(float(check_interval_seconds),),
+            name="facai-backup-scheduler",
+            daemon=True,
+        )
+        _scheduler_thread.start()
+
+
+def stop_backup_scheduler(*, join_timeout_seconds: float = 5.0) -> None:
+    global _scheduler_thread
+    with _scheduler_lock:
+        thread = _scheduler_thread
+        _scheduler_thread = None
+        _scheduler_stop.set()
+    if thread is not None and thread is not threading.current_thread():
+        thread.join(timeout=max(0.0, join_timeout_seconds))

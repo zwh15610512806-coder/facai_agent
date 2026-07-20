@@ -1,6 +1,5 @@
 """短视频脚本生成 Agent - FastAPI (本地修复版)"""
 import ipaddress
-import json
 import logging
 import os
 import re
@@ -9,9 +8,9 @@ import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlsplit
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -25,7 +24,7 @@ from config import (
     APP_VERSION,
     PUBLIC_TUNNEL_HOST_SUFFIXES,
 )
-from database import SessionLocal, engine, get_db, init_db
+from database import SessionLocal, init_db
 from routers import (
     ai_config,
     creators,
@@ -35,12 +34,11 @@ from routers import (
     reference_scripts,
     scripts,
     search_local,
+)
+from routers import (
     integrations as integration_routes,
 )
-from sqlalchemy import text
 from routers import templates as tpl_routes
-from routers.canvas import router as canvas_router
-from sqlalchemy.orm import Session
 from services.access_control import (
     record_request_audit,
     request_limit_violation,
@@ -61,7 +59,7 @@ BASE_DIR = LOCAL
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    canvas_runtime_started = False
+    backup_scheduler_started = False
     vector_sync_started = False
     task_worker_started = False
     try:
@@ -73,24 +71,16 @@ async def lifespan(app: FastAPI):
                 apply_data_retention(session)
         except Exception:
             logging.getLogger("facai.retention").exception("Data retention failed")
-        from services.canvas.providers.bootstrap import bootstrap_builtin_image_profiles
-        from services.canvas.projects import recover_deleting_projects
-        from services.canvas.events import prune_all_canvas_events
-        from services.canvas.runtime import start_canvas_runtime
-
-        bootstrap_builtin_image_profiles(SessionLocal)
-        recover_deleting_projects(SessionLocal)
-        try:
-            prune_all_canvas_events(SessionLocal)
-        except Exception:
-            logging.getLogger("facai.canvas").exception("Canvas event pruning failed")
-        start_canvas_runtime(app, db_factory=SessionLocal)
-        canvas_runtime_started = True
-        from services.backup_manager import ensure_configured_daily_backup
+        from services.backup_manager import (
+            ensure_configured_daily_backup,
+            start_backup_scheduler,
+        )
         try:
             ensure_configured_daily_backup()
         except Exception:
             logging.getLogger("facai.backup").exception("Daily backup failed")
+        start_backup_scheduler()
+        backup_scheduler_started = True
         from services.job_runs import recover_interrupted_jobs
         recover_interrupted_jobs()
         from vector_store import init_vector_store
@@ -119,22 +109,18 @@ async def lifespan(app: FastAPI):
         )
         yield
     finally:
-        try:
-            if task_worker_started:
-                from services.task_queue import stop_task_worker
+        if backup_scheduler_started:
+            from services.backup_manager import stop_backup_scheduler
 
-                stop_task_worker()
-        finally:
-            try:
-                if vector_sync_started:
-                    from services.vector_sync import stop_vector_sync_worker
+            stop_backup_scheduler()
+        if task_worker_started:
+            from services.task_queue import stop_task_worker
 
-                    stop_vector_sync_worker()
-            finally:
-                if canvas_runtime_started:
-                    from services.canvas.runtime import stop_canvas_runtime
+            stop_task_worker()
+        if vector_sync_started:
+            from services.vector_sync import stop_vector_sync_worker
 
-                    stop_canvas_runtime(app)
+            stop_vector_sync_worker()
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION, description=APP_DESCRIPTION, lifespan=lifespan)
 app.add_middleware(
@@ -157,45 +143,17 @@ app.include_router(inspiration.router, prefix="/api/inspiration", tags=["inspira
 app.include_router(ai_config.router, prefix="/api/ai-config", tags=["ai-config"])
 app.include_router(search_local.router, prefix="/api/search-proxy", tags=["search"])
 app.include_router(creators.router, prefix="/api/creators", tags=["creators"])
-app.include_router(canvas_router, prefix="/api/canvas", tags=["canvas"])
 app.include_router(integration_routes.admin_router)
 app.include_router(integration_routes.operations_router)
 app.include_router(integration_routes.public_router)
 
 
-def _serialize_canvas_bootstrap(payload: dict[str, object]) -> str:
-    """Serialize Canvas page state without allowing an inline script escape."""
-
-    serialized = json.dumps(
-        payload,
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    )
-    return (
-        serialized.replace("&", "\\u0026")
-        .replace("<", "\\u003c")
-        .replace(">", "\\u003e")
-        .replace("\u2028", "\\u2028")
-        .replace("\u2029", "\\u2029")
-    )
-
-
-def _workbench_page_response(
-    request: Request,
-    *,
-    active_workspace: str,
-    project_id: str | None,
-):
+def _workbench_page_response(request: Request):
     return templates.TemplateResponse(
         request,
         "inspiration.html",
         {
             "request": request,
-            "active_workspace": active_workspace,
-            "canvas_bootstrap_json": _serialize_canvas_bootstrap(
-                {"apiBase": "/api/canvas", "projectId": project_id}
-            ),
         },
     )
 
@@ -582,48 +540,8 @@ def readyz():
 def login_page():
     return RedirectResponse(url="/app", status_code=303)
 @app.get("/app")
-def app_page(
-    request: Request,
-    workspace: str | None = None,
-    project_id: str | None = None,
-    db: Session = Depends(get_db),
-):
-    active_workspace = "canvas" if workspace == "canvas" else "ai"
-    if active_workspace == "canvas" and project_id is not None:
-        from services.canvas import projects as canvas_project_service
-
-        try:
-            canvas_project_service.get_project_snapshot(db, project_id=project_id)
-        except canvas_project_service.CanvasProjectNotFound as exc:
-            raise HTTPException(status_code=404, detail="Canvas project not found") from exc
-    return _workbench_page_response(
-        request,
-        active_workspace=active_workspace,
-        project_id=project_id if active_workspace == "canvas" else None,
-    )
-
-
-@app.get("/app/canvas")
-def canvas_page(request: Request):
-    return RedirectResponse(url="/app?workspace=canvas", status_code=303)
-
-
-@app.get("/app/canvas/{project_id}")
-def canvas_project_page(
-    request: Request,
-    project_id: str,
-    db: Session = Depends(get_db),
-):
-    from services.canvas import projects as canvas_project_service
-
-    try:
-        canvas_project_service.get_project_snapshot(db, project_id=project_id)
-    except canvas_project_service.CanvasProjectNotFound as exc:
-        raise HTTPException(status_code=404, detail="Canvas project not found") from exc
-    return RedirectResponse(
-        url=f"/app?{urlencode({'workspace': 'canvas', 'project_id': project_id})}",
-        status_code=303,
-    )
+def app_page(request: Request):
+    return _workbench_page_response(request)
 @app.get("/app/generate")
 def generate_page(request: Request): return templates.TemplateResponse(request, "index.html", {"request": request})
 @app.get("/app/products")

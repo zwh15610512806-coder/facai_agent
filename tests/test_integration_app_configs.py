@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session as SqlAlchemySession
 from sqlalchemy.orm import sessionmaker
 
 from database import Base, create_database_engine, get_db
+from integration_models import IntegrationAppConfig, IntegrationSecurityAudit
 from integrations.app_configs import upsert_provider_app_config
 from integrations.audit import write_security_audit
 from integrations.crypto import CredentialPurpose, decrypt_credential
@@ -34,9 +35,8 @@ from integrations.settings import (
     load_integration_settings,
 )
 from integrations.types import Provider
-from integration_models import IntegrationAppConfig, IntegrationSecurityAudit
 from main import app
-
+from tests.postgres_test_support import requires_disposable_postgres
 
 MASTER_KEY = b"m" * 32
 APP_CONFIG_TABLES = (
@@ -123,6 +123,7 @@ class AppConfigSchemaContractTests(unittest.TestCase):
         )
 
 
+@requires_disposable_postgres
 class IntegrationAppConfigEndpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

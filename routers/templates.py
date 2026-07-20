@@ -1,9 +1,23 @@
 """脚本模板 & 爆款脚本 API"""
-from fastapi import APIRouter, Depends, HTTPException, Query, Form, UploadFile, File
+import asyncio
+import hashlib
+import json
+import mimetypes
+import os
+import re
+import threading
+import uuid
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from database import get_db, SessionLocal
+
+from config import MAX_UPLOAD_SIZE
+from database import SessionLocal, get_db
 from models import (
     QianchuanImportBatch,
     QianchuanMaterialPerformance,
@@ -12,22 +26,14 @@ from models import (
     ViralScript,
 )
 from schemas import (
-    ScriptTemplateCreate, ScriptTemplateOut,
-    ViralScriptCreate, ViralScriptOut, ViralScriptPageOut, ApiResponse
+    ApiResponse,
+    ScriptTemplateCreate,
+    ScriptTemplateOut,
+    ViralScriptCreate,
+    ViralScriptOut,
+    ViralScriptPageOut,
 )
-from typing import List, Optional
-from datetime import date, datetime, timedelta
-from pathlib import Path
-import asyncio
-import hashlib
-import mimetypes
-import os
-import re
-import json
-import threading
-import uuid
-
-from config import MAX_UPLOAD_SIZE
+from services import task_queue
 from services.ai_service import ai_service
 from services.product_markdown_importer import normalize_product_name
 from services.qianchuan_importer import parse_qianchuan_workbook
@@ -659,6 +665,7 @@ def _run_workbook_import_task(payload: dict) -> None:
 
 
 from services.task_queue import register_task_handler
+
 register_task_handler("workbook_import", _run_workbook_import_task)
 
 
@@ -833,6 +840,20 @@ def _run_local_txt_scan(source_dir: str, category: str, video_type: str, tags: s
                 details={key: snapshot.get(key) for key in ("total", "processed", "success", "skipped", "error_count")},
                 error_summary=terminal_error,
             )
+
+
+def _run_local_txt_scan_task(payload: dict) -> None:
+    _run_local_txt_scan(
+        str(payload["source_dir"]),
+        str(payload.get("category") or ""),
+        str(payload.get("video_type") or ""),
+        str(payload.get("tags") or "本地txt"),
+        str(payload.get("product_name") or ""),
+        payload.get("job_id"),
+    )
+
+
+task_queue.register_task_handler("local_script_scan", _run_local_txt_scan_task)
 
 
 # ========== 脚本模板管理 ==========
@@ -1044,13 +1065,24 @@ def start_local_txt_scan(
             "job_id": job_id,
         })
 
-    thread = threading.Thread(
-        target=_run_local_txt_scan,
-        args=(source_dir, category, video_type, tags or "本地txt", product_name, job_id),
-        name="facai-local-txt-scan",
-        daemon=True,
-    )
-    thread.start()
+    task_payload = {
+        "source_dir": source_dir,
+        "category": category,
+        "video_type": video_type,
+        "tags": tags or "本地txt",
+        "product_name": product_name,
+        "job_id": job_id,
+    }
+    if task_queue.task_worker_status()["alive"]:
+        task_queue.enqueue_task("local_script_scan", task_payload, max_attempts=3)
+    else:
+        # Router-only test/dev apps do not run the main lifespan worker.
+        threading.Thread(
+            target=_run_local_txt_scan_task,
+            args=(task_payload,),
+            name="facai-local-txt-scan-fallback",
+            daemon=True,
+        ).start()
     return ApiResponse(message="本地脚本扫描已启动", data=_local_txt_scan_snapshot())
 
 

@@ -1,15 +1,17 @@
 import unittest
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
-    Enum as SqlEnum,
     Numeric,
     UniqueConstraint,
     inspect,
     text,
+)
+from sqlalchemy import (
+    Enum as SqlEnum,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB
@@ -58,8 +60,8 @@ from integrations.types import (
     ShipmentStatus,
 )
 from models import Product
+from tests.postgres_test_support import requires_disposable_postgres
 from tests.test_integration_models import _require_disposable_postgres_url
-
 
 COMMERCE_MODELS = (
     CommerceShop,
@@ -393,6 +395,7 @@ class CommerceModelMetadataTests(unittest.TestCase):
         self.assertEqual(actual, EXPECTED_ENUMS)
 
 
+@requires_disposable_postgres
 class PostgresCommerceModelTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -423,7 +426,7 @@ class PostgresCommerceModelTests(unittest.TestCase):
                 access_token_ciphertext="opaque-ciphertext",
                 access_token_tail="0000",
                 status=AuthorizationStatus.ACTIVE,
-                last_authorized_at=datetime.now(timezone.utc),
+                last_authorized_at=datetime.now(UTC),
             )
             session.add(authorization)
             session.flush()
@@ -446,7 +449,7 @@ class PostgresCommerceModelTests(unittest.TestCase):
 
     @staticmethod
     def _now():
-        return datetime.now(timezone.utc).replace(microsecond=0)
+        return datetime.now(UTC).replace(microsecond=0)
 
     def _base(self):
         return {

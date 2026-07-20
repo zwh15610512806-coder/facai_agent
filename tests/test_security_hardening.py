@@ -12,7 +12,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from main import app
 from tests.frontend_source import read_page_source
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -89,7 +88,7 @@ class SecurityHardeningTests(unittest.TestCase):
             "FACAI_VIEWER_TOKEN",
             "FACAI_INTEGRATIONS_ADMIN_PASSWORD_HASH",
             "FACAI_INTEGRATIONS_SESSION_SECRET",
-            "CANVAS_ACCESS_TOKEN",
+            "CANVAS_",
         ):
             self.assertNotIn(obsolete, content)
         self.assertRegex(content, r"(?m)^DEEPSEEK_API_KEY=change-me$")

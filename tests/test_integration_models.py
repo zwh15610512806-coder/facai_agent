@@ -1,18 +1,20 @@
 import dataclasses
 import os
 import unittest
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
-    Enum as SqlEnum,
     ForeignKeyConstraint,
     Text,
     UniqueConstraint,
     inspect,
     text,
+)
+from sqlalchemy import (
+    Enum as SqlEnum,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import make_url
@@ -31,28 +33,29 @@ from integration_models import (
     IntegrationSecurityAudit,
 )
 from integrations.types import (
+    AUTHORIZATION_STATUS_TRANSITIONS,
+    CAPABILITY_STAGE_TRANSITIONS,
+    CHECKPOINT_STATUS_TRANSITIONS,
+    CONNECTION_STATUS_TRANSITIONS,
+    EXPORT_STATUS_TRANSITIONS,
+    JOB_STATUS_TRANSITIONS,
+    SYNC_STATUS_TRANSITIONS,
     AccountIdentity,
     AccountStatus,
     AdEntityStatus,
     AuthorizationStatus,
-    AUTHORIZATION_STATUS_TRANSITIONS,
     Capability,
     CapabilityReport,
     CapabilityStage,
-    CAPABILITY_STAGE_TRANSITIONS,
     CheckpointStatus,
-    CHECKPOINT_STATUS_TRANSITIONS,
     ConnectionContext,
     ConnectionStatus,
-    CONNECTION_STATUS_TRANSITIONS,
     ConnectionType,
     EventIdScope,
     ExportStatus,
-    EXPORT_STATUS_TRANSITIONS,
     FetchPage,
     FinanceTransactionStatus,
     JobStatus,
-    JOB_STATUS_TRANSITIONS,
     JobType,
     NormalizedRecord,
     OrderStatus,
@@ -66,13 +69,12 @@ from integrations.types import (
     ShipmentStatus,
     SyncSource,
     SyncStatus,
-    SYNC_STATUS_TRANSITIONS,
     TimeWindow,
     TokenBundle,
     persisted_enum,
     utc_now,
 )
-
+from tests.postgres_test_support import requires_disposable_postgres
 
 CONTROL_MODELS = (
     IntegrationAppConfig,
@@ -433,7 +435,7 @@ class SharedTypeContractTests(unittest.TestCase):
                 self.assertIn("__slots__", vars(record))
 
     def test_sensitive_transport_values_are_excluded_from_repr(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         access_marker = "opaque-access-marker"
         refresh_marker = "opaque-refresh-marker"
         source_marker = "sanitized-source-private-marker"
@@ -523,7 +525,7 @@ class IntegrationModelTests(unittest.TestCase):
             access_token_ciphertext=OPAQUE_CIPHERTEXT,
             access_token_tail="0000",
             status=AuthorizationStatus.ACTIVE,
-            last_authorized_at=datetime.now(timezone.utc),
+            last_authorized_at=datetime.now(UTC),
         )
         session.add(authorization)
         session.flush()
@@ -616,7 +618,7 @@ class IntegrationModelTests(unittest.TestCase):
     def test_duplicate_oauth_state_hashes_fail(self):
         session = self.Session()
         try:
-            expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+            expires_at = datetime.now(UTC) + timedelta(minutes=10)
             state_hash = "a" * 64
             session.add_all(
                 [
@@ -850,7 +852,7 @@ class IntegrationModelTests(unittest.TestCase):
                     provider=Provider.TAOBAO,
                     initiating_session_digest="e" * 64,
                     return_path="/app/api-connections",
-                    expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                    expires_at=datetime.now(UTC) + timedelta(minutes=10),
                 )
             )
             with self.assertRaises(IntegrityError):
@@ -874,7 +876,7 @@ class IntegrationModelTests(unittest.TestCase):
                         provider=Provider.QIANCHUAN,
                         initiating_session_digest="f" * 64,
                         return_path=return_path,
-                        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                        expires_at=datetime.now(UTC) + timedelta(minutes=10),
                     )
                 )
             session.commit()
@@ -903,7 +905,7 @@ class IntegrationModelTests(unittest.TestCase):
                             provider=Provider.PDD,
                             initiating_session_digest="a" * 64,
                             return_path=return_path,
-                            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                            expires_at=datetime.now(UTC) + timedelta(minutes=10),
                         )
                     )
                     with self.assertRaises(IntegrityError):
@@ -1017,6 +1019,7 @@ class DisposablePostgresGuardTests(unittest.TestCase):
                     create_engine.assert_not_called()
 
 
+@requires_disposable_postgres
 class PostgresIntegrationModelTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -1064,7 +1067,7 @@ class PostgresIntegrationModelTests(unittest.TestCase):
                 access_token_ciphertext=OPAQUE_CIPHERTEXT,
                 access_token_tail="0000",
                 status=AuthorizationStatus.ACTIVE,
-                last_authorized_at=datetime.now(timezone.utc),
+                last_authorized_at=datetime.now(UTC),
             )
             session.add_all((app, authorization))
             session.flush()
@@ -1140,7 +1143,7 @@ class PostgresIntegrationModelTests(unittest.TestCase):
                             provider=Provider.DOUDIAN,
                             initiating_session_digest="c" * 64,
                             return_path=return_path,
-                            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                            expires_at=datetime.now(UTC) + timedelta(minutes=10),
                         )
                     )
                     with self.assertRaises(IntegrityError):

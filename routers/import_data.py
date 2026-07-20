@@ -1,17 +1,4 @@
 """数据导入 API — CSV/Excel 批量导入产品"""
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-from database import get_db, SessionLocal
-from models import Product, SellingPoint
-from schemas import ImportResult, ApiResponse
-from services.product_markdown_importer import (
-    PENDING_LABEL,
-    decode_markdown_bytes,
-    normalize_product_name,
-    parse_product_markdown,
-)
-from services.product_price_extractor import apply_product_price_metadata
 import asyncio
 import csv
 import io
@@ -22,9 +9,25 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+
 from config import MAX_UPLOAD_SIZE, UPLOAD_DIR
-from services.upload_limits import read_upload_bytes
+from database import SessionLocal, get_db
+from models import Product, SellingPoint
+from schemas import ApiResponse, ImportResult
+from services import task_queue
 from services.bounded_executor import WorkQueueFull, run_blocking
+from services.product_markdown_importer import (
+    PENDING_LABEL,
+    decode_markdown_bytes,
+    normalize_product_name,
+    parse_product_markdown,
+)
+from services.product_price_extractor import apply_product_price_metadata
+from services.upload_limits import read_upload_bytes
 from services.upload_validation import UploadPolicy, UploadValidationError, validate_upload
 
 router = APIRouter()
@@ -1028,6 +1031,13 @@ def _run_local_product_scan(source_dir: str, job_id: int | None = None) -> None:
             )
 
 
+def _run_local_product_scan_task(payload: dict) -> None:
+    _run_local_product_scan(str(payload["source_dir"]), payload.get("job_id"))
+
+
+task_queue.register_task_handler("local_product_scan", _run_local_product_scan_task)
+
+
 @router.post("/scan-local-products")
 def start_local_product_scan():
     """Start a background scan of the configured local product materials directory."""
@@ -1060,13 +1070,17 @@ def start_local_product_scan():
             "job_id": job_id,
         })
 
-    thread = threading.Thread(
-        target=_run_local_product_scan,
-        args=(source_dir, job_id),
-        name="facai-local-product-scan",
-        daemon=True,
-    )
-    thread.start()
+    task_payload = {"source_dir": source_dir, "job_id": job_id}
+    if task_queue.task_worker_status()["alive"]:
+        task_queue.enqueue_task("local_product_scan", task_payload, max_attempts=3)
+    else:
+        # Router-only test/dev apps do not run the main lifespan worker.
+        threading.Thread(
+            target=_run_local_product_scan_task,
+            args=(task_payload,),
+            name="facai-local-product-scan-fallback",
+            daemon=True,
+        ).start()
     return ApiResponse(message="本地产品资料扫描已启动", data=_local_product_scan_snapshot())
 
 

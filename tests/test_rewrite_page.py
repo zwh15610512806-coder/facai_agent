@@ -10,7 +10,6 @@ from pathlib import Path
 from schemas import ScriptRewriteRequest
 from services.script_rewriter import ScriptRewriter
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -39,7 +38,7 @@ class RewritePageTests(unittest.TestCase):
         self.page = (ROOT / "templates" / "rewrite.html").read_text(encoding="utf-8-sig")
 
     def test_rewrite_form_and_compact_product_picker_share_one_page(self):
-        self.assertIn("<title>脚本改写 — 法采新媒体运营 Agent</title>", self.page)
+        self.assertIn("<title>脚本改写 — 抖音运营agent</title>", self.page)
         self.assertIn("<header class=\"page-hd\"><h1>脚本改写</h1>", self.page)
         self.assertIn('id="step1"', self.page)
         self.assertIn('id="productPicker"', self.page)
@@ -107,7 +106,6 @@ class FakeElement {
 function element(id){if(!elements[id])elements[id]=new FakeElement(id);return elements[id];}
 const rewriteCalls = [];
 async function fakeFetch(url,options){
-  if(url==='/api/products/')return {ok:true,json:async()=>fixtures};
   if(url==='/api/scripts/rewrite'){
     rewriteCalls.push(JSON.parse(options.body));
     return {ok:true,json:async()=>({rewritten_script:'改写结果',product_name:'袋装刀叉',original_script:elements.originalScript.value})};
@@ -117,6 +115,7 @@ async function fakeFetch(url,options){
 const sandbox = {
   console, URLSearchParams, Promise,
   fetch:fakeFetch,
+  FacaiUI:{fetchAllProducts:async()=>fixtures},
   setTimeout(){return 0;}, clearTimeout(){},
   navigator:{clipboard:{writeText:async()=>{}}},
   document:{

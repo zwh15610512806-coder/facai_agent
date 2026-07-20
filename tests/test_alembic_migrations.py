@@ -48,7 +48,7 @@ class AlembicMigrationTests(unittest.TestCase):
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
 
-        self.assertEqual(revision, "20260713_0001")
+        self.assertEqual(revision, "20260720_0003")
         self.assertFalse(application_logger.disabled)
         self.assertGreaterEqual(
             tables,
@@ -76,7 +76,31 @@ class AlembicMigrationTests(unittest.TestCase):
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
         self.assertEqual(name, "legacy-product")
-        self.assertEqual(revision, "20260713_0001")
+        self.assertEqual(revision, "20260720_0003")
+
+    def test_current_database_does_not_run_legacy_startup_schema_mutators(self):
+        self.database.init_db()
+
+        with (
+            patch.object(self.database.Base.metadata, "create_all") as create_all,
+            patch.object(self.database, "_ensure_creator_indexes") as creator_indexes,
+            patch.object(self.database, "_ensure_compatible_columns") as compatible_columns,
+            patch.object(
+                self.database,
+                "_ensure_creator_integrity_triggers",
+            ) as creator_triggers,
+            patch.object(
+                self.database,
+                "_ensure_integration_connection_provider_unique",
+            ) as integration_parent_key,
+        ):
+            self.database.init_db()
+
+        create_all.assert_not_called()
+        creator_indexes.assert_not_called()
+        compatible_columns.assert_not_called()
+        creator_triggers.assert_not_called()
+        integration_parent_key.assert_not_called()
 
     def test_failed_upgrade_restores_pre_migration_database(self):
         self.database.init_db()
