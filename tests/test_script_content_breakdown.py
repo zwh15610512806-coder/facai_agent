@@ -201,40 +201,61 @@ class ScriptContentBreakdownServiceTests(unittest.TestCase):
                 self.assertIn("不得虚构投放数据", prompt)
                 self.assertIn("镜头与画面要求", prompt)
 
-    def test_service_rejects_invalid_or_failed_analysis_without_local_fallback(self):
-        from services.script_content_breakdown import (
-            ScriptContentBreakdownError,
-            ScriptContentBreakdownService,
-        )
+    def test_service_falls_back_when_analysis_is_invalid_or_provider_fails(self):
+        from services.script_content_breakdown import ScriptContentBreakdownService
 
-        for result, expected_status in (("不是JSON", 502), (RuntimeError("provider down"), 503)):
+        for result in ("不是JSON", RuntimeError("provider down")):
             with self.subTest(result=result):
                 service = ScriptContentBreakdownService(ai=FakeAI(result))
-                with self.assertRaises(ScriptContentBreakdownError) as caught:
-                    asyncio.run(service.generate(
-                        script_content="有效脚本",
-                        product={"name": "奶冻粉"},
-                        video_type="痛点类",
-                        engine="deepseek",
-                    ))
-                self.assertEqual(caught.exception.status_code, expected_status)
+                breakdown = asyncio.run(service.generate(
+                    script_content="赶单时最怕奶冻不稳定，这款冷藏后依然稳定。",
+                    product={"name": "奶冻粉", "category": "烘焙调味"},
+                    video_type="痛点类",
+                    engine="deepseek",
+                ))
+                self.assertEqual(breakdown["source"], "local")
+                self.assertTrue(breakdown["generation_rationale"])
+                self.assertTrue(breakdown["structure"])
+                self.assertTrue(breakdown["shot_requirements"])
 
-    def test_service_timeout_returns_nonblocking_retry_error(self):
+    def test_service_keeps_partial_ai_analysis_and_fills_missing_sections(self):
+        from services.script_content_breakdown import ScriptContentBreakdownService
+
+        ai = FakeAI(json.dumps(
+            {"generation_rationale": "AI识别出脚本先讲翻车风险，再给稳定性证明。"},
+            ensure_ascii=False,
+        ))
+        breakdown = asyncio.run(ScriptContentBreakdownService(ai=ai).generate(
+            script_content="赶单时最怕奶冻不稳定，这款冷藏后依然稳定。",
+            product={"name": "奶冻粉", "category": "烘焙调味"},
+            video_type="痛点类",
+            engine="deepseek",
+        ))
+
+        self.assertEqual(breakdown["source"], "ai")
+        self.assertEqual(
+            breakdown["generation_rationale"],
+            "AI识别出脚本先讲翻车风险，再给稳定性证明。",
+        )
+        self.assertTrue(breakdown["target_audience"])
+        self.assertTrue(breakdown["structure"])
+        self.assertTrue(breakdown["shot_requirements"])
+
+    def test_service_timeout_returns_local_breakdown(self):
         from services import script_content_breakdown as module
 
         original_timeout = module.BREAKDOWN_TOTAL_TIMEOUT_SECONDS
         module.BREAKDOWN_TOTAL_TIMEOUT_SECONDS = 0.001
         try:
             service = module.ScriptContentBreakdownService(ai=SlowAI())
-            with self.assertRaises(module.ScriptContentBreakdownError) as caught:
-                asyncio.run(service.generate(
-                    script_content="有效脚本",
-                    product={"name": "奶冻粉"},
-                    video_type="痛点类",
-                    engine="deepseek",
-                ))
-            self.assertEqual(caught.exception.status_code, 503)
-            self.assertIn("超时", caught.exception.detail)
+            breakdown = asyncio.run(service.generate(
+                script_content="赶单时最怕奶冻不稳定，这款冷藏后依然稳定。",
+                product={"name": "奶冻粉", "category": "烘焙调味"},
+                video_type="痛点类",
+                engine="deepseek",
+            ))
+            self.assertEqual(breakdown["source"], "local")
+            self.assertTrue(breakdown["conversion_triggers"])
         finally:
             module.BREAKDOWN_TOTAL_TIMEOUT_SECONDS = original_timeout
 

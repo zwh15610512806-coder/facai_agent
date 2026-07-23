@@ -56,7 +56,52 @@ class IndexGenerateBreakdownTests(unittest.TestCase):
         self.assertIn("btnRefreshBreakdown').addEventListener('click'", self.page)
         self.assertIn("var script=getEditedScript()", self.page)
         self.assertIn("renderContentBreakdown", self.page)
-        self.assertIn("内容拆解失败不影响左侧脚本", self.page)
+        self.assertIn("左侧脚本不受影响", self.page)
+        self.assertIn("已根据当前脚本和产品资料完成可靠拆解", self.page)
+
+    def test_generate_workspace_uses_versioned_session_storage(self):
+        self.assertIn("const GENERATE_WORKSPACE_KEY='facai.generate.workspace.v1'", self.page)
+        self.assertIn("const GENERATE_WORKSPACE_VERSION=1", self.page)
+        self.assertIn("sessionStorage.setItem(GENERATE_WORKSPACE_KEY", self.page)
+        self.assertIn("sessionStorage.getItem(GENERATE_WORKSPACE_KEY)", self.page)
+        self.assertIn("sessionStorage.removeItem(GENERATE_WORKSPACE_KEY)", self.page)
+        self.assertNotIn("localStorage.setItem(GENERATE_WORKSPACE_KEY", self.page)
+        self.assertIn("window.addEventListener('pagehide',writeGenerateWorkspaceNow)", self.page)
+
+    def test_generate_workspace_captures_complete_editing_state(self):
+        self.assertIn("function buildGenerateWorkspaceSnapshot()", self.page)
+        for field in (
+            "selection:",
+            "settings:",
+            "script_content:getEditedScript()||currentScript||''",
+            "template_reference:currentTemplateReference",
+            "breakdown:currentBreakdown",
+            "breakdown_stale:",
+            "optimize_input:",
+            "active_job_id:activeGenerationJobId",
+            "script_top:",
+            "breakdown_top:",
+        ):
+            self.assertIn(field, self.page)
+
+    def test_generate_workspace_restores_after_data_load_and_job_query_wins(self):
+        bootstrap = re.search(
+            r"async function bootstrapGeneratePage\(\)\{(?P<body>.*?)\n\}",
+            self.page,
+            flags=re.S,
+        )
+        self.assertIsNotNone(bootstrap)
+        body = bootstrap.group("body")
+        self.assertLess(body.index("await Promise.all([loadCategories(),loadProducts()])"), body.index("restoreGenerateWorkspace(saved)"))
+        self.assertLess(body.index("const backgroundJobId="), body.index("if(backgroundJobId)await restoreGeneratedJob(backgroundJobId)"))
+        self.assertIn("else if(savedJobId)await restoreGeneratedJob(savedJobId)", body)
+
+    def test_generate_workspace_keeps_text_when_history_record_is_missing(self):
+        self.assertIn("async function validateRestoredScriptContext()", self.page)
+        self.assertIn("if(response.status===404)", self.page)
+        self.assertIn("currentScriptId=null", self.page)
+        self.assertIn("原生成记录已不存在，已保留当前脚本文字", self.page)
+        self.assertIn("document.getElementById('btnSave').disabled=!validRecord", self.page)
 
     def test_breakdown_panel_uses_rewrite_layout_pattern(self):
         self.assertIn("<main class=\"page-main generate-main\">", self.page)
@@ -171,7 +216,7 @@ class IndexGenerateBreakdownTests(unittest.TestCase):
         self.assertIn("引用脚本名称", self.page)
         self.assertIn('id="templateReferenceDetails"', self.page)
         self.assertIn('id="templateReferenceScript"', self.page)
-        self.assertIn("document.getElementById('templateReferenceName').textContent=sourceTitle", self.page)
+        self.assertIn("document.getElementById('templateReferenceName').textContent=currentTemplateReference.source_title", self.page)
         self.assertIn("结构模板：", self.page)
         self.assertIn("该参考脚本暂无正文。", self.page)
         self.assertIn("resetTemplateReference", self.page)
@@ -243,7 +288,7 @@ class IndexGenerateBreakdownTests(unittest.TestCase):
         self.assertIn(".scroll-top-btn.show{opacity:1;pointer-events:auto;transform:translateY(0)}", self.page)
         self.assertIn("function scrollGenerateToTop(){window.scrollTo({top:0,behavior:'smooth'});}", self.page)
         self.assertIn("function toggleScrollTopButton(){const btn=document.getElementById('scrollTopBtn')", self.page)
-        self.assertIn("window.addEventListener('scroll',toggleScrollTopButton,{passive:true});", self.page)
+        self.assertIn("window.addEventListener('scroll',function(){toggleScrollTopButton();scheduleGenerateWorkspaceSave();},{passive:true});", self.page)
         self.assertIn("toggleScrollTopButton();", self.page)
 
     def test_product_cards_escape_api_fields_before_innerhtml(self):
@@ -263,15 +308,16 @@ class IndexGenerateBreakdownTests(unittest.TestCase):
 
     def test_generate_result_meta_escapes_api_fields_before_innerhtml(self):
         match = re.search(
-            r"async function doGenerate\(extra\)\{(?P<body>.*?)\n\}",
+            r"function setResultMeta\(productName,videoType,note\)\{(?P<body>.*?)\n\}",
             self.page,
             flags=re.S,
         )
 
         self.assertIsNotNone(match)
         body = match.group("body")
-        self.assertIn("escHtml(d.product_name)", body)
-        self.assertIn("escHtml(d.video_type)", body)
+        self.assertIn("escHtml(currentResultInfo.product_name)", body)
+        self.assertIn("escHtml(currentResultInfo.video_type)", body)
+        self.assertIn("escHtml(currentResultInfo.note)", body)
         self.assertNotIn("'<b>'+d.product_name+'</b>", body)
 
     def test_product_tooltip_escapes_summary_parts_before_innerhtml(self):

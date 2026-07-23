@@ -275,7 +275,7 @@ class ScriptContentBreakdownResponse(BaseModel):
     optimization_suggestions: List[ScriptBreakdownOptimization]
     shooting_notes: List[str]
     shot_requirements: List[ScriptBreakdownShotRequirement]
-    source: Literal["ai"]
+    source: Literal["ai", "local"]
 
 
 class SeedancePromptUploadResponse(BaseModel):

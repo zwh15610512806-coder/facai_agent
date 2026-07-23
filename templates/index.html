@@ -566,9 +566,13 @@ const VIDEO_TYPES=[
 ];
 const CUSTOM_VIDEO_TYPES_KEY='facai_custom_video_types';
 const DELETED_VIDEO_TYPES_KEY='facai_deleted_video_types';
+const GENERATE_WORKSPACE_KEY='facai.generate.workspace.v1';
+const GENERATE_WORKSPACE_VERSION=1;
 let state={products:[],categories:[],categoryCounts:{},totalProductCount:0,selectedProduct:null,selectedType:"",step:1,generating:false};
 let currentScript='',currentScriptId=null;
 let currentBreakdown=null,breakdownRequestSeq=0;
+let currentResultInfo=null,currentTemplateReference=null,activeGenerationJobId=null;
+let workspaceSaveTimer=null,restoringWorkspace=false;
 let customVideoTypes=loadCustomVideoTypes();
 let deletedVideoTypes=loadDeletedVideoTypes();
 
@@ -582,6 +586,82 @@ function copyText(text){text=String(text||'');if(!text)return Promise.reject(new
 function escHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
 function jsStringLiteral(v){return "'"+String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\x22').replace(/</g,'\\x3C').replace(/>/g,'\\x3E').replace(/&/g,'\\x26').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029')+"'";}
 function getEditedScript(){const el=document.getElementById('scriptOutput');return (el.innerText||el.textContent||'').trim();}
+function workspaceProductSnapshot(product){
+ if(!product)return null;
+ return {
+  id:Number(product.id)||0,name:String(product.name||''),category:String(product.category||''),price:product.price,
+  pending_fields:Array.isArray(product.pending_fields)?product.pending_fields.slice(0,20):[],
+  selling_point_count:Number(product.selling_point_count||0),selling_point_summary:String(product.selling_point_summary||'')
+ };
+}
+function buildGenerateWorkspaceSnapshot(){
+ const scriptOutput=document.getElementById('scriptOutput');
+ const breakdownPanel=document.querySelector('.breakdown-panel');
+ const templateDetails=document.getElementById('templateReferenceDetails');
+ return {
+  version:GENERATE_WORKSPACE_VERSION,saved_at:Date.now(),step:state.step,
+  selection:{
+   product:workspaceProductSnapshot(state.selectedProduct),video_type:state.selectedType||'',
+   category:currentCategory||'',search:document.getElementById('searchInput').value||''
+  },
+  settings:{
+   engine:document.getElementById('aiEngine').value,
+   include_shot_design:document.getElementById('includeShotDesign').checked,
+   requirements:document.getElementById('reqPreFill').value||''
+  },
+  result:{
+   script_id:currentScriptId,script_content:getEditedScript()||currentScript||'',
+   info:currentResultInfo,template_reference:currentTemplateReference,
+   template_reference_open:!!(templateDetails&&templateDetails.open),
+   breakdown:currentBreakdown,
+   breakdown_stale:!document.getElementById('breakdownStale').hidden
+  },
+  optimize_input:document.getElementById('optimizeInput').value||'',
+  active_job_id:activeGenerationJobId,
+  generating:!!state.generating,
+  scroll:{
+   window_y:Math.max(0,Math.round(window.scrollY||0)),
+   script_top:scriptOutput?Math.max(0,Math.round(scriptOutput.scrollTop||0)):0,
+   breakdown_top:breakdownPanel?Math.max(0,Math.round(breakdownPanel.scrollTop||0)):0
+  }
+ };
+}
+function writeGenerateWorkspace(){
+ workspaceSaveTimer=null;
+ if(restoringWorkspace)return;
+ try{sessionStorage.setItem(GENERATE_WORKSPACE_KEY,JSON.stringify(buildGenerateWorkspaceSnapshot()));}catch(e){}
+}
+function scheduleGenerateWorkspaceSave(){
+ if(restoringWorkspace)return;
+ clearTimeout(workspaceSaveTimer);
+ workspaceSaveTimer=setTimeout(writeGenerateWorkspace,180);
+}
+function writeGenerateWorkspaceNow(){
+ if(restoringWorkspace)return;
+ clearTimeout(workspaceSaveTimer);workspaceSaveTimer=null;writeGenerateWorkspace();
+}
+function readGenerateWorkspace(){
+ try{
+  const raw=sessionStorage.getItem(GENERATE_WORKSPACE_KEY);if(!raw)return null;
+  const saved=JSON.parse(raw);
+  if(!saved||saved.version!==GENERATE_WORKSPACE_VERSION||![1,2,3].includes(Number(saved.step)))throw new Error('invalid workspace');
+  return saved;
+ }catch(e){
+  try{sessionStorage.removeItem(GENERATE_WORKSPACE_KEY);}catch(ignore){}
+  return null;
+ }
+}
+function restoreGenerateScroll(scroll){
+ const values=scroll||{};
+ requestAnimationFrame(function(){requestAnimationFrame(function(){
+  const scriptOutput=document.getElementById('scriptOutput');
+  const breakdownPanel=document.querySelector('.breakdown-panel');
+  if(scriptOutput)scriptOutput.scrollTop=Math.max(0,Number(values.script_top)||0);
+  if(breakdownPanel)breakdownPanel.scrollTop=Math.max(0,Number(values.breakdown_top)||0);
+  window.scrollTo(0,Math.max(0,Number(values.window_y)||0));
+  toggleScrollTopButton();
+ });});
+}
 function buildRegenerateRequirement(){
  const previous=(getEditedScript()||currentScript||'').replace(/\s+/g,' ').trim();
  const summary=previous&&!previous.startsWith('生成失败')?previous.slice(0,180):'';
@@ -593,11 +673,13 @@ function resetContentBreakdown(msg){
  document.getElementById('contentBreakdownList').innerHTML='<div class="breakdown-empty">'+escHtml(msg||'脚本生成成功后将自动分析创作思路、转化逻辑与拍摄要求。')+'</div>';
  document.getElementById('btnRefreshBreakdown').disabled=!currentScriptId;
  document.getElementById('btnCopyBreakdown').disabled=true;
+ scheduleGenerateWorkspaceSave();
 }
 function markContentBreakdownStale(){
  if(!currentBreakdown)return;
  document.getElementById('breakdownStale').hidden=false;
  document.getElementById('btnRefreshBreakdown').disabled=!currentScriptId;
+ scheduleGenerateWorkspaceSave();
 }
 function breakdownSection(title,body){return '<section class="breakdown-section"><h4 class="breakdown-section-title">'+escHtml(title)+'</h4><div class="breakdown-section-body">'+body+'</div></section>';}
 function breakdownList(items,formatter){return '<ul class="breakdown-items">'+(items||[]).map(function(item,index){return '<li class="breakdown-item">'+formatter(item,index)+'</li>';}).join('')+'</ul>';}
@@ -609,6 +691,7 @@ function renderContentBreakdown(data){
  var notes=breakdownList(data.shooting_notes,function(item){return escHtml(item);});
  var shots=breakdownList(data.shot_requirements,function(item){return '<strong>'+escHtml(item.script_segment)+' · '+escHtml(item.shot_type)+'</strong>'+escHtml(item.subject_action)+'<br>'+escHtml(item.visual_requirement);});
  document.getElementById('contentBreakdownList').innerHTML=
+  (data.source==='local'?'<div class="breakdown-stale" style="display:block">AI 拆解暂时不可用，已根据当前脚本和产品资料完成可靠拆解。</div>':'')+
   breakdownSection('生成思路',escHtml(data.generation_rationale))+
   breakdownSection('目标人群',escHtml(data.target_audience))+
   breakdownSection('脚本结构',structure)+
@@ -618,6 +701,7 @@ function renderContentBreakdown(data){
   breakdownSection('拍摄注意事项',notes)+
   breakdownSection('镜头与画面要求',shots);
  currentBreakdown=data;document.getElementById('breakdownStale').hidden=true;document.getElementById('btnCopyBreakdown').disabled=false;
+ scheduleGenerateWorkspaceSave();
 }
 function contentBreakdownText(data){
  if(!data)return '';
@@ -642,16 +726,29 @@ async function loadContentBreakdown(scriptId,script){
   if(!response.ok)throw new Error(data.detail||'内容拆解失败');
   if(seq!==breakdownRequestSeq)return;
   renderContentBreakdown(data);
+  writeGenerateWorkspaceNow();
  }catch(e){
   if(seq!==breakdownRequestSeq)return;
-  var errorHtml='<div class="breakdown-empty breakdown-error"><strong>内容拆解暂未完成</strong><br>内容拆解失败不影响左侧脚本，可点击“重新拆解”。</div>';
+  var errorHtml='<div class="breakdown-empty breakdown-error"><strong>内容拆解暂未完成</strong><br>'+escHtml(e&&e.message?e.message:'内容拆解失败')+'。左侧脚本不受影响，可点击“重新拆解”。</div>';
   if(hadResult)list.insertAdjacentHTML('afterbegin',errorHtml);else list.innerHTML=errorHtml;
  }finally{
   if(seq===breakdownRequestSeq)document.getElementById('btnRefreshBreakdown').disabled=!currentScriptId;
  }
 }
-function resetTemplateReference(){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');panel.hidden=true;details.open=false;document.getElementById('templateReferenceName').textContent='';document.getElementById('templateReferenceSource').textContent='';document.getElementById('templateReferenceStructure').textContent='';document.getElementById('templateReferenceScript').textContent='';}
-function showTemplateReference(sourceTitle,sourceScript,sourceType,templateName,sourceMatchQuery){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');var detailParts=[];panel.hidden=false;details.open=false;document.getElementById('templateReferenceName').textContent=sourceTitle;document.getElementById('templateReferenceSource').textContent=sourceType==='other'?'其他脚本':'法采脚本';if(templateName)detailParts.push('结构模板：'+templateName);if(sourceMatchQuery)detailParts.push('匹配产品：'+sourceMatchQuery);document.getElementById('templateReferenceStructure').textContent=detailParts.join(' · ');document.getElementById('templateReferenceScript').textContent=sourceScript||'该参考脚本暂无正文。';}
+function setResultMeta(productName,videoType,note){
+ currentResultInfo={product_name:String(productName||''),video_type:String(videoType||''),note:String(note||'')};
+ document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(currentResultInfo.product_name)+'</b> &middot; 类型：<b class="text-accent">'+escHtml(currentResultInfo.video_type)+'</b>'+(currentResultInfo.note?' <span class="text-accent" style="font-weight:600">'+escHtml(currentResultInfo.note)+'</span>':'');
+}
+function updateResultActionState(){
+ const validRecord=!!currentScriptId;
+ const canRegenerate=!!state.selectedProduct&&!state.generating;
+ document.getElementById('btnSave').disabled=!validRecord||state.generating;
+ document.getElementById('btnRefreshBreakdown').disabled=!validRecord||state.generating;
+ document.getElementById('btnRedo').disabled=!canRegenerate;
+ document.getElementById('btnOptimize').disabled=!canRegenerate||!document.getElementById('optimizeInput').value.trim();
+}
+function resetTemplateReference(){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');currentTemplateReference=null;panel.hidden=true;details.open=false;document.getElementById('templateReferenceName').textContent='';document.getElementById('templateReferenceSource').textContent='';document.getElementById('templateReferenceStructure').textContent='';document.getElementById('templateReferenceScript').textContent='';scheduleGenerateWorkspaceSave();}
+function showTemplateReference(sourceTitle,sourceScript,sourceType,templateName,sourceMatchQuery){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');var detailParts=[];currentTemplateReference={source_title:String(sourceTitle||''),source_script:String(sourceScript||''),source_type:String(sourceType||''),template_name:String(templateName||''),source_match_query:String(sourceMatchQuery||'')};panel.hidden=false;details.open=false;document.getElementById('templateReferenceName').textContent=currentTemplateReference.source_title;document.getElementById('templateReferenceSource').textContent=currentTemplateReference.source_type==='other'?'其他脚本':'法采脚本';if(currentTemplateReference.template_name)detailParts.push('结构模板：'+currentTemplateReference.template_name);if(currentTemplateReference.source_match_query)detailParts.push('匹配产品：'+currentTemplateReference.source_match_query);document.getElementById('templateReferenceStructure').textContent=detailParts.join(' · ');document.getElementById('templateReferenceScript').textContent=currentTemplateReference.source_script||'该参考脚本暂无正文。';scheduleGenerateWorkspaceSave();}
 function normalizeCustomVideoType(type){return String(type||'').replace(/[<>"'`\\]/g,'').trim().replace(/\s+/g,'').slice(0,20);}
 function loadCustomVideoTypes(){
  try{const raw=localStorage.getItem(CUSTOM_VIDEO_TYPES_KEY);const list=JSON.parse(raw||'[]');if(!Array.isArray(list))return [];
@@ -681,7 +778,7 @@ function addCustomVideoType(){
  const input=document.getElementById('customVideoTypeInput');
  const type=saveCustomVideoType(input.value);
  if(!type)return toast('请输入视频类型','error');
- state.selectedType=type;input.value='';renderVideoTypes();toast('已添加自定义类型','success');
+ state.selectedType=type;input.value='';renderVideoTypes();writeGenerateWorkspaceNow();toast('已添加自定义类型','success');
 }
 function deleteVideoType(event,type){
  if(event){event.stopPropagation();event.preventDefault();}
@@ -693,7 +790,7 @@ function deleteVideoType(event,type){
  }else{
   customVideoTypes=customVideoTypes.filter(function(item){return item!==type;});persistCustomVideoTypes();
  }
- renderVideoTypes();toast('已删除视频类型','success');
+ renderVideoTypes();writeGenerateWorkspaceNow();toast('已删除视频类型','success');
 }
 
 function showTip(e,summary){
@@ -731,8 +828,7 @@ async function loadProducts(){
  catch(e){console.error('产品加载失败',e);document.getElementById('productGrid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px 0;color:var(--text-3)"><i data-lucide="wifi-off" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4"></i><div style="font-weight:600;margin-bottom:4px">产品加载失败</div><div style="font-size:14px">请刷新页面重试；若仍失败，请检查服务状态</div></div>';if(window.lucide)lucide.createIcons();}
 }
 let currentCategory='';
-function selectCategory(cat){
-  currentCategory=cat;
+function applyCategorySelectionUI(cat){
   document.getElementById('categoryAll').className='cat-item'+(cat===''?' cat-on':'');
   const sb=document.getElementById('categorySidebar');
   for(let i=0;i<sb.children.length;i++){
@@ -741,14 +837,19 @@ function selectCategory(cat){
     el.className='cat-item'+(el.dataset.cat===cat?' cat-on':'');
   }
   document.getElementById('floatSelectedCat').textContent=cat||'全部品类';
-  loadProducts();
+}
+function selectCategory(cat){
+  currentCategory=cat;
+  applyCategorySelectionUI(cat);
+  loadProducts().then(scheduleGenerateWorkspaceSave);
 }
 async function loadCategories(){
  try{const r=await fetch('/api/products/categories');state.categories=await r.json();
-  const sb=document.getElementById('categorySidebar');
-  state.categories.forEach(function(c){const d=document.createElement('div');d.className='cat-item';d.dataset.cat=c;d.innerHTML=categoryItemHtml(c,c);d.onclick=function(){selectCategory(c);};sb.appendChild(d);});
-  updateCategoryCountBadges();
- }catch(e){}
+   const sb=document.getElementById('categorySidebar');
+   state.categories.forEach(function(c){const d=document.createElement('div');d.className='cat-item';d.dataset.cat=c;d.innerHTML=categoryItemHtml(c,c);d.onclick=function(){selectCategory(c);};sb.appendChild(d);});
+   applyCategorySelectionUI(currentCategory);
+   updateCategoryCountBadges();
+  }catch(e){}
 }
 
 function renderProducts(){
@@ -759,7 +860,7 @@ function renderProducts(){
 }
 
 function selectProduct(id){state.selectedProduct=state.products.find(function(p){return p.id===id;});state.selectedType="";renderProducts();document.getElementById('btnToStep2').disabled=false;document.getElementById('floatToStep2').disabled=false;
- const fb=document.getElementById('floatBar');fb.classList.remove('hidden');fb.classList.remove('pop');void fb.offsetWidth;fb.classList.add('pop');setTimeout(function(){fb.classList.remove('pop')},400);openProductModal(id);}
+ const fb=document.getElementById('floatBar');fb.classList.remove('hidden');fb.classList.remove('pop');void fb.offsetWidth;fb.classList.add('pop');setTimeout(function(){fb.classList.remove('pop')},400);writeGenerateWorkspaceNow();openProductModal(id);}
 
 async function openProductModal(id){
  hideTip();
@@ -774,6 +875,7 @@ async function openProductModal(id){
   const detail=await r.json();
   state.selectedProduct=Object.assign({},listProduct,detail);
   renderProductModal(state.selectedProduct,false);
+  writeGenerateWorkspaceNow();
  }catch(e){
   document.getElementById('productDetailPoints').innerHTML='<div class="detail-point"><div class="detail-point-text">卖点加载失败，请稍后重试。</div></div>';
  }
@@ -798,10 +900,12 @@ document.getElementById('btnToStep2').addEventListener('click',function(){
  state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';
  document.getElementById('floatBar').classList.add('hidden');
  document.getElementById('selectedProductLabel').textContent=state.selectedProduct.name+' · '+productPriceLabel(state.selectedProduct);renderVideoTypes();
+ writeGenerateWorkspaceNow();
 });
 function showProductSelection(){
  state.step=1;document.getElementById('step1').style.display='';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';
  document.getElementById('floatBar').classList.remove('hidden');
+ writeGenerateWorkspaceNow();
 }
 document.getElementById('btnBackToStep1').addEventListener('click',showProductSelection);
 document.getElementById('btnChangeProduct').addEventListener('click',showProductSelection);
@@ -813,20 +917,66 @@ function renderVideoTypes(){
  if(window.lucide)lucide.createIcons();
  document.getElementById('btnGenerate').disabled=false;
 }
-function selectType(type){state.selectedType=state.selectedType===type?"":type;renderVideoTypes();document.getElementById('btnGenerate').disabled=false;}
+function selectType(type){state.selectedType=state.selectedType===type?"":type;renderVideoTypes();document.getElementById('btnGenerate').disabled=false;writeGenerateWorkspaceNow();}
 
 document.getElementById('aiEngine').addEventListener('change',function(){
  document.getElementById('engineHint').textContent=this.value==='deepseek'?'AI生成：结合产品资料、跑量逻辑，并在已选类型时参考同类型脚本结构创作':'模板库改写：从脚本模板库按同类型优先选择模板，改写为当前产品脚本';
+ scheduleGenerateWorkspaceSave();
 });
 
-async function doGenerate(extra){
- if(!state.selectedProduct)return;state.step=3;state.generating=true;
+function showGeneratingWorkspace(){
+ state.step=3;state.generating=true;
  document.getElementById('floatBar').classList.add('hidden');
  document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='';
- document.getElementById('scriptOutput').style.display='none';document.getElementById('generatingHint').style.display='';document.getElementById('btnOptimize').disabled=true;
+ document.getElementById('scriptOutput').style.display='none';document.getElementById('generatingHint').style.display='';
  document.getElementById('resultActions').style.display='none';
+ updateResultActionState();
+}
+function applyGeneratedResult(data,note,analyze){
+ const d=data||{};
+ currentScript=String(d.script_content||'');currentScriptId=Number(d.id)||null;
+ activeGenerationJobId=null;state.step=3;state.generating=false;
+ document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='';
+ document.getElementById('floatBar').classList.add('hidden');
+ document.getElementById('scriptOutput').style.display='';document.getElementById('scriptOutput').textContent=currentScript;
+ document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';
+ setResultMeta(d.product_name,d.video_type,note||'');
+ resetTemplateReference();
+ if(d.source_script_title)showTemplateReference(d.source_script_title,d.source_script_content,d.source_script_source,d.template_name,d.source_match_query);
+ resetContentBreakdown(analyze?'正在分析已恢复的脚本…':'脚本生成成功后将自动分析创作思路、转化逻辑与拍摄要求。');
+ updateResultActionState();writeGenerateWorkspaceNow();
+ if(currentScriptId&&currentScript)loadContentBreakdown(currentScriptId,currentScript);
+}
+async function validateRestoredScriptContext(){
+ if(!currentScriptId){updateResultActionState();return;}
+ const validatingScriptId=currentScriptId;
+ try{
+  const response=await fetch('/api/scripts/history/'+validatingScriptId);
+  if(currentScriptId!==validatingScriptId)return;
+  if(response.status===404){
+   currentScriptId=null;updateResultActionState();writeGenerateWorkspaceNow();
+   toast('原生成记录已不存在，已保留当前脚本文字','error');return;
+  }
+  if(!response.ok)return;
+  const record=await response.json();
+  if(record.product_id&&(!state.selectedProduct||Number(state.selectedProduct.id)!==Number(record.product_id))){
+   const productResponse=await fetch('/api/products/'+record.product_id);
+   if(currentScriptId!==validatingScriptId)return;
+   if(productResponse.ok)state.selectedProduct=await productResponse.json();
+   else if(productResponse.status===404){state.selectedProduct=null;toast('原产品已不存在，脚本文字仍已保留','error');}
+  }else if(!record.product_id){
+   state.selectedProduct=null;
+   toast('原产品已不存在，脚本文字仍已保留','error');
+  }
+  updateResultActionState();writeGenerateWorkspaceNow();
+ }catch(e){}
+}
+async function doGenerate(extra){
+ if(!state.selectedProduct)return;
+ showGeneratingWorkspace();
  resetTemplateReference();
  resetContentBreakdown('脚本生成成功后将自动分析创作思路、转化逻辑与拍摄要求。');
+ writeGenerateWorkspaceNow();
  try{
   const selectedType=state.selectedType||'';
   const engine=document.getElementById('aiEngine').value;
@@ -836,31 +986,110 @@ async function doGenerate(extra){
   const preFill=document.getElementById('reqPreFill').value.trim();
   const reqParts=[];if(preFill)reqParts.push('用户需求：'+preFill);if(extra)reqParts.push(extra);
   if(reqParts.length)body.extra_requirements=reqParts.join('\n');
-   const job=await window.FacaiUI.submitBackgroundJob('/api/scripts/generate/jobs',body,{sourceRef:'generate'});
-   const finished=await window.FacaiUI.waitForBackgroundJob(job.public_id);
-   if(finished.status!=='succeeded')throw new Error(finished.error_summary||finished.message||'生成失败');
-   const d=finished.result||{};currentScript=d.script_content;currentScriptId=d.id;
-  document.getElementById('scriptOutput').textContent=currentScript;
-  var metaExtra='';if(preFill||extra)metaExtra=' <span class="text-accent" style="font-weight:600">（'+(preFill?'含需求':'')+(preFill&&extra?'+':'')+(extra?'已优化':'')+'）</span>';
-  document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(d.product_name)+'</b> &middot; 类型：<b class="text-accent">'+escHtml(d.video_type)+'</b>'+metaExtra;
-  if(d.source_script_title)showTemplateReference(d.source_script_title,d.source_script_content,d.source_script_source,d.template_name,d.source_match_query);
-  loadContentBreakdown(currentScriptId,currentScript);
- }catch(e){currentScript='';currentScriptId=null;resetContentBreakdown('脚本生成失败后暂无可拆解内容。');document.getElementById('scriptOutput').textContent='生成失败：'+e.message}
- finally{state.generating=false;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnOptimize').disabled=false;}
+  const job=await window.FacaiUI.submitBackgroundJob('/api/scripts/generate/jobs',body,{sourceRef:'generate'});
+  activeGenerationJobId=job.public_id;writeGenerateWorkspaceNow();
+  const finished=await window.FacaiUI.waitForBackgroundJob(job.public_id);
+  if(finished.status!=='succeeded')throw new Error(finished.error_summary||finished.message||'生成失败');
+  const metaNote=(preFill||extra)?'（'+(preFill?'含需求':'')+(preFill&&extra?'+':'')+(extra?'已优化':'')+'）':'';
+  applyGeneratedResult(finished.result||{},metaNote,false);
+ }catch(e){
+  activeGenerationJobId=null;state.generating=false;currentScript='';currentScriptId=null;currentResultInfo=null;
+  resetTemplateReference();resetContentBreakdown('脚本生成失败后暂无可拆解内容。');
+  document.getElementById('scriptOutput').textContent='生成失败：'+e.message;
+  document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';
+  updateResultActionState();writeGenerateWorkspaceNow();
+ }
 }
 
 async function restoreGeneratedJob(publicId){
  try{
   const job=await window.FacaiUI.fetchBackgroundJob(publicId);if(job.job_type!=='ai.scripts.generate')return;
-  if(job.status!=='succeeded'){toast(job.message||'任务尚未完成','error');return;}
-  const d=job.result||{};currentScript=d.script_content||'';currentScriptId=d.id||null;state.step=3;state.generating=false;
-  document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='';
-  document.getElementById('scriptOutput').style.display='';document.getElementById('scriptOutput').textContent=currentScript;
-  document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';
-  document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(d.product_name||'')+'</b> &middot; 类型：<b class="text-accent">'+escHtml(d.video_type||'')+'</b>';
-  if(d.source_script_title)showTemplateReference(d.source_script_title,d.source_script_content,d.source_script_source,d.template_name,d.source_match_query);
-  resetContentBreakdown('正在分析已恢复的脚本…');loadContentBreakdown(currentScriptId,currentScript);
- }catch(e){toast('任务结果恢复失败：'+e.message,'error');}
+  if(['pending','running','cancelling'].includes(job.status)){
+   activeGenerationJobId=publicId;showGeneratingWorkspace();writeGenerateWorkspaceNow();
+   const finished=await window.FacaiUI.waitForBackgroundJob(publicId);
+   if(finished.status!=='succeeded')throw new Error(finished.error_summary||finished.message||'生成失败');
+   applyGeneratedResult(finished.result||{},'',true);validateRestoredScriptContext();return;
+  }
+  if(job.status!=='succeeded')throw new Error(job.error_summary||job.message||'任务未成功完成');
+  applyGeneratedResult(job.result||{},'',true);validateRestoredScriptContext();
+ }catch(e){
+  activeGenerationJobId=null;state.generating=false;
+  document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';
+  document.getElementById('resultActions').style.display='flex';updateResultActionState();writeGenerateWorkspaceNow();
+  toast('任务结果恢复失败：'+e.message,'error');
+ }
+}
+
+function prepareGenerateWorkspace(saved){
+ const selection=saved&&saved.selection||{};
+ currentCategory=String(selection.category||'');
+ document.getElementById('searchInput').value=String(selection.search||'');
+}
+function restoreGenerateWorkspace(saved){
+ if(!saved)return null;
+ restoringWorkspace=true;
+ try{
+  const selection=saved.selection||{},settings=saved.settings||{},result=saved.result||{};
+  state.step=Number(saved.step)||1;state.selectedProduct=selection.product||null;state.selectedType=String(selection.video_type||'');
+  state.generating=!!saved.generating&&!!saved.active_job_id;currentScript=String(result.script_content||'');
+  currentScriptId=Number(result.script_id)||null;currentResultInfo=result.info||null;
+  currentBreakdown=result.breakdown||null;currentTemplateReference=null;
+  activeGenerationJobId=saved.active_job_id?String(saved.active_job_id):null;
+  document.getElementById('aiEngine').value=settings.engine==='deepseek'?'deepseek':'template';
+  document.getElementById('includeShotDesign').checked=!!settings.include_shot_design;
+  document.getElementById('reqPreFill').value=String(settings.requirements||'');
+  document.getElementById('optimizeInput').value=String(saved.optimize_input||'');
+  document.getElementById('engineHint').textContent=document.getElementById('aiEngine').value==='deepseek'?'AI生成：结合产品资料、跑量逻辑，并在已选类型时参考同类型脚本结构创作':'模板库改写：从脚本模板库按同类型优先选择模板，改写为当前产品脚本';
+  applyCategorySelectionUI(currentCategory);renderProducts();
+  document.getElementById('btnToStep2').disabled=!state.selectedProduct;
+  document.getElementById('floatToStep2').disabled=!state.selectedProduct;
+
+  if(state.step===2&&!state.selectedProduct)state.step=1;
+  document.getElementById('step1').style.display=state.step===1?'':'none';
+  document.getElementById('step2').style.display=state.step===2?'':'none';
+  document.getElementById('step3').style.display=state.step===3?'':'none';
+  document.getElementById('floatBar').classList.toggle('hidden',state.step!==1||!state.selectedProduct);
+  if(state.selectedProduct){
+   document.getElementById('selectedProductLabel').textContent=state.selectedProduct.name+' · '+productPriceLabel(state.selectedProduct);
+   renderVideoTypes();
+  }
+  if(state.step===3){
+   document.getElementById('scriptOutput').textContent=currentScript;
+   document.getElementById('scriptOutput').style.display='';
+   document.getElementById('generatingHint').style.display='none';
+   document.getElementById('resultActions').style.display='flex';
+   const info=currentResultInfo||{product_name:state.selectedProduct&&state.selectedProduct.name||'',video_type:state.selectedType||'',note:''};
+   setResultMeta(info.product_name,info.video_type,info.note);
+   resetTemplateReference();
+   if(result.template_reference){
+    const ref=result.template_reference;
+    showTemplateReference(ref.source_title,ref.source_script,ref.source_type,ref.template_name,ref.source_match_query);
+    document.getElementById('templateReferenceDetails').open=!!result.template_reference_open;
+   }
+   if(currentBreakdown){
+    renderContentBreakdown(currentBreakdown);
+    document.getElementById('breakdownStale').hidden=!result.breakdown_stale;
+   }else{
+    resetContentBreakdown(currentScript?'内容拆解暂未保存，可点击“重新拆解”。':'脚本生成成功后将自动分析创作思路、转化逻辑与拍摄要求。');
+   }
+   if(activeGenerationJobId)showGeneratingWorkspace();
+  }
+  updateResultActionState();
+ }finally{
+  restoringWorkspace=false;
+ }
+ restoreGenerateScroll(saved.scroll);
+ if(currentScriptId)validateRestoredScriptContext();
+ return activeGenerationJobId;
+}
+async function bootstrapGeneratePage(){
+ const saved=readGenerateWorkspace();
+ if(saved)prepareGenerateWorkspace(saved);
+ await Promise.all([loadCategories(),loadProducts()]);
+ const savedJobId=saved?restoreGenerateWorkspace(saved):null;
+ const backgroundJobId=new URLSearchParams(window.location.search).get('job');
+ if(backgroundJobId)await restoreGeneratedJob(backgroundJobId);
+ else if(savedJobId)await restoreGeneratedJob(savedJobId);
 }
 
 window.addEventListener('facai:job-open',function(event){if(event.detail&&event.detail.job_type==='ai.scripts.generate')restoreGeneratedJob(event.detail.public_id);});
@@ -868,21 +1097,26 @@ window.addEventListener('facai:job-open',function(event){if(event.detail&&event.
 document.getElementById('btnAddCustomType').addEventListener('click',addCustomVideoType);
 document.getElementById('customVideoTypeInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addCustomVideoType();}});
 document.getElementById('btnGenerate').addEventListener('click',function(){doGenerate(null);});
-document.getElementById('optimizeInput').addEventListener('input',function(){document.getElementById('btnOptimize').disabled=!this.value.trim();});
+document.getElementById('optimizeInput').addEventListener('input',function(){updateResultActionState();scheduleGenerateWorkspaceSave();});
 document.getElementById('btnOptimize').addEventListener('click',async function(){const s=document.getElementById('optimizeInput').value.trim();if(!s)return;await doGenerate('用户优化建议：'+s+'。请保持产品和视频类型不变，按要求重新生成。');document.getElementById('optimizeInput').value='';document.getElementById('btnOptimize').disabled=true;});
-document.getElementById('btnBack').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=false;currentScript='';currentScriptId=null;resetTemplateReference();resetContentBreakdown();});
-document.getElementById('scriptOutput').addEventListener('input',function(){currentScript=getEditedScript();markContentBreakdownStale();});
+document.getElementById('btnBack').addEventListener('click',function(){state.step=state.selectedProduct?2:1;state.generating=false;activeGenerationJobId=null;document.getElementById('step1').style.display=state.step===1?'':'none';document.getElementById('step2').style.display=state.step===2?'':'none';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=false;currentScript='';currentScriptId=null;currentResultInfo=null;resetTemplateReference();resetContentBreakdown();writeGenerateWorkspaceNow();});
+document.getElementById('scriptOutput').addEventListener('input',function(){currentScript=getEditedScript();markContentBreakdownStale();scheduleGenerateWorkspaceSave();});
 document.getElementById('btnCopy').addEventListener('click',function(){const t=getEditedScript();if(!t)return toast('暂无可复制内容','error');copyText(t).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('btnSave').addEventListener('click',async function(){if(!currentScriptId)return toast('请先生成脚本','error');try{const r=await fetch('/api/scripts/history/'+currentScriptId+'/save-to-library',{method:'POST'});if(r.ok)toast('已保存到模板库','success');else toast('保存失败','error');}catch(e){toast('保存失败','error');}});
-document.getElementById('btnRedo').addEventListener('click',function(){const regenRequirement=buildRegenerateRequirement();currentScriptId=null;state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';resetContentBreakdown();doGenerate(regenRequirement);});
+document.getElementById('btnRedo').addEventListener('click',function(){const regenRequirement=buildRegenerateRequirement();currentScriptId=null;state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';resetContentBreakdown();writeGenerateWorkspaceNow();doGenerate(regenRequirement);});
 document.getElementById('btnRefreshBreakdown').addEventListener('click',function(){var script=getEditedScript();if(!currentScriptId||!script)return toast('请先生成有效脚本','error');loadContentBreakdown(currentScriptId,script);});
 document.getElementById('btnCopyBreakdown').addEventListener('click',function(){var text=contentBreakdownText(currentBreakdown);if(!text)return toast('暂无可复制的拆解内容','error');copyText(text).then(function(){toast('已复制内容拆解','success');}).catch(function(){toast('复制失败，请手动复制','error');});});
-document.getElementById('searchInput').addEventListener('input',function(){clearTimeout(window._st);window._st=setTimeout(loadProducts,300);});
+document.getElementById('searchInput').addEventListener('input',function(){scheduleGenerateWorkspaceSave();clearTimeout(window._st);window._st=setTimeout(loadProducts,300);});
+document.getElementById('reqPreFill').addEventListener('input',scheduleGenerateWorkspaceSave);
+document.getElementById('includeShotDesign').addEventListener('change',scheduleGenerateWorkspaceSave);
+document.getElementById('templateReferenceDetails').addEventListener('toggle',scheduleGenerateWorkspaceSave);
+document.getElementById('scriptOutput').addEventListener('scroll',scheduleGenerateWorkspaceSave,{passive:true});
+document.querySelector('.breakdown-panel').addEventListener('scroll',scheduleGenerateWorkspaceSave,{passive:true});
 
-window.addEventListener('scroll',toggleScrollTopButton,{passive:true});
+window.addEventListener('scroll',function(){toggleScrollTopButton();scheduleGenerateWorkspaceSave();},{passive:true});
+window.addEventListener('pagehide',writeGenerateWorkspaceNow);
 toggleScrollTopButton();
-loadCategories();loadProducts();
-var backgroundJobId=new URLSearchParams(window.location.search).get('job');if(backgroundJobId)setTimeout(function(){restoreGeneratedJob(backgroundJobId);},200);
+bootstrapGeneratePage();
 document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
 </script>
 </body>
