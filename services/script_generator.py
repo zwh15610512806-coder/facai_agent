@@ -732,31 +732,38 @@ class ScriptGenerator:
                 )
             except Exception as exc:
                 logger.warning("AI opening repair failed: %s", exc)
-                raise ScriptGenerationError(
-                    "AI生成开头质量未通过，请重新生成。",
-                    status_code=502,
-                ) from exc
+                repaired_response = ""
 
-            repaired_check = validate_opening(
-                repaired_response or "",
-                recent_openings,
-                product.get("name", ""),
-            )
-            if not (repaired_response or "").strip() or not repaired_check.valid:
-                logger.warning(
-                    "AI opening rejected after repair: reasons=%s opening=%r",
-                    repaired_check.reasons,
-                    repaired_check.opening,
+            if (repaired_response or "").strip():
+                repaired_check = validate_opening(
+                    repaired_response,
+                    recent_openings,
+                    product.get("name", ""),
                 )
-                raise ScriptGenerationError(
-                    "AI生成开头质量未通过，请重新生成。",
-                    status_code=502,
-                )
-            response = repaired_response
+                if not repaired_check.valid:
+                    logger.warning(
+                        "AI opening still below quality target after repair: reasons=%s opening=%r",
+                        repaired_check.reasons,
+                        repaired_check.opening,
+                    )
+
+                def candidate_rank(check, prefer_repaired: bool) -> tuple:
+                    return (
+                        1 if check.valid else 0,
+                        -len(check.reasons),
+                        -float(check.max_similarity or 0.0),
+                        1 if prefer_repaired else 0,
+                    )
+
+                if candidate_rank(repaired_check, True) >= candidate_rank(opening_check, False):
+                    response = repaired_response
+            else:
+                logger.warning("AI opening repair returned no usable content; keeping first response")
 
         script = self._post_process_script_output(
             response,
             include_shot_design,
+            remove_default_audience_opening=True,
         )
         if not script.strip():
             raise ScriptGenerationError("AI生成模型返回内容为空，请重试或检查 AI 配置。")

@@ -117,7 +117,7 @@ function sanitizeMessage(message){
  const sources=Array.isArray(message.sources)?message.sources.map(sanitizeSource).filter(Boolean).slice(0,6):[];
  const rawAgentTrace=Array.isArray(message.agentTrace)?message.agentTrace:(Array.isArray(message.agent_trace)?message.agent_trace:[]);
  const agentTrace=rawAgentTrace.map(sanitizeAgentTraceStep).filter(Boolean).slice(0,6);
- return {role:role,content:content,products:products,attachments:attachments,sources:sources,reasoning:String(message.reasoning||''),agentTrace:agentTrace};
+ return {role:role,content:content,products:products,attachments:attachments,sources:sources,reasoning:String(message.reasoning||''),agentTrace:agentTrace,jobId:String(message.jobId||message.job_id||''),jobStatus:String(message.jobStatus||message.job_status||'')};
 }
 function deriveConversationTitle(messages){
  const firstUser=(messages||[]).find(function(message){return message.role==='user'&&message.content;});
@@ -483,7 +483,7 @@ function deleteConversation(id,event){
 }
 function addConversationMessage(role,content,extras){
  const conversation=ensureActiveConversation();
- const message=sanitizeMessage({role:role,content:content,products:extras&&extras.products,attachments:extras&&extras.attachments,reasoning:extras&&extras.reasoning,sources:extras&&extras.sources,agentTrace:extras&&extras.agentTrace});
+ const message=sanitizeMessage({role:role,content:content,products:extras&&extras.products,attachments:extras&&extras.attachments,reasoning:extras&&extras.reasoning,sources:extras&&extras.sources,agentTrace:extras&&extras.agentTrace,jobId:extras&&extras.jobId,jobStatus:extras&&extras.jobStatus});
  if(!message)return null;
  conversation.messages.push(message);
  conversation.messages=conversation.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
@@ -795,9 +795,10 @@ async function generateAssistantDocument(button){
  button.textContent='生成中...';
  try{
   const payload=findAssistantDocumentContext(answer);
-  const response=await fetch('/api/inspiration/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  const data=await response.json();
-  if(!response.ok)throw new Error(formatInspirationApiError(data,'文档生成失败'));
+   const job=await ui.submitBackgroundJob('/api/inspiration/documents/jobs',payload,{sourceRef:activeConversationId});
+   const finished=await ui.waitForBackgroundJob(job.public_id);
+   if(finished.status!=='succeeded')throw new Error(finished.error_summary||finished.message||'文档生成失败');
+   const data=finished.result||{};
   const existing=bubble.querySelector('.generated-document-card');
   if(existing)existing.remove();
   bubble.insertAdjacentHTML('beforeend',renderGeneratedDocument(data));
@@ -883,89 +884,77 @@ function formatInspirationChatError(error){
  }
  return message;
 }
+function syncConversationJob(job){
+ const conversation=conversations.find(function(item){return item.id===job.source_ref;});
+ if(!conversation)return;
+ let message=conversation.messages.find(function(item){return item.jobId===job.public_id;});
+ const result=job.result||job.partial_result||{};
+ updateModelPillForMode(result.tool_mode||getActiveInspirationMode(),result.model,result.product_context_used);
+ const active=['pending','running','cancelling'].indexOf(job.status)>=0;
+ const content=job.status==='succeeded'?(result.answer||'没有收到回复'):(job.status==='failed'?('生成失败：'+(job.error_summary||job.message||'未知错误')):(job.status==='cancelled'?'（任务已取消）':((result.answer||'')||job.message||'后台任务运行中...')));
+ if(!message){
+  message=sanitizeMessage({role:'assistant',content:content,jobId:job.public_id,jobStatus:job.status,products:result.products,reasoning:result.reasoning,sources:result.sources,agentTrace:result.agent_trace});
+  conversation.messages.push(message);
+ }else{
+  Object.assign(message,sanitizeMessage({role:'assistant',content:content,jobId:job.public_id,jobStatus:job.status,products:result.products,reasoning:result.reasoning,sources:result.sources,agentTrace:result.agent_trace}));
+ }
+ conversation.updatedAt=Date.now();
+ saveConversations();
+ if(conversation.id===activeConversationId){syncChatHistoryFromActive();renderConversation();}
+ return !active;
+}
+
+async function waitForInspirationJob(publicId){
+ while(true){
+  const job=await ui.fetchBackgroundJob(publicId);
+  syncConversationJob(job);
+  if(['succeeded','failed','cancelled'].indexOf(job.status)>=0)return job;
+  await new Promise(function(resolve){setTimeout(resolve,1000);});
+ }
+}
+
+async function restoreInspirationJobs(){
+ if(!ui.jobHeaders)return;
+ try{
+  const response=await fetch('/api/jobs?job_type=ai.inspiration.chat&limit=50',{headers:ui.jobHeaders({'Accept':'application/json'})});
+  if(!response.ok)return;
+  const payload=await response.json();
+  for(const summary of (payload.items||[])){
+   if(!summary.source_ref)continue;
+   const detail=await ui.fetchBackgroundJob(summary.public_id);
+   syncConversationJob(detail);
+  }
+ }catch(error){}
+}
+
 async function sendInspirationChat(event){
  event.preventDefault();
  const input=document.getElementById('inspirationInput');
  const message=input.value.trim();
  if(!message)return;
- ensureActiveConversation();
+ const conversation=ensureActiveConversation();
  const historyForRequest=chatHistory.slice();
- input.value='';
- resizeInspirationInput();
+ input.value='';resizeInspirationInput();
  const attachmentsForRequest=selectedAttachments.slice();
  appendMessage('user',message,{attachments:selectedAttachments});
  addConversationMessage('user',message,{attachments:selectedAttachments});
- selectedAttachments=[];
- renderSelectedAttachments();
- const loadingText=getActiveInspirationMode()==='seedance'?'正在生成分镜提示词...':'正在思考...';
- const loading=appendMessage('assistant',loadingText, {thinking:true});
- const streamContent=loading.querySelector('.message-content');
- const controller=new AbortController();
- activeInspirationRequest=controller;
- let partial='';
- let reasoningPartial='';
- let data={products:[],sources:[],attachments:[],agent_trace:[],reasoning:'',answer:'',model:'',tool_mode:getActiveInspirationMode(),product_context_used:false};
+ selectedAttachments=[];renderSelectedAttachments();
+ const loadingText=getActiveInspirationMode()==='seedance'?'分镜提示词已转入后台生成...':'已转入后台思考，可放心切换页面...';
+ const loading=appendMessage('assistant',loadingText,{thinking:true});
  const payload={message:message,history:historyForRequest,tool_mode:getActiveInspirationMode(),product_context_mode:getProductContextMode(),web_search_mode:getWebSearchMode(),attachments:attachmentsForRequest};
  setBusy(true);
  try{
-  const response=await fetch('/api/inspiration/chat/stream',{method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},body:JSON.stringify(payload),signal:controller.signal});
-  if(!response.ok){
-   const errorData=await response.json().catch(function(){return {};});
-   throw new Error(formatInspirationApiError(errorData,'发送失败'));
-  }
-  if(!response.body||!response.body.getReader){
-   data=await fetchLegacyInspirationChat(payload,controller.signal);
-   partial=data.answer||'';
-  }else{
-   await readInspirationSse(response,async function(eventName,eventData){
-    if(eventName==='meta'){
-     data.model=eventData.model||data.model;
-     data.tool_mode=eventData.tool_mode||data.tool_mode;
-     updateModelPillForMode(data.tool_mode,data.model,data.product_context_used);
-    }else if(eventName==='context'){
-     data.products=eventData.products||[];
-     data.sources=eventData.sources||[];
-     data.attachments=eventData.attachments||[];
-     data.agent_trace=eventData.agent_trace||[];
-     data.product_context_used=Boolean(eventData.product_context_used);
-    }else if(eventName==='reasoning_delta'){
-     reasoningPartial+=eventData.text||'';
-    }else if(eventName==='delta'){
-     partial+=eventData.text||'';
-     streamContent.textContent=partial;
-     loading.querySelector('.chat-bubble').classList.remove('thinking');
-     scrollChatToMessage(loading,'bottom');
-    }else if(eventName==='done'){
-     data=Object.assign(data,eventData);
-    }else if(eventName==='error'){
-     if(eventData.partial&&!partial)partial=eventData.partial;
-     throw new Error(eventData.message||'流式生成失败');
-    }
-   });
-   data.answer=partial;
-   data.reasoning=data.reasoning||reasoningPartial;
-  }
-  loading.remove();
-  addConversationMessage('assistant',data.answer||'',{products:data.products,reasoning:data.reasoning,sources:data.sources,agentTrace:data.agent_trace});
-  const referenceProductsHtml=renderReferenceProducts(data.products);
-  updateModelPillForMode(data.tool_mode||getActiveInspirationMode(),data.model,data.product_context_used);
-  appendMessage('assistant',data.answer||'没有收到回复',{products:data.products,referenceProductsHtml:referenceProductsHtml,reasoning:data.reasoning,sources:data.sources,agentTrace:data.agent_trace});
+  const job=await ui.submitBackgroundJob('/api/inspiration/chat/jobs',payload,{sourceRef:conversation.id});
+  addConversationMessage('assistant',loadingText,{jobId:job.public_id,jobStatus:job.status});
+  activeInspirationRequest={abort:function(){return ui.changeBackgroundJob(job.public_id,'cancel');},jobId:job.public_id};
+  loading.remove();renderConversation();
+  const finished=await waitForInspirationJob(job.public_id);
+  if(finished.status==='succeeded')toast('AI 回答已完成','success');
  }catch(error){
   loading.remove();
-  const cancelled=error&&error.name==='AbortError';
-  if(partial){
-   const retained=partial+(cancelled?'\n\n（已取消，已保留部分内容）':'\n\n（生成中断，已保留部分内容）');
-   addConversationMessage('assistant',retained,{products:data.products,reasoning:reasoningPartial,sources:data.sources,agentTrace:data.agent_trace,partial:true,cancelled:cancelled});
-   appendMessage('assistant',retained,{products:data.products,reasoning:reasoningPartial,sources:data.sources,agentTrace:data.agent_trace});
-  }else if(cancelled){
-   toast('已取消生成','success');
-  }else{
-   appendMessage('assistant','发送失败：'+formatInspirationChatError(error));
-  }
+  appendMessage('assistant','发送失败：'+formatInspirationChatError(error));
  }finally{
-  if(activeInspirationRequest===controller)activeInspirationRequest=null;
-  setBusy(false);
-  input.focus();
+  activeInspirationRequest=null;setBusy(false);input.focus();
  }
 }
 function clearChat(){
@@ -973,6 +962,13 @@ function clearChat(){
 }
 loadConversations();
 renderConversation();
+restoreInspirationJobs();
+window.addEventListener('facai:job-completed',function(event){if(event.detail&&event.detail.job_type==='ai.inspiration.chat')restoreInspirationJobs();});
+window.addEventListener('facai:job-open',function(event){
+ if(!event.detail)return;
+ if(event.detail.job_type==='ai.inspiration.chat')ui.fetchBackgroundJob(event.detail.public_id).then(syncConversationJob);
+ if(event.detail.job_type==='ai.inspiration.document')ui.fetchBackgroundJob(event.detail.public_id).then(function(job){if(job.status==='succeeded'&&job.result&&job.result.download_url)window.location.href=job.result.download_url;});
+});
 renderConversationHistory();
 renderInspirationMode();
 renderProductContextMode();

@@ -599,8 +599,8 @@ class ProductDetailTemplateTests(unittest.TestCase):
     def test_products_page_has_single_main_rag_chat_that_switches_scope(self):
         self.assertIn("function sendGlobalChat(event)", self.page)
         self.assertNotIn("function sendScopedChat(event)", self.page)
-        self.assertIn("'/api/products/rag-chat'", self.page)
-        self.assertIn("'/api/products/'+productId+'/rag-chat'", self.page)
+        self.assertIn("'/api/products/rag-chat/jobs'", self.page)
+        self.assertIn("'/api/products/'+productId+'/rag-chat/jobs'", self.page)
         self.assertIn("const scoped=!!productId", self.page)
         self.assertIn("const payload=scoped?{query:query}:{query:query,limit:30}", self.page)
         self.assertIn('id="globalChatInput"', self.page)
@@ -666,7 +666,7 @@ class ProductDetailTemplateTests(unittest.TestCase):
     def test_product_actions_use_busy_buttons_and_api_error_messages(self):
         self.assertIn("function getApiErrorMessage", self.page)
         self.assertIn("function formatApiErrorMessage", self.page)
-        self.assertIn('/static/js/common.js?v=app-shell-20260720-2', self.page)
+        self.assertIn('/static/js/common.js?v=app-shell-20260723-jobs1', self.page)
         self.assertIn("function withBusyButton", self.page)
         self.assertIn("withBusyButton(button", self.page)
         self.assertIn("btnExtractAllPoints", self.page)
@@ -755,7 +755,7 @@ class ProductDetailTemplateTests(unittest.TestCase):
         self.assertIn("formatAssistantAnswer(answerText)", self.page)
         self.assertNotIn("esc(answerText).replace(/\\n/g,'<br>')+(data?renderRagResults(data):'')", self.page)
         self.assertNotIn("hasRagResults(data)?renderRagResults(data)", self.page)
-        self.assertIn("formatApiErrorMessage(data.detail||data.message||data,'检索失败')", self.page)
+        self.assertIn("finished.error_summary||finished.message||'检索失败'", self.page)
         self.assertNotIn("appendMessage('globalChatThread','assistant',data.detail||'检索失败')", self.page)
 
         render_body = re.search(r"function renderRagResults\(data\)\{(?P<body>.*?)\n\}", self.page, flags=re.S)

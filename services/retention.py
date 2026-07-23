@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from models import AIUsageRecord, AuditEvent, DurableTask, ProductRagQueryLog
+from models import AIUsageRecord, AuditEvent, DurableTask, JobRun, ProductRagQueryLog
 
 
 @dataclass(frozen=True)
@@ -40,12 +40,20 @@ def apply_data_retention(db: Session, *, now: datetime | None = None) -> Retenti
         audit_events=db.query(AuditEvent)
         .filter(AuditEvent.created_at < audit_cutoff)
         .delete(synchronize_session=False),
-        completed_tasks=db.query(DurableTask)
-        .filter(
-            DurableTask.status.in_(("succeeded", "failed")),
-            DurableTask.completed_at < task_cutoff,
-        )
-        .delete(synchronize_session=False),
+        completed_tasks=(
+            db.query(DurableTask)
+            .filter(
+                DurableTask.status.in_(("succeeded", "failed", "cancelled")),
+                DurableTask.completed_at < task_cutoff,
+            )
+            .delete(synchronize_session=False)
+            + db.query(JobRun)
+            .filter(
+                JobRun.status.in_(("succeeded", "failed", "cancelled", "interrupted")),
+                JobRun.finished_at < task_cutoff,
+            )
+            .delete(synchronize_session=False)
+        ),
     )
     db.commit()
     return result

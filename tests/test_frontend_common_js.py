@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendCommonJsTests(unittest.TestCase):
-    SHARED_TOOLS_ASSET_VERSION = "app-shell-20260720-2"
+    SHARED_TOOLS_ASSET_VERSION = "app-shell-20260723-tasks-stack"
     TOOL_TEMPLATES = [
         "index.html",
         "rewrite.html",
@@ -88,6 +88,14 @@ class FrontendCommonJsTests(unittest.TestCase):
         self.assertIn("Object.freeze", common)
         self.assertIn("initToolNavigation", common)
         self.assertNotIn("href: '/app/canvas'", common)
+
+    def test_task_toggle_stacks_above_tools_toggle_on_desktop(self):
+        css = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8-sig")
+
+        self.assertIn(
+            ".facai-tools-controls { display: flex; flex-direction: column; align-items: flex-end;",
+            css,
+        )
 
     def test_generate_is_the_primary_nav_item_immediately_after_ai_work(self):
         generate_link = r'<a href="/app/generate"[^>]*>生成脚本</a>'

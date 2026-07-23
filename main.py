@@ -30,6 +30,7 @@ from routers import (
     creators,
     import_data,
     inspiration,
+    jobs,
     products,
     reference_scripts,
     scripts,
@@ -140,6 +141,7 @@ app.include_router(scripts.router, prefix="/api/scripts", tags=["scripts"])
 app.include_router(import_data.router, prefix="/api/import", tags=["import"])
 app.include_router(reference_scripts.router, prefix="/api/reference", tags=["reference"])
 app.include_router(inspiration.router, prefix="/api/inspiration", tags=["inspiration"])
+app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(ai_config.router, prefix="/api/ai-config", tags=["ai-config"])
 app.include_router(search_local.router, prefix="/api/search-proxy", tags=["search"])
 app.include_router(creators.router, prefix="/api/creators", tags=["creators"])

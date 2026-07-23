@@ -1,13 +1,16 @@
 """脚本生成 API — AI 驱动的核心功能"""
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+import asyncio
+
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
-from database import get_db
+from database import SessionLocal, get_db
 from models import Product, ScriptTemplate, ViralScript, GeneratedScript, ReferenceScript
 from schemas import (
     ScriptGenerateRequest, ScriptGenerateResponse,
     ScriptRewriteRequest, ScriptRewriteResponse,
     ScriptShotMatchRequest, ScriptShotMatchResponse,
+    ScriptContentBreakdownRequest, ScriptContentBreakdownResponse,
     SeedancePromptGenerateRequest, SeedancePromptGenerateResponse,
     SeedancePromptUploadResponse,
     GeneratedScriptOut, GeneratedScriptPageOut, ApiResponse
@@ -18,6 +21,10 @@ from services.product_detail import build_product_detail_payload
 from services.script_rewriter import ScriptRewriteGenerationError, script_rewriter
 from services.inspiration_attachments import AttachmentExtractionError, MAX_ATTACHMENT_BYTES, extract_attachment_text
 from services.seedance_prompt_generator import SeedancePromptGenerationError, seedance_prompt_generator
+from services.script_content_breakdown import (
+    ScriptContentBreakdownError,
+    script_content_breakdown_service,
+)
 from services.script_reference_intent import (
     DEFAULT_VIDEO_TYPES,
     ReferenceSelectionIntent,
@@ -25,6 +32,14 @@ from services.script_reference_intent import (
 )
 from services.upload_limits import read_upload_bytes
 from services.product_markdown_importer import normalize_product_name
+from services.background_jobs import (
+    create_background_job,
+    is_cancel_requested,
+    job_to_dict,
+    mark_cancelling,
+    register_background_handler,
+)
+from routers.jobs import owner_key_for_request
 from typing import List, Optional
 import random
 
@@ -398,6 +413,66 @@ async def generate_seedance_prompts(request: SeedancePromptGenerateRequest, db: 
     except SeedancePromptGenerationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     return SeedancePromptGenerateResponse(**result)
+
+
+@router.post("/content-breakdown", response_model=ScriptContentBreakdownResponse)
+async def generate_content_breakdown(
+    request: ScriptContentBreakdownRequest,
+    db: Session = Depends(get_db),
+):
+    """Analyze the user's current version without blocking or replacing the generated script."""
+    record = db.query(GeneratedScript).filter(GeneratedScript.id == request.script_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="生成记录不存在")
+
+    product = record.product
+    if not product:
+        raise HTTPException(status_code=404, detail="生成记录关联的产品不存在")
+
+    product_context = {
+        "name": product.name,
+        "category": product.category,
+        "brand": product.brand,
+        "price": product.price,
+        "original_price": product.original_price,
+        "description": product.description,
+        "pending_fields": product.pending_fields or [],
+        "selling_points": [
+            {"type": sp.point_type, "content": sp.content, "priority": sp.priority}
+            for sp in sorted(product.selling_points, key=lambda item: item.priority)
+        ],
+    }
+    product_context.update(build_product_detail_payload(product))
+
+    template_context = None
+    if record.template_id:
+        template = db.query(ScriptTemplate).filter(ScriptTemplate.id == record.template_id).first()
+        if template:
+            template_context = _script_template_context(template)
+
+    source_script = None
+    if record.source_script_title or record.source_script_content:
+        source_script = {
+            "id": record.source_script_id,
+            "source": record.source_script_source,
+            "title": record.source_script_title,
+            "content": record.source_script_content,
+        }
+
+    engine = "template" if (record.ai_model or "").startswith("模板库改写") else "deepseek"
+    try:
+        result = await script_content_breakdown_service.generate(
+            script_content=request.script_content,
+            product=product_context,
+            video_type=record.video_type or "AI智能生成",
+            engine=engine,
+            template=template_context,
+            source_script=source_script,
+            db=db,
+        )
+    except ScriptContentBreakdownError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return ScriptContentBreakdownResponse(**result)
 
 
 @router.post("/generate", response_model=ScriptGenerateResponse)
@@ -825,3 +900,81 @@ async def rewrite_script(request: ScriptRewriteRequest, db: Session = Depends(ge
         rewritten_script=rewritten,
         product_name=product.name,
     )
+
+
+@router.post("/generate/jobs", status_code=202)
+def enqueue_script_generation(
+    data: ScriptGenerateRequest,
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    x_facai_source_ref: str | None = Header(None, alias="X-Facai-Source-Ref"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    job, created = create_background_job(
+        db,
+        owner_key=owner_key_for_request(request, x_facai_client_id),
+        job_type="ai.scripts.generate",
+        request_payload=data.model_dump(mode="json"),
+        origin_path="/app/generate",
+        source_ref=x_facai_source_ref or "",
+        queue_group="ai",
+        idempotency_key=idempotency_key or "",
+        max_attempts=2,
+        message="脚本生成任务等待执行",
+    )
+    return {"job": job_to_dict(job), "created": created}
+
+
+@router.post("/rewrite/jobs", status_code=202)
+def enqueue_script_rewrite(
+    data: ScriptRewriteRequest,
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    x_facai_source_ref: str | None = Header(None, alias="X-Facai-Source-Ref"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    job, created = create_background_job(
+        db,
+        owner_key=owner_key_for_request(request, x_facai_client_id),
+        job_type="ai.scripts.rewrite",
+        request_payload=data.model_dump(mode="json"),
+        origin_path="/app/rewrite",
+        source_ref=x_facai_source_ref or "",
+        queue_group="ai",
+        idempotency_key=idempotency_key or "",
+        max_attempts=2,
+        message="脚本改写任务等待执行",
+    )
+    return {"job": job_to_dict(job), "created": created}
+
+
+def _run_script_generate_job(payload: dict, job_id: int) -> dict | None:
+    if is_cancel_requested(job_id):
+        mark_cancelling(job_id)
+        return None
+
+    async def run() -> dict:
+        with SessionLocal() as worker_db:
+            result = await generate_script(ScriptGenerateRequest.model_validate(payload), worker_db)
+            return result.model_dump(mode="json")
+
+    return asyncio.run(run())
+
+
+def _run_script_rewrite_job(payload: dict, job_id: int) -> dict | None:
+    if is_cancel_requested(job_id):
+        mark_cancelling(job_id)
+        return None
+
+    async def run() -> dict:
+        with SessionLocal() as worker_db:
+            result = await rewrite_script(ScriptRewriteRequest.model_validate(payload), worker_db)
+            return result.model_dump(mode="json")
+
+    return asyncio.run(run())
+
+
+register_background_handler("ai.scripts.generate", _run_script_generate_job, queue_group="ai")
+register_background_handler("ai.scripts.rewrite", _run_script_rewrite_job, queue_group="ai")

@@ -15,6 +15,7 @@ class LocalScanTaskQueueTests(unittest.TestCase):
             patch("services.job_runs.start_job", return_value=101),
             patch("services.task_queue.task_worker_status", return_value={"alive": True}),
             patch("services.task_queue.enqueue_task") as enqueue,
+            patch("services.job_runs.latest_job", return_value=None),
         ):
             import_data.start_local_product_scan()
 
@@ -25,6 +26,7 @@ class LocalScanTaskQueueTests(unittest.TestCase):
                 "job_id": 101,
             },
             max_attempts=3,
+            job_run_id=101,
         )
 
     def test_txt_scan_uses_durable_queue_when_worker_is_alive(self):
@@ -33,6 +35,7 @@ class LocalScanTaskQueueTests(unittest.TestCase):
             patch("services.job_runs.start_job", return_value=202),
             patch("services.task_queue.task_worker_status", return_value={"alive": True}),
             patch("services.task_queue.enqueue_task") as enqueue,
+            patch("services.job_runs.latest_job", return_value=None),
         ):
             templates.start_local_txt_scan(
                 category="烘焙",
@@ -52,6 +55,7 @@ class LocalScanTaskQueueTests(unittest.TestCase):
                 "job_id": 202,
             },
             max_attempts=3,
+            job_run_id=202,
         )
 
 

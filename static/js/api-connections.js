@@ -35,7 +35,9 @@
 
   async function apiFetch(url, options, fallback) {
     options = options || {};
-    var headers = options.headers || {};
+    var headers = window.FacaiUI && typeof window.FacaiUI.jobHeaders === 'function'
+      ? window.FacaiUI.jobHeaders(options.headers || {})
+      : (options.headers || {});
     if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
     options.headers = headers;
     options.credentials = 'same-origin';

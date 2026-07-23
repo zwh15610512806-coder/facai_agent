@@ -87,14 +87,14 @@ class InspirationStreamingApiTests(unittest.TestCase):
         self.assertEqual([name for name, _data in events], ["meta", "context", "error"])
         self.assertIn("upstream exploded", events[-1][1]["message"])
 
-    def test_frontend_uses_stream_abort_and_keeps_partial_answer(self):
+    def test_frontend_submits_durable_job_and_restores_partial_answer(self):
         page = read_page_source("inspiration.html")
 
-        self.assertIn("/api/inspiration/chat/stream", page)
-        self.assertIn("AbortController", page)
+        self.assertIn("/api/inspiration/chat/jobs", page)
+        self.assertIn("waitForInspirationJob", page)
         self.assertIn('id="inspirationCancelBtn"', page)
         self.assertIn("cancelled", page)
-        self.assertIn("partial", page)
+        self.assertIn("job.partial_result", page)
 
     def test_mobile_history_is_closed_drawer_and_fabs_move_into_navigation(self):
         page = read_page_source("inspiration.html")
@@ -109,7 +109,9 @@ class InspirationStreamingApiTests(unittest.TestCase):
         self.assertIn("/app/import", common)
         self.assertIn("/app/ai-config", common)
         self.assertIn(".nav-mobile-utility", css)
+        self.assertIn("后台任务", common)
         self.assertIn(".facai-tools-launcher { display: none", css)
+        self.assertIn(".facai-tools-controls,.facai-tools-menu { display: none", css)
 
     def test_closing_consumer_closes_provider_stream_and_records_cancelled(self):
         from services.ai_service import AIService

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.routing import APIRoute
@@ -106,7 +107,8 @@ from integrations.types import (
     SyncStatus,
     utc_now,
 )
-from models import Product
+from models import JobRun, Product
+from services.background_jobs import browser_owner_key
 from services.security import request_actor_digest
 
 
@@ -906,8 +908,10 @@ def get_integration_authorization(
 def start_manual_integration_sync(
     connection_id: int,
     payload: ManualSyncRequest,
+    request: Request,
     db: Session = Depends(get_db),
     claims: IntegrationActor = Depends(current_integration_actor),
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
     _validation_audit: None = Depends(
         _audit_mutation_validation("manual_sync", "connection_id")
     ),
@@ -958,6 +962,38 @@ def start_manual_integration_sync(
             "unit_count": len(units),
         },
     )
+    if x_facai_client_id:
+        try:
+            normalized_client_id = str(uuid.UUID(x_facai_client_id))
+        except (ValueError, AttributeError) as exc:
+            raise HTTPException(status_code=400, detail="X-Facai-Client-Id 必须是 UUID") from exc
+        request_id = str(payload.request_id)
+        db.add(JobRun(
+            public_id=str(uuid.uuid4()),
+            owner_key=browser_owner_key(request_actor_digest(request), normalized_client_id),
+            job_type="integration.adapter.sync",
+            queue_group="maintenance",
+            origin_path="/app/api-connections",
+            source_ref=f"integration-sync:{request_id}",
+            idempotency_key=request_id,
+            status="pending",
+            message="集成同步等待执行",
+            request_payload={
+                "connection_id": connection.id,
+                "resources": [item.value for item in payload.resources],
+                "date_from": payload.date_from.isoformat(),
+                "date_to": payload.date_to.isoformat(),
+            },
+            partial_result={},
+            result_payload={},
+            details={},
+            progress_current=0,
+            progress_total=result.sync_units,
+            version=1,
+            attempt_count=0,
+            max_attempts=6,
+            created_at=utc_now().replace(tzinfo=None),
+        ))
     db.commit()
     return {
         "connection_id": connection.id,

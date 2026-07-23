@@ -11,13 +11,14 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from config import MAX_UPLOAD_SIZE
 from database import SessionLocal, get_db
+from routers.jobs import owner_key_for_request
 from models import (
     QianchuanImportBatch,
     QianchuanMaterialPerformance,
@@ -1033,6 +1034,7 @@ def reindex_scripts(db: Session = Depends(get_db)):
 
 
 def start_local_txt_scan(
+    request: Request = None,
     category: str = Form(""),
     video_type: str = Form(""),
     tags: str = Form(""),
@@ -1047,7 +1049,13 @@ def start_local_txt_scan(
         if _local_txt_scan_state["is_running"]:
             return ApiResponse(message="本地脚本扫描正在运行", data=_local_txt_scan_snapshot())
         from services.job_runs import start_job
-        job_id = start_job("local_script_scan", message="本地脚本扫描启动中", details={"source_dir": source_dir})
+        job_id = start_job(
+            "local_script_scan",
+            message="本地脚本扫描启动中",
+            details={"source_dir": source_dir},
+            owner_key=owner_key_for_request(request, request.headers.get("X-Facai-Client-Id")) if request is not None and request.headers.get("X-Facai-Client-Id") else None,
+            origin_path="/app/import",
+        )
         _local_txt_scan_state.update({
             "is_running": True,
             "source_dir": source_dir,
@@ -1074,7 +1082,7 @@ def start_local_txt_scan(
         "job_id": job_id,
     }
     if task_queue.task_worker_status()["alive"]:
-        task_queue.enqueue_task("local_script_scan", task_payload, max_attempts=3)
+        task_queue.enqueue_task("local_script_scan", task_payload, max_attempts=3, job_run_id=job_id)
     else:
         # Router-only test/dev apps do not run the main lifespan worker.
         threading.Thread(
@@ -1845,7 +1853,12 @@ def _qianchuan_auto_match_snapshot() -> dict:
         return dict(_qianchuan_auto_match_state)
 
 
-def auto_match_qianchuan_bindings(payload: dict | None = None, db: Session = Depends(get_db)):
+def _execute_qianchuan_auto_match(
+    payload: dict | None,
+    db: Session,
+    *,
+    background_job_id: int | None = None,
+):
     """Plan or apply full Qianchuan material bindings from imported performance rows."""
     payload = payload or {}
     if not isinstance(payload, dict):
@@ -1874,10 +1887,11 @@ def auto_match_qianchuan_bindings(payload: dict | None = None, db: Session = Dep
         })
 
     from services.job_runs import finish_job, start_job
-    job_id = start_job(
+    job_id = background_job_id or start_job(
         "qianchuan_match",
         message="千川全量匹配中",
         details={"mode": mode, "min_score": min_score, "min_margin": min_margin},
+        db=db,
     )
 
     try:
@@ -1914,7 +1928,7 @@ def auto_match_qianchuan_bindings(payload: dict | None = None, db: Session = Dep
                 "review_count": result.get("review_count"),
                 "ambiguous_count": result.get("ambiguous_count"),
             })
-        finish_job(job_id, status="succeeded", message="千川全量匹配完成", details=result)
+        finish_job(job_id, status="succeeded", message="千川全量匹配完成", details=result, db=db)
         return ApiResponse(message="千川绑定自动匹配完成", data=result)
     except Exception as exc:
         _update = {
@@ -1924,15 +1938,20 @@ def auto_match_qianchuan_bindings(payload: dict | None = None, db: Session = Dep
         }
         with _qianchuan_auto_match_lock:
             _qianchuan_auto_match_state.update(_update)
-        finish_job(job_id, status="failed", message="千川全量匹配失败", error_summary=str(exc))
+        finish_job(job_id, status="failed", message="千川全量匹配失败", error_summary=str(exc), db=db)
         raise
 
 
-def qianchuan_auto_match_status():
+def auto_match_qianchuan_bindings(payload: dict | None = None, db: Session = Depends(get_db)):
+    """Plan or apply full Qianchuan material bindings from imported performance rows."""
+    return _execute_qianchuan_auto_match(payload, db)
+
+
+def qianchuan_auto_match_status(db: Session = Depends(get_db)):
     """Return the latest full Qianchuan auto-match status."""
     snapshot = _qianchuan_auto_match_snapshot()
     from services.job_runs import latest_job
-    snapshot["job_run"] = latest_job("qianchuan_match")
+    snapshot["job_run"] = latest_job("qianchuan_match", db=db)
     return ApiResponse(message="ok", data=snapshot)
 
 
@@ -2138,7 +2157,10 @@ def unbind_viral_script_performance(script_id: int, binding_id: int, db: Session
     return ApiResponse(message="已解绑素材表现", data=_qianchuan_performance_payload(script, db))
 
 
-async def import_viral_workbook(file: UploadFile = File(...)):
+async def import_viral_workbook(
+    request: Request,
+    file: UploadFile = File(...),
+):
     """Import Facai Excel scripts and cake reference images into the viral script library."""
     filename = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
     if not filename:
@@ -2174,7 +2196,14 @@ async def import_viral_workbook(file: UploadFile = File(...)):
             upload_path.unlink(missing_ok=True)
             return ApiResponse(message="Excel 脚本导入正在运行", data=_workbook_import_snapshot())
         from services.job_runs import start_job
-        job_id = start_job("workbook_import", message="Excel 脚本导入启动中", details={"filename": filename})
+        client_id = request.headers.get("X-Facai-Client-Id")
+        job_id = start_job(
+            "workbook_import",
+            message="Excel 脚本导入启动中",
+            details={"filename": filename},
+            owner_key=owner_key_for_request(request, client_id) if client_id else None,
+            origin_path="/app/templates",
+        )
         _workbook_import_state.update({
             "is_running": True,
             "filename": filename,
@@ -2202,7 +2231,7 @@ async def import_viral_workbook(file: UploadFile = File(...)):
         "job_id": job_id,
     }
     if task_worker_status()["alive"]:
-        enqueue_task("workbook_import", task_payload, max_attempts=3)
+        enqueue_task("workbook_import", task_payload, max_attempts=3, job_run_id=job_id)
     else:
         # Router-only test/dev apps do not run the main lifespan worker.
         threading.Thread(

@@ -48,7 +48,7 @@ class AlembicMigrationTests(unittest.TestCase):
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
 
-        self.assertEqual(revision, "20260720_0003")
+        self.assertEqual(revision, "20260723_0005")
         self.assertFalse(application_logger.disabled)
         self.assertGreaterEqual(
             tables,
@@ -76,7 +76,7 @@ class AlembicMigrationTests(unittest.TestCase):
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
         self.assertEqual(name, "legacy-product")
-        self.assertEqual(revision, "20260720_0003")
+        self.assertEqual(revision, "20260723_0005")
 
     def test_current_database_does_not_run_legacy_startup_schema_mutators(self):
         self.database.init_db()

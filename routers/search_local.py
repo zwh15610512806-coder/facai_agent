@@ -7,8 +7,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from sqlalchemy.orm import Session
+
+from database import get_db
+from routers.jobs import owner_key_for_request
+from services.background_jobs import create_background_job, job_to_dict, register_background_handler
 
 
 router = APIRouter(tags=["search"])
@@ -607,7 +612,7 @@ async def index_status():
 
 
 @router.post("/index/start")
-async def start_index():
+async def start_index(request: Request = None):
     _load_index()
     with _lock:
         if _state["is_indexing"]:
@@ -618,10 +623,18 @@ async def start_index():
     job_id = None
     if _active_backend() == "sqlite":
         from services.job_runs import start_job
-        job_id = start_job("search_rebuild", message="检索索引启动中", details={"root_count": len(SEARCH_ROOTS)})
+        client_id = request.headers.get("X-Facai-Client-Id") if request is not None else None
+        from routers.jobs import owner_key_for_request
+        job_id = start_job(
+            "search_rebuild",
+            message="检索索引启动中",
+            details={"root_count": len(SEARCH_ROOTS)},
+            owner_key=owner_key_for_request(request, client_id) if client_id else None,
+            origin_path="/app/search",
+        )
     from services.task_queue import enqueue_task, task_worker_status
     if task_worker_status()["alive"]:
-        enqueue_task("search_rebuild", {"job_id": job_id}, max_attempts=3)
+        enqueue_task("search_rebuild", {"job_id": job_id}, max_attempts=3, job_run_id=job_id)
     else:
         # Router-only test/dev apps do not run the main lifespan worker.
         threading.Thread(
@@ -662,17 +675,12 @@ async def search_files(
     ))
 
 
-@router.post("/ai-search")
-async def ai_search(request: Request):
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
+def _ai_search_payload(body: dict[str, Any]) -> dict[str, Any]:
     query = str(body.get("query") or "").strip()
     page = int(body.get("page") or 1)
     per_page = int(body.get("per_page") or 20)
     if not query:
-        return _json({"success": False, "message": "请输入搜索内容", "files": [], "total": 0, "total_pages": 1})
+        return {"success": False, "message": "请输入搜索内容", "files": [], "total": 0, "total_pages": 1}
 
     parsed = _parse_ai_query(query)
     payload = _search_page(
@@ -702,15 +710,19 @@ async def ai_search(request: Request):
         "date_from": parsed["date_from"],
         "date_to": parsed["date_to"],
     }
-    return _json(payload)
+    return payload
 
 
-@router.post("/search-summary")
-async def search_summary(request: Request):
+@router.post("/ai-search")
+async def ai_search(request: Request):
     try:
         body = await request.json()
     except Exception:
         body = {}
+    return _json(_ai_search_payload(body))
+
+
+def _search_summary_payload(body: dict[str, Any]) -> dict[str, Any]:
     payload = _search_page(
         q=str(body.get("query") or ""),
         file_type=str(body.get("file_type") or ""),
@@ -731,7 +743,75 @@ async def search_summary(request: Request):
         lines.extend(f"  - {item['file_name']}（{item['file_type']}）" for item in top)
     else:
         lines.append("- 当前条件下没有匹配文件。")
-    return _json({"success": True, "summary": "\n".join(lines)})
+    return {"success": True, "summary": "\n".join(lines)}
+
+
+@router.post("/search-summary")
+async def search_summary(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    return _json(_search_summary_payload(body))
+
+
+def _enqueue_search_job(
+    *,
+    job_type: str,
+    payload: dict[str, Any],
+    request: Request,
+    client_id: str | None,
+    source_ref: str | None,
+    idempotency_key: str | None,
+    db: Session,
+):
+    job, created = create_background_job(
+        db,
+        owner_key=owner_key_for_request(request, client_id),
+        job_type=job_type,
+        request_payload=payload,
+        origin_path=request.headers.get("X-Facai-Origin-Path") or "/app/search",
+        source_ref=source_ref or "search",
+        queue_group="ai",
+        idempotency_key=idempotency_key or "",
+        max_attempts=2,
+        message="AI 搜索任务等待执行" if job_type.endswith("ai_search") else "搜索汇总等待执行",
+    )
+    return {"job": job_to_dict(job), "created": created}
+
+
+@router.post("/ai-search/jobs", status_code=202)
+async def enqueue_ai_search(
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    x_facai_source_ref: str | None = Header(None, alias="X-Facai-Source-Ref"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    return _enqueue_search_job(job_type="ai.search.ai_search", payload=payload, request=request, client_id=x_facai_client_id, source_ref=x_facai_source_ref, idempotency_key=idempotency_key, db=db)
+
+
+@router.post("/search-summary/jobs", status_code=202)
+async def enqueue_search_summary(
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    x_facai_source_ref: str | None = Header(None, alias="X-Facai-Source-Ref"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    return _enqueue_search_job(job_type="ai.search.summary", payload=payload, request=request, client_id=x_facai_client_id, source_ref=x_facai_source_ref, idempotency_key=idempotency_key, db=db)
+
+
+register_background_handler("ai.search.ai_search", lambda payload, _job_id: _ai_search_payload(payload), queue_group="ai")
+register_background_handler("ai.search.summary", lambda payload, _job_id: _search_summary_payload(payload), queue_group="ai")
 
 
 def _get_indexed_file(file_id: int) -> dict[str, Any] | None:

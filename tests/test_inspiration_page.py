@@ -11,7 +11,7 @@ from tests.frontend_source import read_page_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NAV_STYLE_VERSION = "app-shell-20260720-2"
+NAV_STYLE_VERSION = "app-shell-20260723-tasks-stack"
 
 
 class InspirationPageTests(unittest.TestCase):
@@ -148,7 +148,8 @@ class InspirationPageTests(unittest.TestCase):
 
         self.assertIn("ensureActiveConversation()", page)
         self.assertIn("addConversationMessage('user',message,{attachments:selectedAttachments})", page)
-        self.assertIn("addConversationMessage('assistant',data.answer||'',{products:data.products,reasoning:data.reasoning,sources:data.sources,agentTrace:data.agent_trace})", page)
+        self.assertIn("submitBackgroundJob('/api/inspiration/chat/jobs'", page)
+        self.assertIn("syncConversationJob(job)", page)
         self.assertIn("renderConversationHistory()", page)
         self.assertIn("clearCurrentConversation()", page)
 
@@ -157,7 +158,7 @@ class InspirationPageTests(unittest.TestCase):
 
         self.assertIn("function renderReferenceProducts(products)", page)
         self.assertIn("参考产品", page)
-        self.assertIn("renderReferenceProducts(data.products)", page)
+        self.assertIn("products:result.products", page)
         self.assertIn("if(!products||!products.length)return ''", page)
         self.assertIn("product_context_used", page)
 
@@ -167,7 +168,7 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("function renderAgentTrace(agentTrace)", page)
         self.assertIn("已使用", page)
         self.assertIn("agent_trace", page)
-        self.assertIn("agentTrace:data.agent_trace", page)
+        self.assertIn("agentTrace:result.agent_trace", page)
         self.assertIn("renderAgentTrace(options.agentTrace)", page)
         self.assertIn("agentTrace:message.agentTrace", page)
 
@@ -177,12 +178,13 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("生成文档", page)
         self.assertIn("function generateAssistantDocument(button)", page)
         self.assertIn("function renderGeneratedDocument(document)", page)
-        self.assertIn("fetch('/api/inspiration/documents'", page)
+        self.assertIn("submitBackgroundJob('/api/inspiration/documents/jobs'", page)
+        self.assertIn("waitForBackgroundJob(job.public_id)", page)
         self.assertIn("download_url", page)
         self.assertIn("Word 文档", page)
         self.assertIn("function formatInspirationApiError(data,fallback)", page)
         self.assertIn("Array.isArray(data.detail)", page)
-        self.assertIn("new Error(formatInspirationApiError(data,'文档生成失败'))", page)
+        self.assertIn("文档生成失败", page)
 
     def test_inspiration_composer_has_tool_modes_and_upload(self):
         page = read_page_source("inspiration.html")
@@ -266,7 +268,7 @@ class InspirationPageTests(unittest.TestCase):
         page = read_page_source("inspiration.html")
 
         self.assertIn("function updateModelPillForMode(mode,overrideModel,productContextUsed)", page)
-        self.assertIn("updateModelPillForMode(data.tool_mode||getActiveInspirationMode(),data.model,data.product_context_used)", page)
+        self.assertIn("updateModelPillForMode(result.tool_mode||getActiveInspirationMode(),result.model,result.product_context_used)", page)
         self.assertIn("基于产品资料", page)
         self.assertNotIn("parts.push('产品资料')", page)
         self.assertIn("isProductContextAlways()", page)
@@ -293,8 +295,8 @@ class InspirationPageTests(unittest.TestCase):
         self.assertIn("思考过程", page)
         self.assertIn("function renderSources(sources)", page)
         self.assertIn("外网参考", page)
-        self.assertIn("reasoning:data.reasoning", page)
-        self.assertIn("sources:data.sources", page)
+        self.assertIn("reasoning:result.reasoning", page)
+        self.assertIn("sources:result.sources", page)
 
     def test_inspiration_template_formats_fetch_failures(self):
         page = read_page_source("inspiration.html")
@@ -404,7 +406,7 @@ class InspirationNavigationTests(unittest.TestCase):
             self.assertNotIn(">数据导入</a>", nav_links.group("body"), name)
             self.assertNotIn('class="data-import-fab"', page, name)
             self.assertNotIn('class="ai-config-fab"', page, name)
-            self.assertIn('/static/js/common.js?v=app-shell-20260720-2', page, name)
+            self.assertIn('/static/js/common.js?v=app-shell-20260723-tasks-stack', page, name)
 
     def test_data_import_nav_button_uses_fresh_shared_css_version(self):
         pages = [

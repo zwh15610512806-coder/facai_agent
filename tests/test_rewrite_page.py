@@ -115,7 +115,15 @@ async function fakeFetch(url,options){
 const sandbox = {
   console, URLSearchParams, Promise,
   fetch:fakeFetch,
-  FacaiUI:{fetchAllProducts:async()=>fixtures},
+  FacaiUI:{
+    fetchAllProducts:async()=>fixtures,
+    submitBackgroundJob:async(url,payload)=>{
+      if(url!=='/api/scripts/rewrite/jobs')throw new Error('Unexpected job '+url);
+      rewriteCalls.push(payload);
+      return {public_id:'rewrite-job'};
+    },
+    waitForBackgroundJob:async()=>({status:'succeeded',result:{rewritten_script:'改写结果',product_name:'袋装刀叉',original_script:elements.originalScript.value}})
+  },
   setTimeout(){return 0;}, clearTimeout(){},
   navigator:{clipboard:{writeText:async()=>{}}},
   document:{

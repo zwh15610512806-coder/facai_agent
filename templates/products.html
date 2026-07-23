@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>产品知识库 · 抖音运营agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260720-2">
+<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260723-tasks-stack">
 <script src="/static/vendor/lucide.min.js"></script>
 <style>
 body{overflow:hidden}
@@ -297,7 +297,7 @@ body{overflow:hidden}
 </div>
 </div>
 
-<script src="/static/js/common.js?v=app-shell-20260720-2"></script>
+<script src="/static/js/common.js?v=app-shell-20260723-tasks-stack"></script>
 <script>
 let mobileProductView='list';
 let products=[],categories=[],expandedCategories={},selectedProductId=null,selectedProductDetail=null,uploadProductId=null,selectedFile=null,skuPricesExpanded=false,editingProfileSections={};
@@ -525,13 +525,14 @@ async function sendGlobalChat(event){
  appendMessage('globalChatThread','assistant',scoped?'检索当前产品资料中...':'检索产品资料中...');
  const loading=document.querySelector('#globalChatThread .chat-message:last-child');
  try{
-  const url=scoped?'/api/products/'+productId+'/rag-chat':'/api/products/rag-chat';
-  const payload=scoped?{query:query}:{query:query,limit:30};
-  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  const data=await r.json();
-  loading.remove();
-  if((selectedProductId||null)!==(productId||null))return;
-  if(!r.ok){appendMessage('globalChatThread','assistant',formatApiErrorMessage(data.detail||data.message||data,'检索失败'));return;}
+   const url=scoped?'/api/products/'+productId+'/rag-chat/jobs':'/api/products/rag-chat/jobs';
+   const payload=scoped?{query:query}:{query:query,limit:30};
+   const job=await window.FacaiUI.submitBackgroundJob(url,payload,{sourceRef:scoped?String(productId):'global'});
+   const finished=await window.FacaiUI.waitForBackgroundJob(job.public_id);
+   const data=finished.result||{};
+   loading.remove();
+   if((selectedProductId||null)!==(productId||null))return;
+   if(finished.status!=='succeeded'){appendMessage('globalChatThread','assistant',formatApiErrorMessage(finished.error_summary||finished.message||'检索失败','检索失败'));return;}
  appendMessage('globalChatThread','assistant',data.answer||'没有找到相关资料',data);
 }catch(e){
   loading.remove();
@@ -540,6 +541,18 @@ async function sendGlobalChat(event){
   button.disabled=false;
  }
 }
+
+async function restoreProductRagJob(publicId){
+ try{
+  const job=await window.FacaiUI.fetchBackgroundJob(publicId);if(job.job_type!=='ai.products.rag'&&job.job_type!=='ai.products.rag.scoped')return;
+  if(job.status!=='succeeded'){toast(job.message||'任务尚未完成','error');return;}
+  const request=job.request||{};const data=job.result||{};setMobileProductView('chat');
+  if(job.job_type==='ai.products.rag.scoped'&&request.product_id){await selectProduct(Number(request.product_id));setMobileProductView('chat');}
+  appendMessage('globalChatThread','user',request.query||'后台问答');appendMessage('globalChatThread','assistant',data.answer||'没有找到相关资料',data);
+ }catch(e){toast('任务结果恢复失败：'+e.message,'error');}
+}
+
+window.addEventListener('facai:job-open',function(event){if(event.detail&&event.detail.job_type.indexOf('ai.products.rag')===0)restoreProductRagJob(event.detail.public_id);});
 
 async function selectProduct(id){
  selectedProductId=id;
@@ -874,17 +887,18 @@ async function extractPoints(){
  const button=document.getElementById('btnExtractPoints');
  document.getElementById('uploadProgress').style.display='';
  document.getElementById('uploadProgress').textContent='AI 提取中...';
- try{await withBusyButton(button,'整理中...',async function(){const r=await fetch('/api/products/'+uploadProductId+'/extract-points',{method:'POST'});if(r.ok){const d=await r.json().catch(function(){return {};});toast(d.message||'整理完成','success');closeUploadModal();await refreshSelectedProduct();}else toast(await getApiErrorMessage(r,'整理失败'),'error');});}catch(e){toast('网络错误','error');}finally{document.getElementById('uploadProgress').style.display='none';}
+ try{await withBusyButton(button,'已转入后台...',async function(){const job=await FacaiUI.submitBackgroundJob('/api/products/extract-points/'+uploadProductId+'/jobs',{}, {sourceRef:String(uploadProductId)});const done=await FacaiUI.waitForBackgroundJob(job.public_id);if(done.status==='succeeded'){toast('整理完成','success');closeUploadModal();await refreshSelectedProduct();}else toast(done.error_summary||done.message||'整理失败','error');});}catch(e){toast('网络错误','error');}finally{document.getElementById('uploadProgress').style.display='none';}
 }
 async function extractAllPoints(button){
  if(!confirm('批量整理所有上传了资料的产品？'))return;
  button=button||document.getElementById('btnExtractAllPoints');
- try{await withBusyButton(button,'整理中...',async function(){const r=await fetch('/api/products/extract-all-points',{method:'POST'});if(r.ok){toast('处理完成','success');await loadProducts();}else toast(await getApiErrorMessage(r,'处理失败'),'error');});}catch(e){toast('网络错误','error');}
+ try{await withBusyButton(button,'已转入后台...',async function(){const job=await FacaiUI.submitBackgroundJob('/api/products/extract-all-points/jobs',{}, {sourceRef:'products'});const done=await FacaiUI.waitForBackgroundJob(job.public_id);if(done.status==='succeeded'){toast('处理完成','success');await loadProducts();}else toast(done.error_summary||done.message||'处理失败','error');});}catch(e){toast('网络错误','error');}
 }
 
 renderGlobalWelcome();
 syncMobileProductView();
 loadProducts();
+var backgroundJobId=new URLSearchParams(window.location.search).get('job');if(backgroundJobId)setTimeout(function(){restoreProductRagJob(backgroundJobId);},300);
 document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
 window.addEventListener('resize',syncMobileProductView);
 </script>

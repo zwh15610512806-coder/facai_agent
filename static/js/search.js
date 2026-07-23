@@ -62,7 +62,7 @@ async function triggerIndex() {
   $('indexBadge').classList.add('updating');
   $('indexBadgeText').textContent = '正在更新...';
   try {
-    const r = await request('/api/search-proxy/index/start', { method: 'POST' });
+    const r = await request('/api/search-proxy/index/start', { method: 'POST', headers: window.FacaiUI.jobHeaders() });
     const d = await r.json();
     toast(d.success ? '索引已在后台启动' : (d.message || '启动失败'), d.success);
     setTimeout(() => { btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw"></i>手动更新索引'; renderIcons(); fetchIndexStatus(); }, 3000);
@@ -200,11 +200,9 @@ async function aiSearch() {
   $('aiBanner').classList.remove('show');
   $('fileList').innerHTML = '<div class="loading-wrap"><div class="spin"></div></div>';
   try {
-    const r = await request('/api/search-proxy/ai-search', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: q, page: 1, per_page: pageSize })
-    });
-    const d = await r.json();
+    const job = await FacaiUI.submitBackgroundJob('/api/search-proxy/ai-search/jobs', { query: q, page: 1, per_page: pageSize }, {sourceRef:'search'});
+    const finished = await FacaiUI.waitForBackgroundJob(job.public_id);
+    const d = finished.result || {};
     if (d.success) {
       aiSearchQuery = q;
       const ai = d.ai_understanding || {};
@@ -226,11 +224,9 @@ async function aiSearch() {
 async function aiSearchPage(page) {
   $('fileList').innerHTML = '<div class="loading-wrap"><div class="spin"></div></div>';
   try {
-    const r = await request('/api/search-proxy/ai-search', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: aiSearchQuery, page, per_page: pageSize })
-    });
-    const d = await r.json();
+    const job = await FacaiUI.submitBackgroundJob('/api/search-proxy/ai-search/jobs', { query: aiSearchQuery, page, per_page: pageSize }, {sourceRef:'search'});
+    const finished = await FacaiUI.waitForBackgroundJob(job.public_id);
+    const d = finished.result || {};
     if (d.success) {
       const ai = d.ai_understanding || {};
       $('aiBannerSummary').textContent = ai.summary || '搜索: ' + aiSearchQuery;
@@ -310,11 +306,9 @@ async function generateSummary() {
   $('summaryModal').classList.add('show');
   $('summaryBody').innerHTML = '<div class="loading-wrap"><div class="spin"></div><p style="margin-top:8px;color:var(--text-3)">AI 正在分析搜索结果...</p></div>';
   try {
-    const r = await request('/api/search-proxy/search-summary', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: currentFilters.q, file_type: currentFilters.type, extension: currentFilters.ext, date_from: currentFilters.date_from, date_to: currentFilters.date_to })
-    });
-    const d = await r.json();
+    const job = await FacaiUI.submitBackgroundJob('/api/search-proxy/search-summary/jobs', { query: currentFilters.q, file_type: currentFilters.type, extension: currentFilters.ext, date_from: currentFilters.date_from, date_to: currentFilters.date_to }, {sourceRef:'summary'});
+    const finished = await FacaiUI.waitForBackgroundJob(job.public_id);
+    const d = finished.result || {};
     if (d.success) $('summaryBody').innerHTML = simpleMD(escHtml(d.summary));
     else $('summaryBody').innerHTML = '<div class="empty-state"><div class="empty-title">' + escHtml(d.message||'生成失败') + '</div></div>';
   } catch(e) { $('summaryBody').innerHTML = '<div class="empty-state"><div class="empty-title">网络错误</div></div>'; }

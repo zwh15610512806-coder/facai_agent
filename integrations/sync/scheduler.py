@@ -681,6 +681,8 @@ def enqueue_scheduled_units(
                 "window_end": _iso_utc(unit.window_end),
                 "checkpoint_id": checkpoint.id,
             }
+            if manual_request_id is not None:
+                payload["manual_request_id"] = manual_request_id
             enqueue_job(
                 db,
                 job_type=JobType.SYNC_RESOURCE,

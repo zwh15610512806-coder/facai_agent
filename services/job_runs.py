@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+import uuid
 
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
-from models import JobRun
+from models import DurableTask, JobRun
 
 
 def _now() -> datetime:
@@ -29,13 +30,22 @@ def start_job(
     total: int = 0,
     message: str = "",
     details: dict[str, Any] | None = None,
+    owner_key: str | None = None,
+    origin_path: str = "",
+    source_ref: str = "",
+    queue_group: str = "maintenance",
     db: Session | None = None,
 ) -> int:
     session, owned = _session(db)
     try:
         _ensure_job_run_table(session)
         job = JobRun(
+            public_id=str(uuid.uuid4()),
             job_type=job_type,
+            queue_group="ai" if queue_group == "ai" else "maintenance",
+            owner_key=owner_key,
+            origin_path=origin_path[:500] or None,
+            source_ref=source_ref[:200] or None,
             status="running",
             progress_current=0,
             progress_total=max(int(total or 0), 0),
@@ -122,7 +132,15 @@ def recover_interrupted_jobs(*, db: Session | None = None) -> int:
     session, owned = _session(db)
     try:
         _ensure_job_run_table(session)
-        jobs = session.query(JobRun).filter(JobRun.status == "running").all()
+        durable_job_ids = session.query(DurableTask.job_run_id).filter(
+            DurableTask.job_run_id.isnot(None),
+            DurableTask.status.in_(("pending", "running")),
+        )
+        jobs = (
+            session.query(JobRun)
+            .filter(JobRun.status == "running", JobRun.id.notin_(durable_job_ids))
+            .all()
+        )
         now = _now()
         for job in jobs:
             job.status = "interrupted"

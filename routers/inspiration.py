@@ -7,7 +7,7 @@ import time
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ from config import (
     INSPIRATION_AI_TIMEOUT_SECONDS as CONFIG_INSPIRATION_AI_TIMEOUT_SECONDS,
     INSPIRATION_THINKING_AI_TIMEOUT_SECONDS as CONFIG_INSPIRATION_THINKING_AI_TIMEOUT_SECONDS,
 )
-from database import get_db
+from database import SessionLocal, get_db
 from services.ai_service import ai_service
 from services.ai_config import get_or_create_interface_setting, get_provider_definition
 from services.inspiration_attachments import (
@@ -38,6 +38,15 @@ from services.upload_limits import read_upload_bytes
 from services.web_research import search_web
 from schemas import StrictRequestModel
 from vector_store import get_embedding_degraded_reason
+from services.background_jobs import (
+    create_background_job,
+    is_cancel_requested,
+    job_to_dict,
+    mark_cancelling,
+    register_background_handler,
+    update_background_job,
+)
+from routers.jobs import owner_key_for_request
 
 
 router = APIRouter()
@@ -1119,3 +1128,135 @@ async def stream_chat_with_inspiration(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/chat/jobs", status_code=202)
+def enqueue_inspiration_chat(
+    data: InspirationChatRequest,
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    x_facai_source_ref: str | None = Header(None, alias="X-Facai-Source-Ref"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    job, created = create_background_job(
+        db,
+        owner_key=owner_key_for_request(request, x_facai_client_id),
+        job_type="ai.inspiration.chat",
+        request_payload=data.model_dump(mode="json"),
+        origin_path="/app",
+        source_ref=x_facai_source_ref or "",
+        queue_group="ai",
+        idempotency_key=idempotency_key or "",
+        max_attempts=2,
+        message="AI 工作任务等待执行",
+    )
+    return {"job": job_to_dict(job), "created": created}
+
+
+@router.post("/documents/jobs", status_code=202)
+def enqueue_inspiration_document(
+    data: InspirationDocumentRequest,
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    x_facai_source_ref: str | None = Header(None, alias="X-Facai-Source-Ref"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    job, created = create_background_job(
+        db,
+        owner_key=owner_key_for_request(request, x_facai_client_id),
+        job_type="ai.inspiration.document",
+        request_payload=data.model_dump(mode="json"),
+        origin_path="/app",
+        source_ref=x_facai_source_ref or "",
+        queue_group="ai",
+        idempotency_key=idempotency_key or "",
+        max_attempts=2,
+        message="文档生成任务等待执行",
+    )
+    return {"job": job_to_dict(job), "created": created}
+
+
+class _BackgroundRequest:
+    async def is_disconnected(self) -> bool:
+        return False
+
+
+def _parse_stream_block(block: str) -> tuple[str, dict]:
+    event_name = "message"
+    data_lines: list[str] = []
+    for line in block.splitlines():
+        if line.startswith("event: "):
+            event_name = line[7:].strip()
+        elif line.startswith("data: "):
+            data_lines.append(line[6:])
+    return event_name, json.loads("\n".join(data_lines) or "{}")
+
+
+def _run_inspiration_chat_job(payload: dict, job_id: int) -> dict | None:
+    data = InspirationChatRequest.model_validate(payload)
+
+    async def run() -> dict | None:
+        answer = ""
+        reasoning = ""
+        result: dict = {
+            "products": [],
+            "sources": [],
+            "attachments": [],
+            "agent_trace": [],
+            "answer": "",
+            "reasoning": "",
+            "model": "",
+            "tool_mode": data.tool_mode,
+            "product_context_used": False,
+        }
+        last_persisted = 0
+        with SessionLocal() as worker_db:
+            async for block in _inspiration_stream_events(data, _BackgroundRequest(), worker_db):
+                if is_cancel_requested(job_id):
+                    mark_cancelling(job_id)
+                    return None
+                event_name, event_data = _parse_stream_block(block)
+                if event_name == "meta":
+                    result.update({key: event_data[key] for key in ("model", "tool_mode") if key in event_data})
+                elif event_name == "context":
+                    result.update(event_data)
+                elif event_name == "reasoning_delta":
+                    reasoning += str(event_data.get("text") or "")
+                elif event_name == "delta":
+                    answer += str(event_data.get("text") or "")
+                elif event_name == "done":
+                    result.update(event_data)
+                elif event_name == "error":
+                    raise RuntimeError(str(event_data.get("message") or "流式生成失败"))
+                if len(answer) - last_persisted >= 120 or event_name in {"context", "done"}:
+                    last_persisted = len(answer)
+                    update_background_job(
+                        job_id,
+                        partial_result={**result, "answer": answer, "reasoning": reasoning},
+                        message="AI 正在生成回答",
+                    )
+        result["answer"] = answer
+        result["reasoning"] = result.get("reasoning") or reasoning
+        return result
+
+    return asyncio.run(run())
+
+
+def _run_inspiration_document_job(payload: dict, job_id: int) -> dict | None:
+    if is_cancel_requested(job_id):
+        mark_cancelling(job_id)
+        return None
+    data = InspirationDocumentRequest.model_validate(payload)
+
+    async def run() -> dict:
+        with SessionLocal() as worker_db:
+            response = await create_inspiration_document(data, worker_db)
+            return response.model_dump(mode="json")
+
+    return asyncio.run(run())
+
+
+register_background_handler("ai.inspiration.chat", _run_inspiration_chat_job, queue_group="ai")
+register_background_handler("ai.inspiration.document", _run_inspiration_document_job, queue_group="ai")

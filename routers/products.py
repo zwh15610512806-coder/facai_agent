@@ -1,4 +1,5 @@
 """产品管理 API — CRUD + 搜索 + 筛选 + 文件上传"""
+import asyncio
 import math
 import mimetypes
 import os
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Annotated, List, Literal, Optional
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func
@@ -52,6 +53,14 @@ from services.product_price_extractor import (
     extract_product_price_metadata,
 )
 from services.product_rag import answer_global_product_question, answer_product_question
+from services.background_jobs import (
+    create_background_job,
+    is_cancel_requested,
+    job_to_dict,
+    mark_cancelling,
+    register_background_handler,
+)
+from routers.jobs import owner_key_for_request
 from services.upload_limits import write_upload_file
 
 router = APIRouter()
@@ -1136,3 +1145,171 @@ def _delete_product_index(product_id: int):
         return "synced" if status == "succeeded" else "pending"
     finally:
         db.close()
+
+
+@router.post("/rag-chat/jobs", status_code=202)
+def enqueue_global_product_rag(
+    data: ProductRagRequest,
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    x_facai_source_ref: str | None = Header(None, alias="X-Facai-Source-Ref"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    job, created = create_background_job(
+        db,
+        owner_key=owner_key_for_request(request, x_facai_client_id),
+        job_type="ai.products.rag",
+        request_payload=data.model_dump(mode="json"),
+        origin_path="/app/products",
+        source_ref=x_facai_source_ref or "global",
+        queue_group="ai",
+        idempotency_key=idempotency_key or "",
+        max_attempts=2,
+        message="产品资料问答等待执行",
+    )
+    return {"job": job_to_dict(job), "created": created}
+
+
+@router.post("/{product_id}/rag-chat/jobs", status_code=202)
+def enqueue_scoped_product_rag(
+    product_id: int,
+    data: ProductScopedRagRequest,
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    x_facai_source_ref: str | None = Header(None, alias="X-Facai-Source-Ref"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    payload = data.model_dump(mode="json")
+    payload["product_id"] = product_id
+    job, created = create_background_job(
+        db,
+        owner_key=owner_key_for_request(request, x_facai_client_id),
+        job_type="ai.products.rag.scoped",
+        request_payload=payload,
+        origin_path="/app/products",
+        source_ref=x_facai_source_ref or str(product_id),
+        queue_group="ai",
+        idempotency_key=idempotency_key or "",
+        max_attempts=2,
+        message="单产品资料问答等待执行",
+    )
+    return {"job": job_to_dict(job), "created": created}
+
+
+def _run_global_product_rag_job(payload: dict, job_id: int) -> dict | None:
+    if is_cancel_requested(job_id):
+        mark_cancelling(job_id)
+        return None
+
+    async def run() -> dict:
+        with SessionLocal() as worker_db:
+            result = await global_product_rag_chat(ProductRagRequest.model_validate(payload), worker_db)
+            return dict(result.data or {}) if hasattr(result, "data") else dict(result)
+
+    return asyncio.run(run())
+
+
+def _run_scoped_product_rag_job(payload: dict, job_id: int) -> dict | None:
+    if is_cancel_requested(job_id):
+        mark_cancelling(job_id)
+        return None
+    product_id = int(payload.pop("product_id"))
+
+    async def run() -> dict:
+        with SessionLocal() as worker_db:
+            result = await scoped_product_rag_chat(
+                product_id,
+                ProductScopedRagRequest.model_validate(payload),
+                worker_db,
+            )
+            return dict(result.data or {}) if hasattr(result, "data") else dict(result)
+
+    return asyncio.run(run())
+
+
+register_background_handler("ai.products.rag", _run_global_product_rag_job, queue_group="ai")
+register_background_handler("ai.products.rag.scoped", _run_scoped_product_rag_job, queue_group="ai")
+
+
+def _enqueue_product_maintenance(
+    *,
+    job_type: str,
+    payload: dict,
+    request: Request,
+    client_id: str | None,
+    idempotency_key: str | None,
+    db: Session,
+):
+    job, created = create_background_job(
+        db,
+        owner_key=owner_key_for_request(request, client_id),
+        job_type=job_type,
+        request_payload=payload,
+        origin_path="/app/products",
+        source_ref=str(payload.get("product_id") or "products"),
+        queue_group="maintenance",
+        idempotency_key=idempotency_key or "",
+        max_attempts=2,
+        message="产品维护任务等待执行",
+    )
+    return {"job": job_to_dict(job), "created": created}
+
+
+@router.post("/reindex/jobs", status_code=202)
+def enqueue_product_reindex(
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    return _enqueue_product_maintenance(job_type="maintenance.products.reindex", payload={}, request=request, client_id=x_facai_client_id, idempotency_key=idempotency_key, db=db)
+
+
+@router.post("/extract-points/{product_id}/jobs", status_code=202)
+def enqueue_product_extract(
+    product_id: int,
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    return _enqueue_product_maintenance(job_type="maintenance.products.extract", payload={"product_id": product_id}, request=request, client_id=x_facai_client_id, idempotency_key=idempotency_key, db=db)
+
+
+@router.post("/extract-all-points/jobs", status_code=202)
+def enqueue_all_product_extracts(
+    request: Request,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    return _enqueue_product_maintenance(job_type="maintenance.products.extract_all", payload={}, request=request, client_id=x_facai_client_id, idempotency_key=idempotency_key, db=db)
+
+
+def _run_product_reindex_job(_payload: dict, _job_id: int) -> dict:
+    with SessionLocal() as worker_db:
+        result = reindex_products(worker_db)
+        return dict(result.data or {}) if hasattr(result, "data") else dict(result)
+
+
+def _run_product_extract_job(payload: dict, _job_id: int) -> dict:
+    async def run() -> dict:
+        with SessionLocal() as worker_db:
+            result = await extract_points_from_file(int(payload["product_id"]), worker_db)
+            return dict(result.data or {}) if hasattr(result, "data") else dict(result)
+    return asyncio.run(run())
+
+
+def _run_all_product_extracts_job(_payload: dict, _job_id: int) -> dict:
+    async def run() -> dict:
+        with SessionLocal() as worker_db:
+            result = await extract_all_points(worker_db)
+            return dict(result.data or {}) if hasattr(result, "data") else dict(result)
+    return asyncio.run(run())
+
+
+register_background_handler("maintenance.products.reindex", _run_product_reindex_job, queue_group="maintenance")
+register_background_handler("maintenance.products.extract", _run_product_extract_job, queue_group="maintenance")
+register_background_handler("maintenance.products.extract_all", _run_all_product_extracts_job, queue_group="maintenance")

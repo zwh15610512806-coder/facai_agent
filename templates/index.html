@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>生成脚本 — 抖音运营agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260720-2">
+<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260723-tasks-stack">
 </head>
 <body>
 
@@ -45,20 +45,23 @@
 .editable-output{cursor:text}
 .editable-output:focus{outline:2px solid var(--facai-subtle);outline-offset:2px}
 .result-actions{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:flex-end;gap:6px;padding:10px 18px 12px;border-top:1px solid var(--border-soft);background:var(--surface-darker);z-index:2}
-.seedance-panel{border:1px solid var(--border);border-radius:var(--r);background:var(--surface-darker);padding:0;height:520px;max-height:520px;overflow:auto}
-.seedance-hd{position:sticky;top:0;z-index:3;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 12px;padding:14px 14px 10px;border-bottom:1px solid var(--border);background:var(--surface-darker)}
-.seedance-kicker{font-size:11px;font-weight:700;color:var(--facai);letter-spacing:.04em;margin-bottom:2px}
-.seedance-title{font-family:var(--font-ui);font-size:14px;margin:0;color:var(--text)}
-.seedance-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 14px 14px}
-.seedance-card{border:1px solid var(--border-soft);border-radius:var(--r-sm);background:#fff;padding:10px 12px;min-height:0;overflow:visible}
-.seedance-card-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
-.seedance-scene{font-size:12px;font-weight:800;color:var(--facai)}
-.seedance-copy{border:0;background:var(--facai-ghost);color:var(--facai);font-size:12px;font-weight:700;border-radius:var(--r-sm);padding:5px 8px;cursor:pointer}
-.seedance-copy:hover{background:var(--facai-soft)}
-.seedance-prompt{font-size:11.5px;line-height:1.62;color:var(--text);white-space:pre-wrap}
-.seedance-empty{grid-column:1/-1;font-size:12px;line-height:1.7;color:var(--text-3);padding:12px;border:1px dashed var(--border);border-radius:var(--r-sm);background:#fff}
+.breakdown-panel{border:1px solid var(--border);border-radius:var(--r);background:var(--surface-darker);padding:0;height:520px;max-height:520px;overflow:auto}
+.breakdown-hd{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:14px;border-bottom:1px solid var(--border);background:var(--surface-darker)}
+.breakdown-title{font-family:var(--font-ui);font-size:15px;margin:0;color:var(--text)}
+.breakdown-actions{display:flex;align-items:center;gap:6px}
+.breakdown-stale{margin:12px 14px 0;padding:8px 10px;border-left:3px solid var(--warning,#c18c2d);background:#fff9e9;color:var(--text-2);font-size:12px}
+.breakdown-list{display:grid;grid-template-columns:1fr;gap:10px;padding:14px}
+.breakdown-section{border:1px solid var(--border-soft);border-radius:var(--r-sm);background:#fff;padding:12px 14px;min-width:0}
+.breakdown-section-title{margin:0 0 7px;color:var(--facai);font-size:12px;font-weight:800}
+.breakdown-section-body{color:var(--text);font-size:12px;line-height:1.72;white-space:pre-wrap;overflow-wrap:anywhere}
+.breakdown-items{display:grid;gap:7px;margin:0;padding:0;list-style:none}
+.breakdown-item{padding-left:12px;border-left:2px solid var(--facai-subtle);color:var(--text-2);font-size:12px;line-height:1.68}
+.breakdown-item strong{display:block;color:var(--text);font-size:12px}
+.breakdown-empty{font-size:12px;line-height:1.7;color:var(--text-3);padding:12px;border:1px dashed var(--border);border-radius:var(--r-sm);background:#fff}
+.breakdown-error{color:var(--danger,#b5443c)}
 @media (max-width: 1240px) {
   .generate-result-layout { grid-template-columns: 1fr; }
+  .breakdown-list { grid-template-columns: 1fr; }
 }
 </style>
 
@@ -378,9 +381,8 @@
   .generate-result-layout { grid-template-columns: 1fr; }
   .generate-script-col .so { height: auto; min-height: 260px; max-height: 58vh; }
   .result-actions { position: static; margin-top: 8px; flex-wrap: wrap; background: transparent; }
-  .seedance-panel { height: auto; max-height: none; }
-  .seedance-list { grid-template-columns: 1fr; }
-  .seedance-card { max-height: none; overflow: visible; }
+  .breakdown-panel { height: auto; max-height: none; }
+  .breakdown-list { grid-template-columns: 1fr; }
   .scroll-top-btn { right: 16px; bottom: max(20px, calc(20px + env(safe-area-inset-bottom))); width: 40px; height: 40px; }
 }
 </style>
@@ -468,7 +470,6 @@
 <div class="script-output-frame">
 <div id="scriptOutput" class="so editable-output" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="false"></div>
 <div id="resultActions" class="result-actions">
-<button id="btnGenerateSeedance" class="btn btn-pri btn-sm" type="button">生成提示词</button>
 <button id="btnCopy" class="btn btn-soft btn-sm">复制</button>
 <button id="btnSave" class="btn btn-soft btn-sm">存到模板库</button>
 <button id="btnRedo" class="btn btn-soft btn-sm">重新生成</button>
@@ -489,13 +490,17 @@
 
 <p style="font-size:12px;color:var(--text-3);margin-top:12px">脚本中的时间标注用于指导拍摄节奏，前 3 秒钩子决定完播率</p>
 </div>
-<aside class="seedance-panel" aria-label="Seedance 2.0 画面提示词">
-<div class="seedance-hd">
-<div><div class="seedance-kicker">Seedance 2.0</div><h3 class="seedance-title">画面提示词</h3></div>
-<button id="btnCopySeedanceAll" class="btn btn-soft btn-sm" type="button">复制全部</button>
+<aside class="breakdown-panel" aria-label="内容拆解">
+<div class="breakdown-hd">
+<h3 class="breakdown-title">内容拆解</h3>
+<div class="breakdown-actions">
+<button id="btnRefreshBreakdown" class="btn btn-soft btn-sm" type="button" disabled><i data-lucide="refresh-cw" style="width:14px;height:14px"></i>重新拆解</button>
+<button id="btnCopyBreakdown" class="btn btn-soft btn-sm" type="button" disabled>复制全部</button>
 </div>
-<div id="seedancePromptList" class="seedance-list">
-<div class="seedance-empty">生成脚本后，可先编辑左侧文案，再点击「生成提示词」生成 Seedance 2.0 画面提示词。</div>
+</div>
+<div id="breakdownStale" class="breakdown-stale" hidden>脚本已修改，拆解待更新</div>
+<div id="contentBreakdownList" class="breakdown-list">
+<div class="breakdown-empty">脚本生成成功后将自动分析创作思路、转化逻辑与拍摄要求。</div>
 </div>
 </aside>
 </div>
@@ -539,7 +544,7 @@
 
 <!-- Lucide Icons -->
 <script src="/static/vendor/lucide.min.js"></script>
-<script src="/static/js/common.js?v=app-shell-20260720-2"></script>
+<script src="/static/js/common.js?v=app-shell-20260723-tasks-stack"></script>
 
 <script>
 function scrollToStep1(){document.getElementById('step1').scrollIntoView({behavior:'smooth',block:'start'});}
@@ -563,7 +568,7 @@ const CUSTOM_VIDEO_TYPES_KEY='facai_custom_video_types';
 const DELETED_VIDEO_TYPES_KEY='facai_deleted_video_types';
 let state={products:[],categories:[],categoryCounts:{},totalProductCount:0,selectedProduct:null,selectedType:"",step:1,generating:false};
 let currentScript='',currentScriptId=null;
-let currentSeedancePrompts=[];
+let currentBreakdown=null,breakdownRequestSeq=0;
 let customVideoTypes=loadCustomVideoTypes();
 let deletedVideoTypes=loadDeletedVideoTypes();
 
@@ -582,7 +587,69 @@ function buildRegenerateRequirement(){
  const summary=previous&&!previous.startsWith('生成失败')?previous.slice(0,180):'';
  return '重新生成要求：这是一次重新生成，不要复用上一版脚本的开头、句式和推进顺序。上一版脚本开头摘要：'+summary+'。必须更换开头角度、第一句话句式、卖点顺序和 CTA；保留同一个产品、真实价格和产品资料，不要照搬上一版表达。';
 }
-function resetSeedancePrompts(msg){currentSeedancePrompts=[];document.getElementById('seedancePromptList').innerHTML='<div class="seedance-empty">'+escHtml(msg||'生成脚本后，可先编辑左侧文案，再点击「生成提示词」生成 Seedance 2.0 画面提示词。')+'</div>';}
+function resetContentBreakdown(msg){
+ currentBreakdown=null;breakdownRequestSeq+=1;
+ document.getElementById('breakdownStale').hidden=true;
+ document.getElementById('contentBreakdownList').innerHTML='<div class="breakdown-empty">'+escHtml(msg||'脚本生成成功后将自动分析创作思路、转化逻辑与拍摄要求。')+'</div>';
+ document.getElementById('btnRefreshBreakdown').disabled=!currentScriptId;
+ document.getElementById('btnCopyBreakdown').disabled=true;
+}
+function markContentBreakdownStale(){
+ if(!currentBreakdown)return;
+ document.getElementById('breakdownStale').hidden=false;
+ document.getElementById('btnRefreshBreakdown').disabled=!currentScriptId;
+}
+function breakdownSection(title,body){return '<section class="breakdown-section"><h4 class="breakdown-section-title">'+escHtml(title)+'</h4><div class="breakdown-section-body">'+body+'</div></section>';}
+function breakdownList(items,formatter){return '<ul class="breakdown-items">'+(items||[]).map(function(item,index){return '<li class="breakdown-item">'+formatter(item,index)+'</li>';}).join('')+'</ul>';}
+function renderContentBreakdown(data){
+ var structure=breakdownList(data.structure,function(item){return '<strong>'+escHtml(item.stage)+'</strong>'+escHtml(item.copy_excerpt)+'<br>'+escHtml(item.purpose);});
+ var selling=breakdownList(data.core_selling_points,function(item){return escHtml(item);});
+ var triggers=breakdownList(data.conversion_triggers,function(item){return '<strong>'+escHtml(item.copy_excerpt)+'</strong>'+escHtml(item.reason);});
+ var optimizations=breakdownList(data.optimization_suggestions,function(item){return '<strong>'+escHtml(item.issue)+'</strong>'+escHtml(item.recommendation);});
+ var notes=breakdownList(data.shooting_notes,function(item){return escHtml(item);});
+ var shots=breakdownList(data.shot_requirements,function(item){return '<strong>'+escHtml(item.script_segment)+' · '+escHtml(item.shot_type)+'</strong>'+escHtml(item.subject_action)+'<br>'+escHtml(item.visual_requirement);});
+ document.getElementById('contentBreakdownList').innerHTML=
+  breakdownSection('生成思路',escHtml(data.generation_rationale))+
+  breakdownSection('目标人群',escHtml(data.target_audience))+
+  breakdownSection('脚本结构',structure)+
+  breakdownSection('主要卖点',selling)+
+  breakdownSection('可能吸引下单的点',triggers)+
+  breakdownSection('可优化点',optimizations)+
+  breakdownSection('拍摄注意事项',notes)+
+  breakdownSection('镜头与画面要求',shots);
+ currentBreakdown=data;document.getElementById('breakdownStale').hidden=true;document.getElementById('btnCopyBreakdown').disabled=false;
+}
+function contentBreakdownText(data){
+ if(!data)return '';
+ var lines=['生成思路\n'+data.generation_rationale,'目标人群\n'+data.target_audience];
+ lines.push('脚本结构\n'+(data.structure||[]).map(function(x){return x.stage+'：'+x.copy_excerpt+'（'+x.purpose+'）';}).join('\n'));
+ lines.push('主要卖点\n'+(data.core_selling_points||[]).map(function(x){return '• '+x;}).join('\n'));
+ lines.push('可能吸引下单的点\n'+(data.conversion_triggers||[]).map(function(x){return x.copy_excerpt+'：'+x.reason;}).join('\n'));
+ lines.push('可优化点\n'+(data.optimization_suggestions||[]).map(function(x){return x.issue+'：'+x.recommendation;}).join('\n'));
+ lines.push('拍摄注意事项\n'+(data.shooting_notes||[]).map(function(x){return '• '+x;}).join('\n'));
+ lines.push('镜头与画面要求\n'+(data.shot_requirements||[]).map(function(x){return x.script_segment+'｜'+x.shot_type+'｜'+x.subject_action+'｜'+x.visual_requirement;}).join('\n'));
+ return lines.join('\n\n');
+}
+async function loadContentBreakdown(scriptId,script){
+ if(!scriptId||!String(script||'').trim())return;
+ var seq=++breakdownRequestSeq,list=document.getElementById('contentBreakdownList'),hadResult=!!currentBreakdown;
+ list.querySelectorAll('.breakdown-error').forEach(function(node){node.remove();});
+ document.getElementById('btnRefreshBreakdown').disabled=true;
+ if(!hadResult)list.innerHTML='<div class="breakdown-empty"><span class="pulse">正在拆解脚本内容与拍摄逻辑…</span></div>';
+ try{
+  var response=await fetch('/api/scripts/content-breakdown',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script_id:scriptId,script_content:String(script).trim()})});
+  var data=await response.json().catch(function(){return {};});
+  if(!response.ok)throw new Error(data.detail||'内容拆解失败');
+  if(seq!==breakdownRequestSeq)return;
+  renderContentBreakdown(data);
+ }catch(e){
+  if(seq!==breakdownRequestSeq)return;
+  var errorHtml='<div class="breakdown-empty breakdown-error"><strong>内容拆解暂未完成</strong><br>内容拆解失败不影响左侧脚本，可点击“重新拆解”。</div>';
+  if(hadResult)list.insertAdjacentHTML('afterbegin',errorHtml);else list.innerHTML=errorHtml;
+ }finally{
+  if(seq===breakdownRequestSeq)document.getElementById('btnRefreshBreakdown').disabled=!currentScriptId;
+ }
+}
 function resetTemplateReference(){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');panel.hidden=true;details.open=false;document.getElementById('templateReferenceName').textContent='';document.getElementById('templateReferenceSource').textContent='';document.getElementById('templateReferenceStructure').textContent='';document.getElementById('templateReferenceScript').textContent='';}
 function showTemplateReference(sourceTitle,sourceScript,sourceType,templateName,sourceMatchQuery){var panel=document.getElementById('templateReferencePanel');var details=document.getElementById('templateReferenceDetails');var detailParts=[];panel.hidden=false;details.open=false;document.getElementById('templateReferenceName').textContent=sourceTitle;document.getElementById('templateReferenceSource').textContent=sourceType==='other'?'其他脚本':'法采脚本';if(templateName)detailParts.push('结构模板：'+templateName);if(sourceMatchQuery)detailParts.push('匹配产品：'+sourceMatchQuery);document.getElementById('templateReferenceStructure').textContent=detailParts.join(' · ');document.getElementById('templateReferenceScript').textContent=sourceScript||'该参考脚本暂无正文。';}
 function normalizeCustomVideoType(type){return String(type||'').replace(/[<>"'`\\]/g,'').trim().replace(/\s+/g,'').slice(0,20);}
@@ -759,8 +826,7 @@ async function doGenerate(extra){
  document.getElementById('scriptOutput').style.display='none';document.getElementById('generatingHint').style.display='';document.getElementById('btnOptimize').disabled=true;
  document.getElementById('resultActions').style.display='none';
  resetTemplateReference();
- resetSeedancePrompts('生成脚本后，可先编辑左侧文案，再点击「生成提示词」生成 Seedance 2.0 画面提示词。');
- document.getElementById('btnGenerateSeedance').disabled=true;
+ resetContentBreakdown('脚本生成成功后将自动分析创作思路、转化逻辑与拍摄要求。');
  try{
   const selectedType=state.selectedType||'';
   const engine=document.getElementById('aiEngine').value;
@@ -770,87 +836,53 @@ async function doGenerate(extra){
   const preFill=document.getElementById('reqPreFill').value.trim();
   const reqParts=[];if(preFill)reqParts.push('用户需求：'+preFill);if(extra)reqParts.push(extra);
   if(reqParts.length)body.extra_requirements=reqParts.join('\n');
-  const r=await fetch('/api/scripts/generate?_='+Date.now(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok)throw new Error((await r.json()).detail||'生成失败');
-  const d=await r.json();currentScript=d.script_content;currentScriptId=d.id;
+   const job=await window.FacaiUI.submitBackgroundJob('/api/scripts/generate/jobs',body,{sourceRef:'generate'});
+   const finished=await window.FacaiUI.waitForBackgroundJob(job.public_id);
+   if(finished.status!=='succeeded')throw new Error(finished.error_summary||finished.message||'生成失败');
+   const d=finished.result||{};currentScript=d.script_content;currentScriptId=d.id;
   document.getElementById('scriptOutput').textContent=currentScript;
   var metaExtra='';if(preFill||extra)metaExtra=' <span class="text-accent" style="font-weight:600">（'+(preFill?'含需求':'')+(preFill&&extra?'+':'')+(extra?'已优化':'')+'）</span>';
   document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(d.product_name)+'</b> &middot; 类型：<b class="text-accent">'+escHtml(d.video_type)+'</b>'+metaExtra;
   if(d.source_script_title)showTemplateReference(d.source_script_title,d.source_script_content,d.source_script_source,d.template_name,d.source_match_query);
-  resetSeedancePrompts('可先直接编辑左侧生成脚本，确认后点击「生成提示词」。');
- }catch(e){currentScript='';currentScriptId=null;resetSeedancePrompts('生成失败后暂无提示词，请重新生成脚本。');document.getElementById('scriptOutput').textContent='生成失败：'+e.message}
- finally{state.generating=false;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnOptimize').disabled=false;document.getElementById('btnGenerateSeedance').disabled=false;}
+  loadContentBreakdown(currentScriptId,currentScript);
+ }catch(e){currentScript='';currentScriptId=null;resetContentBreakdown('脚本生成失败后暂无可拆解内容。');document.getElementById('scriptOutput').textContent='生成失败：'+e.message}
+ finally{state.generating=false;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';document.getElementById('btnOptimize').disabled=false;}
 }
+
+async function restoreGeneratedJob(publicId){
+ try{
+  const job=await window.FacaiUI.fetchBackgroundJob(publicId);if(job.job_type!=='ai.scripts.generate')return;
+  if(job.status!=='succeeded'){toast(job.message||'任务尚未完成','error');return;}
+  const d=job.result||{};currentScript=d.script_content||'';currentScriptId=d.id||null;state.step=3;state.generating=false;
+  document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='';
+  document.getElementById('scriptOutput').style.display='';document.getElementById('scriptOutput').textContent=currentScript;
+  document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';
+  document.getElementById('resultMeta').innerHTML='产品：<b>'+escHtml(d.product_name||'')+'</b> &middot; 类型：<b class="text-accent">'+escHtml(d.video_type||'')+'</b>';
+  if(d.source_script_title)showTemplateReference(d.source_script_title,d.source_script_content,d.source_script_source,d.template_name,d.source_match_query);
+  resetContentBreakdown('正在分析已恢复的脚本…');loadContentBreakdown(currentScriptId,currentScript);
+ }catch(e){toast('任务结果恢复失败：'+e.message,'error');}
+}
+
+window.addEventListener('facai:job-open',function(event){if(event.detail&&event.detail.job_type==='ai.scripts.generate')restoreGeneratedJob(event.detail.public_id);});
 
 document.getElementById('btnAddCustomType').addEventListener('click',addCustomVideoType);
 document.getElementById('customVideoTypeInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addCustomVideoType();}});
 document.getElementById('btnGenerate').addEventListener('click',function(){doGenerate(null);});
 document.getElementById('optimizeInput').addEventListener('input',function(){document.getElementById('btnOptimize').disabled=!this.value.trim();});
 document.getElementById('btnOptimize').addEventListener('click',async function(){const s=document.getElementById('optimizeInput').value.trim();if(!s)return;await doGenerate('用户优化建议：'+s+'。请保持产品和视频类型不变，按要求重新生成。');document.getElementById('optimizeInput').value='';document.getElementById('btnOptimize').disabled=true;});
-document.getElementById('btnBack').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=false;currentScript='';currentScriptId=null;resetTemplateReference();resetSeedancePrompts();});
-document.getElementById('scriptOutput').addEventListener('input',function(){currentScript=getEditedScript();resetSeedancePrompts('脚本已修改，请点击「生成提示词」，按当前版本重新生成 Seedance 2.0 提示词。');});
+document.getElementById('btnBack').addEventListener('click',function(){state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='';document.getElementById('step3').style.display='none';document.getElementById('btnGenerate').disabled=false;currentScript='';currentScriptId=null;resetTemplateReference();resetContentBreakdown();});
+document.getElementById('scriptOutput').addEventListener('input',function(){currentScript=getEditedScript();markContentBreakdownStale();});
 document.getElementById('btnCopy').addEventListener('click',function(){const t=getEditedScript();if(!t)return toast('暂无可复制内容','error');copyText(t).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
 document.getElementById('btnSave').addEventListener('click',async function(){if(!currentScriptId)return toast('请先生成脚本','error');try{const r=await fetch('/api/scripts/history/'+currentScriptId+'/save-to-library',{method:'POST'});if(r.ok)toast('已保存到模板库','success');else toast('保存失败','error');}catch(e){toast('保存失败','error');}});
-document.getElementById('btnRedo').addEventListener('click',function(){const regenRequirement=buildRegenerateRequirement();currentScriptId=null;state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';resetSeedancePrompts();doGenerate(regenRequirement);});
-document.getElementById('btnGenerateSeedance').addEventListener('click',function(){var script=getEditedScript();if(!script||script.startsWith('生成失败'))return toast('请先生成或编辑有效脚本','error');renderSeedancePrompts(script);toast('已按当前脚本生成提示词','success');});
-document.getElementById('btnCopySeedanceAll').addEventListener('click',function(){var prompts=currentSeedancePrompts.map(function(x,i){return '画面'+(i+1)+'：'+getSeedanceCardLabel(x)+'\n'+x.prompt;}).join('\n\n');if(!prompts)return toast('请先点击生成提示词','error');copyText(prompts).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
-document.getElementById('seedancePromptList').addEventListener('click',function(e){var btn=e.target.closest('.seedance-copy');if(!btn)return;var idx=Number(btn.dataset.index);var item=currentSeedancePrompts[idx];if(!item)return;copyText(item.prompt).then(function(){toast('已成功复制到剪贴板','success');}).catch(function(){toast('复制失败，请手动选中文案复制','error');});});
+document.getElementById('btnRedo').addEventListener('click',function(){const regenRequirement=buildRegenerateRequirement();currentScriptId=null;state.step=2;document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='none';resetContentBreakdown();doGenerate(regenRequirement);});
+document.getElementById('btnRefreshBreakdown').addEventListener('click',function(){var script=getEditedScript();if(!currentScriptId||!script)return toast('请先生成有效脚本','error');loadContentBreakdown(currentScriptId,script);});
+document.getElementById('btnCopyBreakdown').addEventListener('click',function(){var text=contentBreakdownText(currentBreakdown);if(!text)return toast('暂无可复制的拆解内容','error');copyText(text).then(function(){toast('已复制内容拆解','success');}).catch(function(){toast('复制失败，请手动复制','error');});});
 document.getElementById('searchInput').addEventListener('input',function(){clearTimeout(window._st);window._st=setTimeout(loadProducts,300);});
-
-function splitSeedancePlainBeats(text){
- var cleaned=String(text||'').replace(/\s+/g,' ').trim();if(!cleaned)return [];
- var raw=cleaned.match(/[^。！？!?；;，,、]+[。！？!?；;，,、]?/g)||[cleaned];
- var beats=[];raw.forEach(function(part){part=part.trim();if(!part)return;if(part.length<5&&beats.length){beats[beats.length-1]=(beats[beats.length-1]+part).trim();}else{beats.push(part);}});
- if(beats.length<=1&&cleaned.length>90){beats=[];for(var i=0;i<cleaned.length;i+=80){beats.push(cleaned.slice(i,i+80));}}
- return beats.slice(0,24);
-}
-function inferSeedanceSceneFromLine(line){
- var text=String(line||'');
- if(/下单|小黄车|左下角|活动|价格|买|送|券|优惠/.test(text))return '价格机制和下单引导';
- if(/包装|规格|克|g|保质|封口|生产|资质|食品工厂/.test(text))return '产品包装细节';
- if(/使用|操作|演示|拌|揉|捏|切|烤|装饰|翻糖|蛋糕|出单/.test(text))return '使用场景演示';
- if(/开裂|粘手|麻烦|费时|踩坑|痛点|不好用|效率/.test(text))return '痛点口播';
- return '口播画面';
-}
-function getSeedancePrompts(script){
- var text=String(script||'').trim();if(!text||text.startsWith('生成失败'))return [];
- var re=/（([^）]{1,60})）/g,items=[],m,last=null;
- while((m=re.exec(text))!==null){
-  if(last){last.line=text.slice(last.end,m.index).replace(/\s+/g,' ').trim();}
-  last={scene:m[1].trim(),end:re.lastIndex,line:''};items.push(last);
- }
- if(last)last.line=text.slice(last.end).replace(/\s+/g,' ').trim();
- if(!items.length&&text)return splitSeedancePlainBeats(text).map(function(line,i){var scene=inferSeedanceSceneFromLine(line);return {scene:scene,line:line,prompt:buildSeedancePrompt(scene,line,i)};});
- return items.slice(0,24).map(function(item,i){return {scene:item.scene,line:item.line,prompt:buildSeedancePrompt(item.scene,item.line,i)};});
-}
-function buildSeedancePrompt(scene,line,index){
- var product=state.selectedProduct&&state.selectedProduct.name?state.selectedProduct.name:'目标产品';
- var category=state.selectedProduct&&state.selectedProduct.category?state.selectedProduct.category:'烘焙产品';
- var shot=inferSeedanceShot(scene);
- var action=line?line.slice(0,90):scene;
- return '竖屏9:16，真实商业烘焙短视频，'+shot+'。主体是法采'+product+'，品类为'+category+'，画面要清晰展示产品包装、质地或使用过程。动作/内容参考：'+action+'。风格：明亮干净的烘焙工作室或蛋糕店，自然光，写实质感，近景和中景结合，轻微手持运动，产品对焦清楚，画面高级但真实。避免字幕、水印、畸变、多余文字、夸张特效。';
-}
-function getSeedanceCardLabel(item){
- return (item.line||item.scene||'口播画面').slice(0,54);
-}
-function inferSeedanceShot(scene){
- if(/对比|分屏|差距/.test(scene))return '左右对比或前后对比镜头，突出产品差异';
- if(/操作|演示|搅拌|加热|煮|倒|挤|切|打开/.test(scene))return '手部操作特写，完整展示制作动作和材料状态变化';
- if(/空镜|产品|包装|展示|细节/.test(scene))return '产品空镜和细节特写，包装、粉体、成品质地清楚可见';
- if(/成品|蛋糕|奶冻|夹心/.test(scene))return '成品蛋糕和夹心效果展示，镜头缓慢推进';
- if(/口播|主播/.test(scene))return '主播半身口播，手拿产品或站在烘焙台前自然讲解';
- return '烘焙场景实拍镜头，围绕产品和使用场景构图';
-}
-function renderSeedancePrompts(script){
- var list=document.getElementById('seedancePromptList');var prompts=getSeedancePrompts(script);
- currentSeedancePrompts=prompts;
- if(!prompts.length){resetSeedancePrompts('未识别到可生成提示词的画面脚本，请先补充或编辑左侧脚本。');return;}
- list.innerHTML=prompts.map(function(item,i){return '<div class="seedance-card"><div class="seedance-card-hd"><span class="seedance-scene">画面'+(i+1)+' · '+escHtml(getSeedanceCardLabel(item))+'</span><button class="seedance-copy" type="button" data-index="'+i+'">复制</button></div><div class="seedance-prompt">'+escHtml(item.prompt)+'</div></div>';}).join('');
-}
 
 window.addEventListener('scroll',toggleScrollTopButton,{passive:true});
 toggleScrollTopButton();
 loadCategories();loadProducts();
+var backgroundJobId=new URLSearchParams(window.location.search).get('job');if(backgroundJobId)setTimeout(function(){restoreGeneratedJob(backgroundJobId);},200);
 document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
 </script>
 </body>

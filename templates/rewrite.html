@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>脚本改写 — 抖音运营agent</title>
-<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260720-2">
+<link rel="stylesheet" href="/static/css/style.css?v=app-shell-20260723-tasks-stack">
 <script src="/static/vendor/lucide.min.js"></script>
-<script src="/static/js/common.js?v=app-shell-20260720-2"></script>
+<script src="/static/js/common.js?v=app-shell-20260723-tasks-stack"></script>
 <style>
 .rewrite-main{max-width:1540px}
 .rewrite-form-card{display:flex;flex-direction:column;gap:18px}
@@ -237,9 +237,10 @@ async function submitRewrite(extraOverride){
  try{
   var includeShotDesign=false;
   var reqs=[];var preFill=document.getElementById('rewriteReqPreFill').value.trim();if(preFill)reqs.push('用户需求：'+preFill);if(extraOverride)reqs.push(extraOverride);
-  var r=await fetch('/api/scripts/rewrite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({original_script:originalScript,product_id:selectedProduct.id,extra_requirements:reqs.length?reqs.join('\n'):null,include_shot_design:includeShotDesign})});
-  if(!r.ok)throw new Error((await r.json()).detail||'改写失败');
-  var d=await r.json();currentRewritten=d.rewritten_script;
+   var job=await window.FacaiUI.submitBackgroundJob('/api/scripts/rewrite/jobs',{original_script:originalScript,product_id:selectedProduct.id,extra_requirements:reqs.length?reqs.join('\n'):null,include_shot_design:includeShotDesign},{sourceRef:'rewrite'});
+   var finished=await window.FacaiUI.waitForBackgroundJob(job.public_id);
+   if(finished.status!=='succeeded')throw new Error(finished.error_summary||finished.message||'改写失败');
+   var d=finished.result||{};currentRewritten=d.rewritten_script;
   document.getElementById('scriptOutput').textContent=currentRewritten;
   document.getElementById('resultMeta').innerHTML='目标产品：<b>'+escHtml(d.product_name)+'</b> | 已保留参考结构并输出纯口播文案';
   document.getElementById('compareOriginal').textContent=d.original_script;
@@ -249,6 +250,20 @@ async function submitRewrite(extraOverride){
  }catch(e){if(startedFromForm){toast('改写失败：'+e.message,'error');}else{document.getElementById('scriptOutput').textContent='改写失败：'+e.message;document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';}}
  finally{rewriteInFlight=false;document.getElementById('productActionHint').textContent='脚本至少输入 20 字后，点击产品卡片即可开始改写。';renderProducts(document.getElementById('productSearch').value);document.getElementById('btnRedo').disabled=false;document.getElementById('btnGenerateSeedance').disabled=false;}
 }
+
+async function restoreRewriteJob(publicId){
+ try{
+  var job=await window.FacaiUI.fetchBackgroundJob(publicId);if(job.job_type!=='ai.scripts.rewrite')return;
+  if(job.status!=='succeeded'){toast(job.message||'任务尚未完成','error');return;}
+  var d=job.result||{};originalScript=d.original_script||((job.request||{}).original_script||'');currentRewritten=d.rewritten_script||'';
+  document.getElementById('step1').style.display='none';document.getElementById('step3').style.display='';document.getElementById('scriptOutput').style.display='';document.getElementById('generatingHint').style.display='none';document.getElementById('resultActions').style.display='flex';
+  document.getElementById('scriptOutput').textContent=currentRewritten;document.getElementById('resultMeta').innerHTML='目标产品：<b>'+escHtml(d.product_name||'')+'</b> | 已恢复后台改写结果';
+  document.getElementById('compareOriginal').textContent=originalScript;document.getElementById('compareRewritten').textContent=currentRewritten;
+  resetSeedancePrompts('已恢复后台改写结果，可继续编辑或生成提示词。');
+ }catch(e){toast('任务结果恢复失败：'+e.message,'error');}
+}
+
+if(window.addEventListener)window.addEventListener('facai:job-open',function(event){if(event.detail&&event.detail.job_type==='ai.scripts.rewrite')restoreRewriteJob(event.detail.public_id);});
 
 document.getElementById('btnToggleCompare').addEventListener('click',function(){var p=document.getElementById('comparePanel');p.style.display=p.style.display==='none'?'':'';});
 document.getElementById('scriptOutput').addEventListener('input',function(){currentRewritten=getEditedScript();document.getElementById('compareRewritten').textContent=currentRewritten;resetSeedancePrompts('脚本已修改，请点击上方「生成提示词」，按当前版本重新生成 Seedance 2.0 提示词。');});
@@ -308,6 +323,7 @@ function renderSeedancePrompts(script){
 }
 
 loadProducts();
+var backgroundJobId=new URLSearchParams(window.location.search).get('job');if(backgroundJobId)setTimeout(function(){restoreRewriteJob(backgroundJobId);},200);
 document.addEventListener('DOMContentLoaded',function(){if(window.lucide)lucide.createIcons();});
 </script>
 </body>

@@ -151,6 +151,46 @@ h3 { font-size: 1.1rem; font-weight: 700; }
   position: fixed; right: 28px; bottom: 28px; z-index: 190;
   display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
 }
+.facai-tools-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.facai-task-toggle { position: relative; }
+.facai-task-toggle.has-active { border-color: var(--facai); background: var(--facai-soft); }
+.facai-task-badge {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--danger); color: #fff; font-size: 11px; line-height: 1;
+}
+.facai-task-badge[hidden] { display: none; }
+.facai-task-panel {
+  width: min(390px, calc(100vw - 32px)); max-height: min(620px, calc(100vh - 116px));
+  overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: rgba(255,255,255,.99); box-shadow: var(--s-4);
+  animation: fadeUp .18s var(--ease-out) both;
+}
+.facai-task-panel[hidden] { display: none; }
+.facai-task-panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border-soft); background: var(--surface-darker);
+}
+.facai-task-panel-head > div { display: grid; gap: 2px; }
+.facai-task-panel-head strong { font-size: 15px; color: var(--text); }
+.facai-task-panel-head span { font-size: 11px; color: var(--text-3); }
+.facai-task-close { border: 0; background: transparent; color: var(--text-3); font-size: 24px; cursor: pointer; }
+.facai-task-list { max-height: min(540px, calc(100vh - 184px)); overflow: auto; padding: 8px; }
+.facai-task-empty { min-height: 110px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-3); font-size: 13px; }
+.facai-task-item { padding: 11px 12px; border: 1px solid var(--border-soft); border-radius: var(--r-sm); background: #fff; }
+.facai-task-item + .facai-task-item { margin-top: 7px; }
+.facai-task-item.is-running,.facai-task-item.is-pending { border-color: var(--facai-subtle); background: var(--facai-ghost); }
+.facai-task-item.is-failed { border-color: rgba(220,38,38,.24); background: var(--danger-soft); }
+.facai-task-item-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.facai-task-item-head strong { min-width: 0; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.facai-task-item-head span { flex: 0 0 auto; color: var(--facai); font-size: 11px; font-weight: 800; }
+.facai-task-item p { margin: 6px 0 0; color: var(--text-3); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.facai-task-progress { display: block; height: 4px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: var(--border-soft); }
+.facai-task-progress span { display: block; height: 100%; border-radius: inherit; background: var(--facai); transition: width .2s ease; }
+.facai-task-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.facai-task-actions:empty { display: none; }
+.facai-task-actions button { min-height: 28px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--r-sm); background: #fff; color: var(--text-2); font-size: 11px; font-weight: 800; cursor: pointer; }
+.facai-task-actions button:hover { border-color: var(--facai); color: var(--facai); background: var(--facai-ghost); }
 .facai-tools-toggle,.facai-tools-link {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   border: 1px solid rgba(126, 146, 54, .24);
@@ -188,6 +228,7 @@ h3 { font-size: 1.1rem; font-weight: 700; }
 }
 .facai-tools-link + .facai-tools-link { margin-top: 4px; }
 body.facai-tools-open .scroll-top-btn { visibility: hidden; pointer-events: none; }
+body.facai-tasks-open .scroll-top-btn { visibility: hidden; pointer-events: none; }
 
 @media (min-width: 769px) and (max-width: 1599px) {
   .nav-inner {
@@ -742,7 +783,12 @@ textarea.input { resize: vertical; min-height: 110px; }
   .float-bar > span { flex: 1 1 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .float-bar .btn { flex: 1 1 118px; min-width: 0; }
   .scroll-top-btn { right: 14px; bottom: max(18px, calc(18px + env(safe-area-inset-bottom))); }
-  .facai-tools-launcher { display: none; }
+  .facai-tools-launcher { display: none; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); align-items: stretch; }
+  body.facai-tasks-open .facai-tools-launcher { display: flex; }
+  body.facai-tasks-open .facai-task-toggle { display: none; }
+  .facai-tools-controls,.facai-tools-menu { display: none !important; }
+  .facai-task-panel { width: 100%; max-height: min(72dvh, 620px); }
+  .facai-task-list { max-height: calc(72dvh - 68px); }
 }
 
 /* =================================================================

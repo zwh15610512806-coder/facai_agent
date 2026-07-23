@@ -20,7 +20,7 @@ class IndexHeroTests(unittest.TestCase):
         self.assertNotIn(".hero-copy", self.page)
 
     def test_generate_page_content_starts_without_intro_banner(self):
-        self.assertIn('/static/js/common.js?v=app-shell-20260720-2', self.page)
+        self.assertRegex(self.page, r'/static/js/common\.js\?v=app-shell-[^"\']+')
         self.assertNotIn('class="nav-import-btn"', self.page)
         self.assertNotIn('class="data-import-fab"', self.page)
         self.assertNotIn('class="ai-config-fab"', self.page)
@@ -34,77 +34,41 @@ class IndexHeroTests(unittest.TestCase):
         )
 
 
-class IndexGenerateSeedanceTests(unittest.TestCase):
+class IndexGenerateBreakdownTests(unittest.TestCase):
     def setUp(self):
         self.page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8-sig")
 
-    def test_result_page_has_seedance_prompt_panel(self):
-        self.assertIn("Seedance 2.0", self.page)
-        self.assertIn('id="seedancePromptList"', self.page)
-        self.assertIn('id="btnCopySeedanceAll"', self.page)
-        self.assertIn('id="btnGenerateSeedance"', self.page)
-        self.assertIn("function getSeedancePrompts", self.page)
-        self.assertIn("function buildSeedancePrompt", self.page)
-        self.assertIn("function renderSeedancePrompts", self.page)
+    def test_result_page_has_content_breakdown_panel(self):
+        self.assertIn("内容拆解", self.page)
+        self.assertIn('id="contentBreakdownList"', self.page)
+        self.assertIn('id="btnRefreshBreakdown"', self.page)
+        self.assertIn('id="btnCopyBreakdown"', self.page)
+        self.assertNotIn("Seedance 2.0", self.page)
+        self.assertNotIn('id="seedancePromptList"', self.page)
+        self.assertNotIn('id="btnGenerateSeedance"', self.page)
+        self.assertNotIn("function getSeedancePrompts", self.page)
 
-    def test_seedance_prompts_are_generated_manually_from_edited_script(self):
-        self.assertNotIn("renderSeedancePrompts(currentScript)", self.page)
-        self.assertIn("btnGenerateSeedance').addEventListener('click'", self.page)
+    def test_breakdown_is_automatic_nonblocking_and_refreshes_edited_script(self):
+        self.assertIn("async function loadContentBreakdown", self.page)
+        self.assertIn("loadContentBreakdown(currentScriptId,currentScript)", self.page)
+        self.assertIn("/api/scripts/content-breakdown", self.page)
+        self.assertIn("脚本已修改，拆解待更新", self.page)
+        self.assertIn("btnRefreshBreakdown').addEventListener('click'", self.page)
         self.assertIn("var script=getEditedScript()", self.page)
-        self.assertIn("renderSeedancePrompts(script)", self.page)
-        self.assertIn("currentSeedancePrompts", self.page)
-        self.assertIn("请先点击生成提示词", self.page)
-        self.assertIn("seedance-copy", self.page)
-        self.assertIn("resetSeedancePrompts('可先直接编辑左侧生成脚本", self.page)
+        self.assertIn("renderContentBreakdown", self.page)
+        self.assertIn("内容拆解失败不影响左侧脚本", self.page)
 
-    def test_seedance_cards_label_uses_spoken_copy_not_camera_note(self):
-        self.assertIn("function getSeedanceCardLabel", self.page)
-        self.assertIn("getSeedanceCardLabel(item)", self.page)
-        self.assertIn("画面'+(i+1)+' · '+escHtml(getSeedanceCardLabel(item))", self.page)
-        self.assertIn("return (item.line||item.scene||'口播画面').slice(0,54)", self.page)
-        self.assertIn("'画面'+(i+1)+'：'+getSeedanceCardLabel(x)", self.page)
-        self.assertNotIn("画面'+(i+1)+' · '+escHtml(item.scene)", self.page)
-        self.assertNotIn("'画面'+(i+1)+'：'+x.scene", self.page)
-
-    def test_seedance_plain_spoken_copy_splits_into_sentence_cards(self):
-        start = self.page.index("function splitSeedancePlainBeats(text){")
-        end = self.page.index("function renderSeedancePrompts(script){")
-        functions = self.page[start:end]
-        script = f"""
-var state={{selectedProduct:{{name:'白色翻糖膏',category:'烘焙装饰'}}}};
-{functions}
-const prompts=getSeedancePrompts('开头一句抓痛点，第二句给产品证明，第三句讲使用场景，第四句自然引导下单。');
-if(prompts.length<4) throw new Error('expected at least 4 cards, got '+prompts.length);
-if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first card should keep first sentence');
-"""
-        with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as handle:
-            handle.write(script)
-            script_path = Path(handle.name)
-
-        try:
-            result = subprocess.run(
-                ["node", str(script_path)],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                check=False,
-            )
-        finally:
-            script_path.unlink(missing_ok=True)
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_seedance_panel_uses_rewrite_layout_pattern(self):
+    def test_breakdown_panel_uses_rewrite_layout_pattern(self):
         self.assertIn("<main class=\"page-main generate-main\">", self.page)
         self.assertIn(".generate-main{max-width:1540px}", self.page)
         self.assertIn("grid-template-columns:minmax(480px,1fr) minmax(620px,720px)", self.page)
         self.assertIn(".generate-result-hd{display:flex;align-items:center;justify-content:space-between", self.page)
         self.assertIn(".editable-output{cursor:text}", self.page)
         self.assertIn(".generate-result-layout", self.page)
-        self.assertIn(".seedance-panel", self.page)
+        self.assertIn(".breakdown-panel", self.page)
         self.assertIn("@media (max-width: 1240px)", self.page)
         self.assertIn(".generate-result-layout { grid-template-columns: 1fr; }", self.page)
-        self.assertIn(".seedance-list { grid-template-columns: 1fr; }", self.page)
+        self.assertIn(".breakdown-list { grid-template-columns: 1fr; }", self.page)
 
     def test_result_buttons_match_rewrite_module_positions(self):
         header = re.search(
@@ -129,8 +93,9 @@ if(!prompts[0].prompt.includes('开头一句抓痛点')) throw new Error('first 
         frame_body = frame.group("body")
         self.assertRegex(
             frame_body,
-            r'(?s)id="scriptOutput" class="so editable-output".*?id="resultActions" class="result-actions".*?id="btnGenerateSeedance".*?id="btnCopy".*?id="btnSave".*?id="btnRedo"',
+            r'(?s)id="scriptOutput" class="so editable-output".*?id="resultActions" class="result-actions".*?id="btnCopy".*?id="btnSave".*?id="btnRedo"',
         )
+        self.assertNotIn('id="btnGenerateSeedance"', frame_body)
 
         self.assertIn('id="scriptOutput" class="so editable-output" contenteditable="true"', self.page)
         self.assertIn("function getEditedScript()", self.page)

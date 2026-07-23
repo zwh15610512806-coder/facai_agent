@@ -219,7 +219,7 @@ if(!(file.name||'').toLowerCase().endsWith('.xlsx')){toast('Excel 仅支持 .xls
 if(btn)btn.disabled=true;
 renderTemplateWorkbookImportState({is_running:true,total:0,processed:0,created:0,updated:0,skipped:0,image_count:0,error_count:0,message:'正在上传 '+file.name+'...'});
 try{
- var r=await request('/api/templates/viral/import-workbook',{method:'POST',body:fd});
+ var r=await request('/api/templates/viral/import-workbook',{method:'POST',headers:window.FacaiUI.jobHeaders(),body:fd});
  var d=await r.json();
  if(!r.ok)throw new Error((d&&d.detail)||'导入失败');
  renderTemplateWorkbookImportState(d.data||{message:d.message||'导入已启动'});

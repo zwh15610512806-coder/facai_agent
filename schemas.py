@@ -229,6 +229,55 @@ class ScriptShotMatchResponse(BaseModel):
     script_content: str = Field(..., description="匹配镜头后的脚本")
 
 
+class ScriptContentBreakdownRequest(StrictRequestModel):
+    """对当前生成脚本做内容、转化和拍摄拆解。"""
+    script_id: int = Field(..., gt=0, description="生成记录ID")
+    script_content: str = Field(..., min_length=1, max_length=24000, description="用户当前编辑后的脚本")
+
+    @field_validator("script_content")
+    @classmethod
+    def script_content_must_not_be_blank(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("脚本不能为空")
+        return text
+
+
+class ScriptBreakdownStructureItem(BaseModel):
+    stage: str
+    copy_excerpt: str
+    purpose: str
+
+
+class ScriptBreakdownConversionTrigger(BaseModel):
+    copy_excerpt: str
+    reason: str
+
+
+class ScriptBreakdownOptimization(BaseModel):
+    issue: str
+    recommendation: str
+
+
+class ScriptBreakdownShotRequirement(BaseModel):
+    script_segment: str
+    shot_type: str
+    subject_action: str
+    visual_requirement: str
+
+
+class ScriptContentBreakdownResponse(BaseModel):
+    generation_rationale: str
+    target_audience: str
+    structure: List[ScriptBreakdownStructureItem]
+    core_selling_points: List[str]
+    conversion_triggers: List[ScriptBreakdownConversionTrigger]
+    optimization_suggestions: List[ScriptBreakdownOptimization]
+    shooting_notes: List[str]
+    shot_requirements: List[ScriptBreakdownShotRequirement]
+    source: Literal["ai"]
+
+
 class SeedancePromptUploadResponse(BaseModel):
     """Seedance 分镜脚本上传解析结果"""
     filename: str = Field(..., description="上传文件名")

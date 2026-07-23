@@ -58,6 +58,7 @@ def build_readiness_report() -> tuple[dict, int]:
         checks["search_index"] = {"status": "error", "detail": str(exc)[:300]}
 
     try:
+        from services.background_jobs import queue_metrics
         from services.task_queue import task_worker_status
         from services.vector_sync import vector_sync_status, vector_worker_status
 
@@ -82,6 +83,7 @@ def build_readiness_report() -> tuple[dict, int]:
             "max_heartbeat_age_seconds": heartbeat_limit,
             "vector_sync": vector_worker,
             "durable_tasks": task_worker,
+            "background_jobs": queue_metrics(),
         }
         checks["vector"] = {
             "status": "degraded" if queue.get("failed") else "ok",

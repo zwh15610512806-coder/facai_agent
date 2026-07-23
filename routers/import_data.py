@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from database import SessionLocal, get_db
 from models import Product, SellingPoint
 from schemas import ApiResponse, ImportResult
 from services import task_queue
+from routers.jobs import owner_key_for_request
 from services.bounded_executor import WorkQueueFull, run_blocking
 from services.product_markdown_importer import (
     PENDING_LABEL,
@@ -1039,7 +1040,10 @@ task_queue.register_task_handler("local_product_scan", _run_local_product_scan_t
 
 
 @router.post("/scan-local-products")
-def start_local_product_scan():
+def start_local_product_scan(
+    request: Request = None,
+    x_facai_client_id: str | None = Header(None, alias="X-Facai-Client-Id"),
+):
     """Start a background scan of the configured local product materials directory."""
     source_dir = LOCAL_PRODUCT_SOURCE_DIR
     if not os.path.exists(source_dir):
@@ -1049,7 +1053,13 @@ def start_local_product_scan():
         if _local_product_scan_state["is_running"]:
             return ApiResponse(message="本地产品资料扫描正在运行", data=_local_product_scan_snapshot())
         from services.job_runs import start_job
-        job_id = start_job("local_product_scan", message="本地产品资料扫描启动中", details={"source_dir": source_dir})
+        job_id = start_job(
+            "local_product_scan",
+            message="本地产品资料扫描启动中",
+            details={"source_dir": source_dir},
+            owner_key=owner_key_for_request(request, x_facai_client_id) if request is not None and x_facai_client_id else None,
+            origin_path="/app/import",
+        )
         _local_product_scan_state.update({
             "is_running": True,
             "source_dir": source_dir,
@@ -1072,7 +1082,7 @@ def start_local_product_scan():
 
     task_payload = {"source_dir": source_dir, "job_id": job_id}
     if task_queue.task_worker_status()["alive"]:
-        task_queue.enqueue_task("local_product_scan", task_payload, max_attempts=3)
+        task_queue.enqueue_task("local_product_scan", task_payload, max_attempts=3, job_run_id=job_id)
     else:
         # Router-only test/dev apps do not run the main lifespan worker.
         threading.Thread(

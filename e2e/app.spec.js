@@ -69,7 +69,7 @@ test('mobile AI work opens with chat visible, drawer closed and composer on scre
   expect(state.composerTop).toBeGreaterThanOrEqual(0);
   expect(state.composerBottom).toBeLessThanOrEqual(state.viewportHeight + 1);
   expect(state.launcherHidden).toBe(true);
-  expect(state.mobileUtilityCount).toBe(3);
+  expect(state.mobileUtilityCount).toBe(4);
 
   await page.locator('#historyDrawerToggle').click();
   await expect(page.locator('.inspiration-side')).toHaveClass(/is-open/);

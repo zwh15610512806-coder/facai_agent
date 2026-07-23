@@ -80,7 +80,7 @@ def _request_category(method: str, path: str) -> tuple[str, int, int] | None:
     if (
         normalized.startswith("/api/scripts/")
         or normalized.startswith("/api/inspiration/chat")
-        or normalized.endswith("/rag-chat")
+        or "/rag-chat" in normalized
         or normalized.endswith("/extract-points")
         or normalized in {"/api/search-proxy/ai-search", "/api/search-proxy/search-summary"}
     ):

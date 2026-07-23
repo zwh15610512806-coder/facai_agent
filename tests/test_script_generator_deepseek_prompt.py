@@ -342,7 +342,7 @@ class DeepSeekPromptTests(unittest.TestCase):
         self.assertIn('"recent_opening_similarity"', repair_prompt)
         self.assertIn(recent[0], repair_prompt)
 
-    def test_invalid_empty_or_failed_repair_raises_exact_quality_error(self):
+    def test_invalid_or_empty_repair_returns_best_available_script(self):
         second_responses = [
             "烘焙姐妹们看过来，还是这套餐叉。",
             "",
@@ -355,13 +355,17 @@ class DeepSeekPromptTests(unittest.TestCase):
                 ])
                 generator = ScriptGenerator()
                 generator.ai = ai
-                with self.assertRaises(ScriptGenerationError) as caught:
-                    asyncio.run(generator.generate(make_product(), None, "需求类"))
-                self.assertEqual(str(caught.exception), "AI生成开头质量未通过，请重新生成。")
-                self.assertEqual(caught.exception.status_code, 502)
+                result = asyncio.run(generator.generate(make_product(), None, "需求类"))
+
+                self.assertTrue(result)
+                self.assertNotIn("姐妹们", result)
+                if second_response:
+                    self.assertIn("还是这套餐叉", result)
+                else:
+                    self.assertIn("袋装刀叉适合门店配送", result)
                 self.assertEqual(len(ai.calls), 2)
 
-    def test_provider_error_during_repair_raises_exact_quality_error(self):
+    def test_provider_error_during_repair_returns_first_script(self):
         ai = SequenceResponseAI([
             "烘焙姐妹们看过来，袋装刀叉适合门店配送。",
             RuntimeError("provider failed"),
@@ -370,11 +374,9 @@ class DeepSeekPromptTests(unittest.TestCase):
         generator.ai = ai
 
         with self.assertLogs("services.script_generator", level="WARNING"):
-            with self.assertRaises(ScriptGenerationError) as caught:
-                asyncio.run(generator.generate(make_product(), None, "需求类"))
+            result = asyncio.run(generator.generate(make_product(), None, "需求类"))
 
-        self.assertEqual(str(caught.exception), "AI生成开头质量未通过，请重新生成。")
-        self.assertEqual(caught.exception.status_code, 502)
+        self.assertEqual(result, "袋装刀叉适合门店配送。")
         self.assertEqual(len(ai.calls), 2)
     def test_generation_fails_instead_of_using_local_template_when_interface_unavailable(self):
         generator = ScriptGenerator()

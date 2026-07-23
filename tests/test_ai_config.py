@@ -1358,7 +1358,7 @@ class AiConfigPageTests(unittest.TestCase):
         for name in non_config_pages:
             page = (ROOT / "templates" / name).read_text(encoding="utf-8-sig")
             self.assertNotIn('class="ai-config-fab"', page, name)
-            self.assertIn('/static/js/common.js?v=app-shell-20260720-2', page, name)
+            self.assertIn('/static/js/common.js?v=app-shell-20260723-jobs1', page, name)
 
         config_page = (ROOT / "templates" / "ai_config.html").read_text(encoding="utf-8-sig")
         self.assertNotIn('class="ai-config-fab"', config_page)

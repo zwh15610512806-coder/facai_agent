@@ -311,6 +311,7 @@ def _schema_migration_required(*, include_integration: bool = True) -> bool:
     required_tables = {
         "vector_sync_jobs",
         "job_runs",
+        "durable_tasks",
         "product_rag_feedbacks",
         "vector_index_versions",
         "bd_members",
